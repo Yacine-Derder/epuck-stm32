@@ -1,0 +1,137 @@
+(base) C:\Users\derder\OneDrive\Documents\EPFL\PhD\1st Year\Code\EPuck_STM32>tree
+Folder PATH listing for volume SYSTEM
+Volume serial number is C83B-252E
+C:.
+├───.settings
+├───.vscode
+├───build
+│   └───Debug
+│       ├───.cmake
+│       │   └───api
+│       │       └───v1
+│       │           ├───query
+│       │           │   └───client-vscode
+│       │           └───reply
+│       ├───cmake
+│       │   └───stm32cubemx
+│       │       └───CMakeFiles
+│       │           ├───STM32_Drivers.dir
+│       │           │   └───__
+│       │           │       └───__
+│       │           │           ├───Core
+│       │           │           │   └───Src
+│       │           │           └───Drivers
+│       │           │               └───STM32F4xx_HAL_Driver
+│       │           │                   └───Src
+│       │           └───USB_Device_Library.dir
+│       │               └───__
+│       │                   └───__
+│       │                       └───Middlewares
+│       │                           └───ST
+│       │                               └───STM32_USB_Device_Library
+│       │                                   ├───Class
+│       │                                   │   └───CDC
+│       │                                   │       └───Src
+│       │                                   └───Core
+│       │                                       └───Src
+│       └───CMakeFiles
+│           ├───4.2.3
+│           │   ├───CompilerIdASM
+│           │   ├───CompilerIdC
+│           │   │   └───tmp
+│           │   └───CompilerIdCXX
+│           │       └───tmp
+│           ├───EPuck_STM32.dir
+│           │   ├───Core
+│           │   │   └───Src
+│           │   ├───ThirdParty
+│           │   │   └───qorvo_dw3
+│           │   │       ├───driver
+│           │   │       │   ├───dw3000
+│           │   │       │   └───lib
+│           │   │       │       └───qmath
+│           │   │       │           └───src
+│           │   │       └───platform
+│           │   └───USB_DEVICE
+│           │       ├───App
+│           │       └───Target
+│           └───pkgRedirects
+├───cmake
+│   └───stm32cubemx
+├───Core
+│   ├───Inc
+│   └───Src
+├───Drivers
+│   ├───CMSIS
+│   │   ├───Device
+│   │   │   └───ST
+│   │   │       └───STM32F4xx
+│   │   │           ├───Include
+│   │   │           └───Source
+│   │   │               └───Templates
+│   │   └───Include
+│   └───STM32F4xx_HAL_Driver
+│       ├───Inc
+│       │   └───Legacy
+│       └───Src
+├───Middlewares
+│   └───ST
+│       └───STM32_USB_Device_Library
+│           ├───Class
+│           │   └───CDC
+│           │       ├───Inc
+│           │       └───Src
+│           └───Core
+│               ├───Inc
+│               └───Src
+├───ThirdParty
+│   └───qorvo_dw3
+│       ├───driver
+│       │   ├───.gitlab
+│       │   ├───cmake
+│       │   ├───dw3000
+│       │   ├───lib
+│       │   │   └───qmath
+│       │   │       ├───include
+│       │   │       ├───src
+│       │   │       └───utest
+│       │   ├───LICENSES
+│       │   └───utest
+│       │       ├───googletest
+│       │       │   ├───.github
+│       │       │   │   └───ISSUE_TEMPLATE
+│       │       │   ├───ci
+│       │       │   ├───docs
+│       │       │   │   ├───assets
+│       │       │   │   │   └───css
+│       │       │   │   ├───reference
+│       │       │   │   ├───_data
+│       │       │   │   ├───_layouts
+│       │       │   │   └───_sass
+│       │       │   ├───googlemock
+│       │       │   │   ├───cmake
+│       │       │   │   ├───docs
+│       │       │   │   ├───include
+│       │       │   │   │   └───gmock
+│       │       │   │   │       └───internal
+│       │       │   │   │           └───custom
+│       │       │   │   ├───src
+│       │       │   │   └───test
+│       │       │   └───googletest
+│       │       │       ├───cmake
+│       │       │       ├───docs
+│       │       │       ├───include
+│       │       │       │   └───gtest
+│       │       │       │       └───internal
+│       │       │       │           └───custom
+│       │       │       ├───samples
+│       │       │       ├───src
+│       │       │       └───test
+│       │       ├───mocks
+│       │       ├───test_regs
+│       │       ├───test_rsl
+│       │       └───test_tx_power
+│       └───platform
+└───USB_DEVICE
+    ├───App
+    └───Target
