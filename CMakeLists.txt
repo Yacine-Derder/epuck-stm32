@@ -58,6 +58,7 @@ file(GLOB QORVO_PLATFORM_SOURCES
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/dwm3000_port.c
+    Core/Src/epuck_link.c
     ${QORVO_DRIVER_SOURCES}
     ${QORVO_DW3000_SOURCES}
     ${QORVO_PLATFORM_SOURCES}

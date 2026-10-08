@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
+#include "epuck_link.h"
 // #include "dwm3000_port.h"
 #include "qorvo_platform.h"
 #include "deca_device_api.h"
@@ -133,6 +134,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+  epuck_link_init();
   HAL_GPIO_WritePin(LED_ST_GPIO_Port, LED_ST_Pin, GPIO_PIN_RESET);
 
   led_toggle_period_ms = 1000U / (2U * LED_FREQ);
@@ -157,6 +159,7 @@ int main(void)
     uint32_t now = HAL_GetTick();
 
     qorvo_link_process();
+    epuck_link_task();
 
     if ((now - led_last_toggle_tick) >= led_toggle_period_ms)
     {

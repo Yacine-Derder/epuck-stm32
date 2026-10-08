@@ -58,6 +58,7 @@ void SysTick_Handler(void);
 void EXTI0_IRQHandler(void);
 void OTG_FS_IRQHandler(void);
 /* USER CODE BEGIN EFP */
+void USART1_IRQHandler(void);
 
 /* USER CODE END EFP */
 

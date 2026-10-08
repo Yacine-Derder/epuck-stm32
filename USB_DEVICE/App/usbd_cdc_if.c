@@ -22,6 +22,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include <string.h>
 
 /* USER CODE END INCLUDE */
 
@@ -282,12 +283,24 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
+  /* Serialize main-loop and Qorvo IRQ callers with USB deconfiguration.
+   * Copy only when idle; UserTxBufferFS remains owned by USB until TxState
+   * clears, so existing printf/Qorvo stack buffers may be safely reused.
+   */
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-  if (hcdc->TxState != 0){
-    return USBD_BUSY;
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED || hcdc == NULL ||
+      Buf == NULL || Len > sizeof(UserTxBufferFS)) {
+    result = USBD_FAIL;
+  } else if (hcdc->TxState != 0U) {
+    result = USBD_BUSY;
+  } else {
+    memmove(UserTxBufferFS, Buf, Len);
+    USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, Len);
+    result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
   }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+  __set_PRIMASK(primask);
   /* USER CODE END 7 */
   return result;
 }
