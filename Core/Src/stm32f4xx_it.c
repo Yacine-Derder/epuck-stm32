@@ -58,7 +58,7 @@
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 /* USER CODE BEGIN EV */
-#if EPUCK_LINK_ENABLED
+#if APP_EPUCK_ENABLED
 extern UART_HandleTypeDef huart1;
 #endif
 
@@ -231,7 +231,7 @@ void OTG_FS_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-#if EPUCK_LINK_ENABLED
+#if APP_EPUCK_ENABLED
 void USART1_IRQHandler(void)
 {
   HAL_UART_IRQHandler(&huart1);

@@ -24,12 +24,9 @@
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
 #include "epuck_link.h"
-// #include "dwm3000_port.h"
-#include "qorvo_platform.h"
-#include "deca_device_api.h"
+#include "uwb_link.h"
+#include "usb_console.h"
 #include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,17 +39,6 @@
 #define LED_FREQ 1U
 
 /* USER CODE BEGIN PD */
-#define DWM3000_DEV_ID_REG      0x00U
-#define DWM3000_EXPECTED_DEV_ID 0xDECA0302UL
-
-// For the transmitter board, use:
-#define BOARD_ID   1U
-#define BOARD_ROLE QORVO_ROLE_TX
-
-// For the receiver board, use:
-// #define BOARD_ID   2U
-// #define BOARD_ROLE QORVO_ROLE_RX
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -71,7 +57,6 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-extern USBD_HandleTypeDef hUsbDeviceFS;
 uint32_t led_last_toggle_tick = 0U;
 uint32_t led_toggle_period_ms = 0U;
 /* USER CODE END PV */
@@ -140,16 +125,7 @@ int main(void)
   led_toggle_period_ms = 1000U / (2U * LED_FREQ);
   led_last_toggle_tick = HAL_GetTick();
 
-  /* Give USB/UART and the DWM3000 a moment after boot */
-  HAL_Delay(100);
-
-  if (qorvo_link_init(BOARD_ID, BOARD_ROLE) != DWT_SUCCESS) {
-    printf("qorvo_link_init() failed\r\n");
-  } else {
-    printf("qorvo_link_init() OK\r\n");
-  }
-
-  HAL_Delay(100);
+  uwb_link_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -158,7 +134,8 @@ int main(void)
   {
     uint32_t now = HAL_GetTick();
 
-    qorvo_link_process();
+    usb_console_task();
+    uwb_link_task();
     epuck_link_task();
 
     if ((now - led_last_toggle_tick) >= led_toggle_period_ms)
@@ -486,7 +463,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == DWM_IRQ_Pin)
   {
-    dwt_isr();
+    uwb_link_exti_callback(GPIO_Pin);
   }
 }
 

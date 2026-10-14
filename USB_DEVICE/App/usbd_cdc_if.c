@@ -23,6 +23,7 @@
 
 /* USER CODE BEGIN INCLUDE */
 #include <string.h>
+#include "usb_console.h"
 
 /* USER CODE END INCLUDE */
 
@@ -167,6 +168,7 @@ static int8_t CDC_Init_FS(void)
 static int8_t CDC_DeInit_FS(void)
 {
   /* USER CODE BEGIN 4 */
+  usb_console_disconnected_isr();
   return (USBD_OK);
   /* USER CODE END 4 */
 }
@@ -262,6 +264,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  usb_console_receive_isr(Buf, *Len);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);
