@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "epuck_link.h"
+#include "app_config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,6 +59,9 @@
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 /* USER CODE BEGIN EV */
+#if APP_ESP_ENABLED
+extern UART_HandleTypeDef huart3;
+#endif
 #if APP_EPUCK_ENABLED
 extern UART_HandleTypeDef huart1;
 #endif
@@ -231,6 +235,12 @@ void OTG_FS_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+#if APP_ESP_ENABLED
+void USART3_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart3);
+}
+#endif
 #if APP_EPUCK_ENABLED
 void USART1_IRQHandler(void)
 {

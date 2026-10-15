@@ -26,6 +26,7 @@
 #include "epuck_link.h"
 #include "uwb_link.h"
 #include "usb_console.h"
+#include "esp_link.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -119,6 +120,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
+  esp_link_init();
   epuck_link_init();
   HAL_GPIO_WritePin(LED_ST_GPIO_Port, LED_ST_Pin, GPIO_PIN_RESET);
 
@@ -136,6 +138,7 @@ int main(void)
 
     usb_console_task();
     uwb_link_task();
+    esp_link_task();
     epuck_link_task();
 
     if ((now - led_last_toggle_tick) >= led_toggle_period_ms)

@@ -168,3 +168,14 @@ int main(int argc, char **argv) {
 #endif
   puts("PASS");
 }
+
+uint8_t esp_link_rx_callback(void *uart) { (void)uart; return 0; }
+uint8_t esp_link_tx_callback(void *uart) { (void)uart; return 0; }
+uint8_t esp_link_error_callback(void *uart) { (void)uart; return 0; }
+void esp_link_reply_to(const char *session, const char *message) { (void)session; (void)message; }
+void esp_link_session(char out[17]) { memset(out,0,17); }
+uint8_t esp_link_owner_alive(const char *session) { (void)session; return 0; }
+
+void esp_link_publish_sensor(void) {}
+
+void esp_link_usb_status(void) {}

@@ -46,6 +46,9 @@ uint8_t epuck_link_get_sensor_data(epuck_sensor_data_t *sample);
  * its acknowledgement; speeds are commanded steps/s, not measured speed.
  * Console command handling still reports disabled when the switch is off.
  */
+typedef enum { EPUCK_SOURCE_USB, EPUCK_SOURCE_WIFI, EPUCK_SOURCE_NONE } epuck_source_t;
+void epuck_link_command(epuck_source_t source, const char *command);
+void epuck_link_source_lost(epuck_source_t source, const char *reason);
 void epuck_link_console_command(const char *command);
 void epuck_link_console_lost(const char *reason);
 

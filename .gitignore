@@ -1,3 +1,40 @@
-build
-mx.scratch
-!.settings
+# Generated build outputs
+build/
+mx.scratch/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map
+*.log
+
+# Local editor and IDE settings
+.vscode/
+.settings/
+.idea/
+*.code-workspace
+CMakeUserPresets.json
+
+# Local caches and Python environments
+.cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS metadata
+.DS_Store
+.AppleDouble
+.directory
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor temporary files
+*~
+*.swp
+*.swo

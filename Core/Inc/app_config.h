@@ -4,6 +4,7 @@
 /* Change these switches, rebuild, then flash the resulting firmware. */
 #define APP_EPUCK_ENABLED 1
 #define APP_UWB_ENABLED   0
+#define APP_ESP_ENABLED   1
 
 /* Board role constants are supplied by qorvo_platform.h in uwb_link.c. */
 // For the transmitter board, use:

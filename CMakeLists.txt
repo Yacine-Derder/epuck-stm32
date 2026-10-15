@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/dwm3000_port.c
     Core/Src/epuck_link.c
+    Core/Src/esp_link.c
     Core/Src/usb_console.c
     Core/Src/uwb_link.c
     ${QORVO_DRIVER_SOURCES}

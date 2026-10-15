@@ -1,5 +1,6 @@
 #include "usb_console.h"
 #include "epuck_link.h"
+#include "esp_link.h"
 #include "main.h"
 #include "usbd_cdc_if.h"
 #include <stdio.h>
@@ -73,7 +74,11 @@ static void console_parse_byte(uint8_t byte)
       usb_console_write("ERR malformed or oversized USB command");
     } else if (console_length != 0U) {
       console_line[console_length] = '\0';
-      epuck_link_console_command(console_line);
+      if (strcmp(console_line,"ESP_STATUS")==0) esp_link_usb_status();
+      else {
+        if (strcmp(console_line,"HELP")==0) usb_console_write("ESP_STATUS: STM32 ESP session and fault diagnostics");
+        epuck_link_console_command(console_line);
+      }
     }
     console_length = 0U;
     console_discard = console_cr = 0U;

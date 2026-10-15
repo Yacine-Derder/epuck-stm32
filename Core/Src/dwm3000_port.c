@@ -1,3 +1,4 @@
+#include "esp_link.h"
 #include "dwm3000_port.h"
 #include "usbd_cdc_if.h"
 #include "main.h"
@@ -7,11 +8,10 @@
 #include <stdarg.h>
 
 extern SPI_HandleTypeDef hspi1;
-extern UART_HandleTypeDef huart3;
 
 static void stm32_send_uart(const char *s)
 {
-    HAL_UART_Transmit(&huart3, (uint8_t *)s, strlen(s), HAL_MAX_DELAY);
+    esp_link_log(s);
 }
 
 static void log_printf(const char *fmt, ...)

@@ -112,7 +112,7 @@ Late or unexpected acknowledgements are displayed but cannot re-arm a lost
 session. STOP retries if its acknowledgement is missing. Wait for `OK STOP`,
 then send a **new explicit ARM** and wait for `OK ARM` before moving again.
 
-USB deconfiguration/disconnection also cancels queued movement and requests
+USB deconfiguration/disconnection of a USB-owned session cancels queued movement and requests
 STOP. A sticky callback flag detects a disconnect/reconnect entirely between
 main-loop calls. USB input overflow discards uncertain commands and loses the
 motor session, recovering after a subsequent newline. An already transmitting
@@ -136,7 +136,7 @@ Example (periodic sensor/PING diagnostics omitted):
 [MOTOR] OK M
 [MOTOR] OK HB
 > MOTOR_STATUS
-[MOTOR] ARMED requested=[200,200] acknowledged=[200,200] known=1 queued=0 heartbeat=1 (commanded steps/s)
+[MOTOR] ARMED requested=[200,200] acknowledged=[200,200] known=1 queued=0 heartbeat=1 owner=USB (commanded steps/s)
 [MOTOR] latest_ack="OK HB"
 > STOP
 [MOTOR] STOP queued; heartbeats disabled
@@ -151,3 +151,7 @@ Host mock tests: run `tests/epuck_console/run.sh`. They use the current
 `app_config.h` and check the enabled motor lifecycle or disabled UART silence,
 including fragmentation, validation, scheduling, STOP cancellation, heartbeat
 deadlines, lost acknowledgements, USB disconnect and receive overflow.
+
+Wi-Fi transport and shared USB/Wi-Fi motor ownership are documented in
+[wifi_protocol.md](wifi_protocol.md). USB disconnection leaves a Wi-Fi-owned
+session running; STOP remains available from either source.

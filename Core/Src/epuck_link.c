@@ -1,11 +1,27 @@
 #include "epuck_link.h"
 #include "usb_console.h"
+#include "esp_link.h"
+#include "main.h"
 #include <stdio.h>
 #include <string.h>
 
-#if APP_EPUCK_ENABLED
+static epuck_source_t output_source = EPUCK_SOURCE_USB;
+static char output_session[17];
+static void command_reply(const char *message)
+{
+  if (output_source == EPUCK_SOURCE_WIFI) esp_link_reply_to(output_session, message);
+  else usb_console_write(message);
+}
+static void command_context(epuck_source_t source)
+{
+  output_source = source;
+  if (source == EPUCK_SOURCE_WIFI) esp_link_session(output_session);
+  else output_session[0] = 0;
+}
+void epuck_link_console_command(const char *command) { epuck_link_command(EPUCK_SOURCE_USB, command); }
+void epuck_link_console_lost(const char *reason) { epuck_link_source_lost(EPUCK_SOURCE_USB, reason); }
 
-#include "main.h"
+#if APP_EPUCK_ENABLED
 #include "usbd_cdc_if.h"
 
 extern UART_HandleTypeDef huart1;
@@ -53,6 +69,19 @@ static int16_t requested_left, requested_right, acknowledged_left, acknowledged_
 static int16_t motor_wait_left, motor_wait_right;
 static uint32_t motor_wait_tick, motor_last_ack, motor_last_keepalive;
 static char motor_tx_buffer[32], motor_latest_ack[64];
+static epuck_source_t motor_owner = EPUCK_SOURCE_NONE, motor_ack_source, motor_stop_source;
+static char motor_owner_session[17], motor_ack_session[17], motor_stop_session[17];
+static uint8_t motor_stop_subscribers;
+static char motor_stop_wifi_session[17];
+static void owner_context(void)
+{
+  output_source = motor_owner == EPUCK_SOURCE_NONE ? EPUCK_SOURCE_USB : motor_owner;
+  memcpy(output_session, motor_owner_session, 17U);
+}
+static uint8_t owner_available(void)
+{
+  return motor_owner == EPUCK_SOURCE_WIFI ? esp_link_owner_alive(motor_owner_session) : usb_console_available();
+}
 static void motor_reply(const char *reply);
 static void motor_receive_lost(void);
 
@@ -85,7 +114,7 @@ void epuck_link_init(void)
   __set_PRIMASK(primask);
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *uart)
+static void epuck_RxCplt_callback(UART_HandleTypeDef *uart)
 {
   uint16_t next;
   if (!active || uart != &huart1) {
@@ -108,7 +137,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *uart)
   }
 }
 
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *uart)
+static void epuck_TxCplt_callback(UART_HandleTypeDef *uart)
 {
   if (active && uart == &huart1) {
     if (tx_command == TX_PING) {
@@ -120,7 +149,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *uart)
   }
 }
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *uart)
+static void epuck_Error_callback(UART_HandleTypeDef *uart)
 {
   if (!active || uart != &huart1) {
     return;
@@ -231,11 +260,21 @@ static uint8_t accept_data(const char *record)
   candidate.accepted_records = latest_sample.accepted_records + 1U;
   latest_sample = candidate;
   __set_PRIMASK(primask);
+  esp_link_publish_sensor();
   return 1U;
 }
 
 static void motor_stop(const char *reason, uint8_t lost)
 {
+  motor_stop_subscribers |= output_source == EPUCK_SOURCE_WIFI ? 2U : 1U;
+  if (output_source == EPUCK_SOURCE_WIFI) memcpy(motor_stop_wifi_session, output_session, 17U);
+  if (motor_owner == EPUCK_SOURCE_USB) motor_stop_subscribers |= 1U;
+  else if (motor_owner == EPUCK_SOURCE_WIFI && output_source != EPUCK_SOURCE_WIFI) {
+    motor_stop_subscribers |= 2U;
+    memcpy(motor_stop_wifi_session, motor_owner_session, 17U);
+  }
+  motor_stop_source = output_source;
+  memcpy(motor_stop_session, output_session, 17U);
   motor_arm_pending = 0U;
   motor_head = motor_tail = motor_count = 0U;
   requested_left = requested_right = 0;
@@ -245,22 +284,28 @@ static void motor_stop(const char *reason, uint8_t lost)
   if (motor_wait != TX_STOP) {
     motor_wait = TX_IDLE;
     motor_stop_pending = 1U;
+  } else {
+    /* Coalesced STOP still owes completion to its latest requesting source. */
+    motor_ack_source = output_source;
+    memcpy(motor_ack_session, output_session, 17U);
   }
   motor_state = lost ? MOTOR_LOST : MOTOR_STOPPING;
   motor_known = 0U;
   tx_retry = 0U;
-  usb_console_write(reason);
+  command_reply(reason);
 }
 
-void epuck_link_console_lost(const char *reason)
+void epuck_link_source_lost(epuck_source_t source, const char *reason)
 {
-  if (active) {
+  if (active && motor_owner == source) {
+    owner_context();
     motor_stop(reason, 1U);
   }
 }
 
 static void motor_receive_lost(void)
 {
+  owner_context();
   if (motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING) {
     motor_stop("[MOTOR] session lost: UART receive loss; explicit ARM required", 1U);
   }
@@ -268,6 +313,14 @@ static void motor_receive_lost(void)
 
 static void motor_check_deadlines(uint32_t now)
 {
+  owner_context();
+  if (motor_wait == TX_STOP) {
+    output_source = motor_ack_source;
+    memcpy(output_session, motor_ack_session, 17U);
+  }
+  if ((motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING) && !owner_available()) {
+    motor_stop("[MOTOR] owner connection/CONTROL_HB lost; explicit ARM required", 1U);
+  }
   if (motor_wait != TX_IDLE &&
       (uint32_t)(now - motor_wait_tick) >= MOTOR_ACK_TIMEOUT_MS) {
     uint8_t stopping = (motor_wait == TX_STOP);
@@ -284,11 +337,19 @@ static void motor_check_deadlines(uint32_t now)
   }
 }
 
+static void stop_notify(const char *message)
+{
+  if (motor_stop_subscribers & 1U) usb_console_write(message);
+  if (motor_stop_subscribers & 2U) esp_link_reply_to(motor_stop_wifi_session, message);
+}
+
 static void motor_reply(const char *reply)
 {
   uint8_t command = TX_IDLE;
   char message[128];
   uint32_t now = HAL_GetTick();
+  output_source = motor_ack_source;
+  memcpy(output_session, motor_ack_session, 17U);
   if (strcmp(reply, "OK ARM") == 0) command = TX_ARM;
   else if (strcmp(reply, "OK M") == 0) command = TX_MOVE;
   else if (strcmp(reply, "OK HB") == 0) command = TX_HB;
@@ -298,13 +359,13 @@ static void motor_reply(const char *reply)
   snprintf(motor_latest_ack, sizeof(motor_latest_ack), "%.63s", reply);
   if (strncmp(reply, "ERR ", 4U) == 0) {
     snprintf(message, sizeof(message), "[MOTOR] %.100s", reply);
-    usb_console_write(message);
+    if (motor_wait == TX_STOP) stop_notify(message); else command_reply(message);
     motor_stop("[MOTOR] peer error; explicit ARM required", 1U);
     return;
   }
   if (command != motor_wait) {
     snprintf(message, sizeof(message), "[MOTOR] ignored late/unexpected %s", reply);
-    usb_console_write(message);
+    command_reply(message);
     return;
   }
   motor_wait = TX_IDLE;
@@ -318,21 +379,26 @@ static void motor_reply(const char *reply)
     acknowledged_right = motor_wait_right;
   } else if (command == TX_STOP) {
     motor_state = MOTOR_DISARMED;
+    motor_owner = EPUCK_SOURCE_NONE;
     motor_stop_pending = 0U;
     acknowledged_left = acknowledged_right = 0;
   }
   snprintf(message, sizeof(message), "[MOTOR] %s", reply);
-  usb_console_write(message);
+  if (command == TX_STOP) {
+    stop_notify(message);
+    motor_stop_subscribers = 0U;
+  } else command_reply(message);
 }
 
-void epuck_link_console_command(const char *command)
+void epuck_link_command(epuck_source_t source, const char *command)
 {
+  command_context(source);
   char text[64], message[192];
   const char *p;
   size_t length = strlen(command);
   int64_t left, right;
   if (length >= sizeof(text)) {
-    usb_console_write("ERR oversized command");
+    command_reply("ERR oversized command");
     return;
   }
   memcpy(text, command, length + 1U);
@@ -340,62 +406,74 @@ void epuck_link_console_command(const char *command)
   p = text;
   while (*p == ' ') ++p;
   if (strcmp(p, "HELP") == 0) {
-    usb_console_write("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
-    usb_console_write("M: integer commanded steps/s, -1000..1000; wait for OK ARM. HB every 100 ms; STOP disarms.");
+    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
+    command_reply("M: integer commanded steps/s, -1000..1000; wait for OK ARM. HB every 100 ms; STOP disarms.");
     return;
   }
   if (strcmp(p, "MOTOR_STATUS") == 0) {
     static const char *const states[] = { "DISARMED", "ARMING", "ARMED", "STOPPING", "LOST" };
     snprintf(message, sizeof(message),
-        "[MOTOR] %s requested=[%d,%d] acknowledged=[%d,%d] known=%u queued=%u heartbeat=%u (commanded steps/s)",
+        "[MOTOR] %s requested=[%d,%d] acknowledged=[%d,%d] known=%u queued=%u heartbeat=%u owner=%s (commanded steps/s)",
         states[motor_state], requested_left, requested_right,
         acknowledged_left, acknowledged_right, motor_known, motor_count,
-        motor_state == MOTOR_ARMED);
-    usb_console_write(message);
+        motor_state == MOTOR_ARMED,
+        motor_owner == EPUCK_SOURCE_WIFI ? "WIFI" : (motor_owner == EPUCK_SOURCE_USB ? "USB" : "NONE"));
+    command_reply(message);
     snprintf(message, sizeof(message), "[MOTOR] latest_ack=\"%s\"", motor_latest_ack);
-    usb_console_write(message);
+    command_reply(message);
     return;
   }
   if (!active) {
-    usb_console_write("ERR e-puck link not initialized");
+    command_reply("ERR e-puck link not initialized");
     return;
   }
-  if (!usb_console_available()) {
-    usb_console_write("ERR USB connection changed; command rejected");
+  if (source == EPUCK_SOURCE_USB && !usb_console_available()) {
+    command_reply("ERR USB connection changed; command rejected");
     return;
   }
   if (strcmp(p, "STOP") == 0) {
     motor_stop("[MOTOR] STOP queued; heartbeats disabled", 0U);
   } else if (strcmp(p, "ARM") == 0) {
+    if (motor_owner != EPUCK_SOURCE_NONE && motor_owner != source) {
+      command_reply("ERR motor session owned by another source"); return;
+    }
+    if (source == EPUCK_SOURCE_WIFI && !esp_link_owner_alive(output_session)) {
+      command_reply("ERR recent CONTROL_HB required before Wi-Fi ARM"); return;
+    }
     if ((motor_state != MOTOR_DISARMED && motor_state != MOTOR_ARMED) || motor_stop_pending) {
-      usb_console_write("ERR ARM rejected: wait for OK STOP / current session; STOP first");
+      command_reply("ERR ARM rejected: wait for OK STOP / current session; STOP first");
       return;
     }
+    motor_owner = source;
+    memcpy(motor_owner_session, output_session, 17U);
     motor_wait = TX_IDLE;
     motor_head = motor_tail = motor_count = 0U;
     motor_arm_pending = 1U;
     motor_state = MOTOR_ARMING;
     requested_left = requested_right = 0;
     motor_known = 0U;
-    usb_console_write("[MOTOR] ARM queued; wait for OK ARM");
+    command_reply("[MOTOR] ARM queued; wait for OK ARM");
   } else if (p[0] == 'M' && p[1] == ' ') {
     p += 2;
     if (!parse_number(&p, 1000U, 1000U, &left) ||
         !parse_number(&p, 1000U, 1000U, &right)) {
-      usb_console_write("ERR M requires exactly two integer speeds in -1000..1000");
+      command_reply("ERR M requires exactly two integer speeds in -1000..1000");
       return;
     }
     while (*p == ' ') ++p;
     if (*p != '\0') {
-      usb_console_write("ERR M requires exactly two integer speeds in -1000..1000");
+      command_reply("ERR M requires exactly two integer speeds in -1000..1000");
       return;
     }
+    if (motor_owner != source || (source == EPUCK_SOURCE_WIFI && !esp_link_owner_alive(motor_owner_session))) {
+      command_reply("ERR motor session owned by another source or lost"); return;
+    }
     if (motor_state != MOTOR_ARMED) {
-      usb_console_write("ERR NOT_ARMED: explicit ARM and OK ARM required");
+      command_reply("ERR NOT_ARMED: explicit ARM and OK ARM required");
       return;
     }
     if (motor_count == MOTOR_QUEUE_SIZE) {
-      usb_console_write("ERR motor queue full; command rejected");
+      command_reply("ERR motor queue full; command rejected");
       return;
     }
     requested_left = (int16_t)left;
@@ -405,9 +483,9 @@ void epuck_link_console_command(const char *command)
     ++motor_count;
     snprintf(message, sizeof(message), "[MOTOR] M %d %d queued (commanded steps/s)",
              requested_left, requested_right);
-    usb_console_write(message);
+    command_reply(message);
   } else {
-    usb_console_write("ERR unknown/malformed command; type HELP");
+    command_reply("ERR unknown/malformed command; type HELP");
   }
 }
 
@@ -597,9 +675,9 @@ static void service_tx(uint32_t now)
     return;
   }
   size = (uint16_t)strlen((const char *)buffer);
-  if (command >= TX_ARM && command != TX_STOP && !usb_console_available()) {
+  if (command >= TX_ARM && command != TX_STOP && !owner_available()) {
     __set_PRIMASK(primask);
-    epuck_link_console_lost("USB connection changed; explicit ARM required");
+    epuck_link_source_lost(motor_owner, "owner connection changed; explicit ARM required");
     return;
   }
   tx_command = command;
@@ -614,6 +692,8 @@ static void service_tx(uint32_t now)
       }
     } else {
       motor_wait = command;
+      motor_ack_source = command == TX_STOP ? motor_stop_source : motor_owner;
+      memcpy(motor_ack_session, command == TX_STOP ? motor_stop_session : motor_owner_session, 17U);
       motor_wait_tick = now;
       if (command == TX_MOVE) {
         motor_wait_left = motor_moves[motor_tail].left;
@@ -649,10 +729,6 @@ void epuck_link_task(void)
   restart_rx();
   __set_PRIMASK(primask);
   now = HAL_GetTick();
-  if (!usb_console_available() &&
-      (motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING)) {
-    epuck_link_console_lost("USB disconnected; explicit ARM required");
-  }
   motor_check_deadlines(now); /* Reject late ACKs before consuming them. */
   consume_rx(); /* At most 64 bytes per invocation; no waiting or printf IRQ. */
   now = HAL_GetTick();
@@ -664,14 +740,15 @@ void epuck_link_task(void)
 
 void epuck_link_init(void) {}
 void epuck_link_task(void) {}
-void epuck_link_console_lost(const char *reason) { (void)reason; }
-void epuck_link_console_command(const char *command)
+void epuck_link_source_lost(epuck_source_t source, const char *reason) { (void)source; (void)reason; }
+void epuck_link_command(epuck_source_t source, const char *command)
 {
+  command_context(source);
   if (strcmp(command, "HELP") == 0) {
-    usb_console_write("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
-    usb_console_write("Commanded steps/s: -1000..1000; e-puck feature is disabled");
+    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
+    command_reply("Commanded steps/s: -1000..1000; e-puck feature is disabled");
   } else {
-    usb_console_write("ERR e-puck feature disabled (APP_EPUCK_ENABLED=0)");
+    command_reply("ERR e-puck feature disabled (APP_EPUCK_ENABLED=0)");
   }
 }
 uint8_t epuck_link_get_sensor_data(epuck_sensor_data_t *sample)
@@ -683,3 +760,26 @@ uint8_t epuck_link_get_sensor_data(epuck_sensor_data_t *sample)
 }
 
 #endif
+
+/* Single HAL callback definitions serve both independent link features. */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *uart)
+{
+  if (esp_link_rx_callback(uart)) return;
+#if APP_EPUCK_ENABLED
+  epuck_RxCplt_callback(uart);
+#endif
+}
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *uart)
+{
+  if (esp_link_tx_callback(uart)) return;
+#if APP_EPUCK_ENABLED
+  epuck_TxCplt_callback(uart);
+#endif
+}
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *uart)
+{
+  if (esp_link_error_callback(uart)) return;
+#if APP_EPUCK_ENABLED
+  epuck_Error_callback(uart);
+#endif
+}

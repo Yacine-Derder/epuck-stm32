@@ -1,3 +1,4 @@
+#include "esp_link.h"
 #include "qorvo_platform.h"
 #include "deca_interface.h"
 #include "usbd_cdc_if.h"
@@ -10,7 +11,6 @@
 #include <stdbool.h>
 #include <math.h>
 
-extern UART_HandleTypeDef huart3;
 extern const struct dwt_driver_s dw3000_driver;
 
 /* -------------------------------------------------------------------------- */
@@ -96,7 +96,7 @@ static void qorvo_log_printf(const char *fmt, ...)
     len = (uint16_t)strlen(buf);
 
     (void)CDC_Transmit_FS((uint8_t *)buf, len);
-    (void)HAL_UART_Transmit(&huart3, (uint8_t *)buf, len, HAL_MAX_DELAY);
+    esp_link_log(buf);
 }
 
 /* -------------------------------------------------------------------------- */
