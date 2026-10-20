@@ -63,8 +63,9 @@ Instrumented hardware RX plus a matched disabled baseline is required.
 
 Measured Release text/data/bss (bytes): workspace default52600/712/27856;
 Stage3F RX78852/736/28256; new TX79136/736/28288;
-RX79260/736/28288; RX+trace79700/736/28312. Flash=text+data, static RAM=data+bss,
-including linker reservations. New RX RAM29024 (29048 with trace), compared with
+RX79260/736/28288; RX+trace79700/736/28312. Flash section contents=text+data; linker spans also include alignment gaps:
+workspace default53,372 bytes; new TX79,928, RX80,052 and RX+trace80,492.
+Static RAM=data+bss, including linker reservations. New RX RAM29024 (29048 with trace), compared with
 Stage3F28992. Clean committed export: default50000/712/27504;
 new TX76536/736/27936; RX+trace77100/736/27960. The352-byte RAM difference is
 preserved user streaming/control work. Disabled builds link no diagnostic state.
@@ -96,7 +97,7 @@ cover Stage3F TX/RX and traced/untraced Stage3G. LPS 195-test default/continuous
 continuous178 sanitizer, old/new DW role and cross-repository vector checks pass.
 Mocks prove cooperative state and bounds, not physical UART deadline safety.
 
-The canonical [hardware and resource guide](https://github.com/Yacine-Derder/lps-node-firmware/blob/ced936a/docs/mul_core.md)
+The canonical [hardware and resource guide](https://github.com/Yacine-Derder/lps-node-firmware/blob/0978fd9/docs/mul_core.md)
 contains exact build/flash/capture/restore commands, expected logs and A/B/C
 acceptance criteria. Only the user executes flashing. A/B require >=100 completed
 TX each in intact overlapping windows, valid strict decode and exact previous-TX
