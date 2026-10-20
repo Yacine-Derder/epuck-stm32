@@ -2,7 +2,6 @@
 #include "phy_interop.h"
 #if PHY_INTEROP_ROLE
 #include "qorvo_platform.h"
-#include "deca_interface.h"
 #include "usb_console.h"
 #include "dw3000_deca_regs.h"
 #include <inttypes.h>
@@ -14,7 +13,9 @@ static uint32_t crcErrors,phrErrors,lastErrorStatus,reportedErrors;
 static void rearm(void) {
   dwt_forcetrxoff();
   dwt_writesysstatuslo(RX_EVENTS);
-  if (dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS) state.errors++;
+  state.lastTxMs=HAL_GetTick(); // RX role reuses this as its bounded retry timer.
+  state.pending=dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS;
+  if (state.pending) state.errors++;
 }
 int32_t phy_interop_init(void) {
   memset(&state,0,sizeof(state));
@@ -44,6 +45,8 @@ void phy_interop_process(void) {
   if (PHY_INTEROP_ROLE==1) {
     if ((status&DWT_INT_TXFRS_BIT_MASK) && state.pending) {
       dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK); state.done++; state.pending=false;
+      snprintf(line,sizeof(line),"PHY DONE src=86 seq=%" PRIu32 " done=%" PRIu32,state.sequence-1,state.done);
+      usb_console_write(line);
     }
     if (state.pending && (uint32_t)(now-state.lastTxMs)>=100) {
       dwt_forcetrxoff(); state.errors++; state.pending=false;
@@ -61,7 +64,13 @@ void phy_interop_process(void) {
       usb_console_write(line);
     }
   } else {
-    if (status&DWT_INT_RXFCG_BIT_MASK) {
+    if (state.pending && !(status&RX_EVENTS) && (uint32_t)(now-state.lastTxMs)>=50) rearm();
+    if (status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {
+      state.errors++; lastErrorStatus=status;
+      if (status&DWT_INT_RXFCE_BIT_MASK) crcErrors++;
+      if (status&(DWT_INT_RXPHE_BIT_MASK|DWT_INT_RXFSL_BIT_MASK)) phrErrors++;
+      rearm(); // Error wins over a simultaneous CRC-good/overrun indication.
+    } else if (status&DWT_INT_RXFCG_BIT_MASK) {
       uint32_t sequence; uint8_t source,stamp[5]; bool valid=false;
       unsigned int length=dwt_read_reg(RX_FINFO_ID)&RX_FINFO_RXFLEN_BIT_MASK;
       if (length==PHY_DIAG_LENGTH+2) {
@@ -75,15 +84,7 @@ void phy_interop_process(void) {
           source,sequence,stamp[4],stamp[3],stamp[2],stamp[1],stamp[0],state.rx.gaps);
         usb_console_write(line);
       } else state.invalid++;
-    } else if (status&(SYS_STATUS_ALL_RX_TO|SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {
-      if (status&SYS_STATUS_ALL_RX_TO) state.timeouts++;
-      if (status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {
-        state.errors++; lastErrorStatus=status;
-        if (status&DWT_INT_RXFCE_BIT_MASK) crcErrors++;
-        if (status&(DWT_INT_RXPHE_BIT_MASK|DWT_INT_RXFSL_BIT_MASK)) phrErrors++;
-      }
-      rearm();
-    }
+    } else if (status&SYS_STATUS_ALL_RX_TO) { state.timeouts++; rearm(); }
   }
   if ((uint32_t)(now-state.lastReportMs)>=1000) {
     state.lastReportMs=now;

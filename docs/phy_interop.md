@@ -24,7 +24,8 @@ Diagnostic probe/reset/SPI/configuration reuse the existing Qorvo platform. EXTI
 stays disabled; the existing main-loop uwb_link_task polls a fixed number of
 status/data accesses, captures CRC-good packets, then rearms before USB logging.
 No protocol busy-wait, HAL_Delay in service, direct UART writes, radio ISR logging,
-new timer or automatic ARM command is introduced. Existing HAL SPI blocking and
+new timer or automatic ARM command is introduced. A failed RX enable retries at
+most once per50ms; ambiguous simultaneous good/error status rejects the frame. Existing HAL SPI blocking and
 vendor startup calibration mean no hard worst-case latency guarantee is claimed;
 combined UART/heartbeat/telemetry timing still requires physical validation.
 USB messages use the established bounded usb_console_write queue.
@@ -46,5 +47,27 @@ Cross-repository golden/profile checks: run `python3 tools/test/phy_interop.py`
 from the sibling LPS checkout after its native Unity runners are generated.
 
 Exact paired hardware commands, required connections, log capture, reliability
-checks and restoration are maintained in the canonical LPS document's hardware
-procedure. Do not flash ESP32/dsPIC or alter motor ownership to run this test.
+checks and restoration are maintained in the
+[current canonical hardware procedure](https://github.com/Yacine-Derder/lps-node-firmware/blob/92a8759/docs/phy_interop.md#user-procedure-connections-flashing-and-capture). Do not flash ESP32/dsPIC or alter motor ownership to run this test.
+
+
+## Validation/resource checkpoint
+
+Workspace Release builds: default RAM28568/FLASH53372 bytes; diagnostic RX
+RAM28992/FLASH79616 bytes, TX similarly below128KiB RAM/1MiB flash. The opt-in
+service compiler frame is280 bytes (plus existing SPI/USB/HAL/library callers);
+this is not measured stack high-water or a wall-time bound. Disabled feature
+has no linked diagnostic state. Vendor driver unused-variable warnings remain
+unchanged. Existing15 console and9 ESP regression scenarios pass; diagnostic
+codec, two radio roles and six activation/failure/IRQ cases pass ASan/UBSan.
+Pre-existing streaming/control files retain their original checksums and are not
+part of these commits. Physical radio and combined UART/watchdog timing remain
+unverified. Stage3G must wait for the paired user test; send both raw directional
+logs, summaries, board/geometry/build details and any repeatable asymmetry.
+
+The clean committed-code export, excluding those pre-existing edits, also builds
+all roles: default RAM28216 bytes; diagnostic TX/RX RAM28640 bytes. Normal legacy
+APP_UWB_ENABLED=1/channel9 builds separately. The working-tree versus clean-export
+352-byte RAM difference belongs to the preserved streaming work, not this feature.
+The linker's minimum stack reservation remains1024 bytes; actual high-water is
+not measured and the large remaining SRAM is not a proof of interrupt-stack safety.

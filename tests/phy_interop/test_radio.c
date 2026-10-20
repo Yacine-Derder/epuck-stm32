@@ -8,7 +8,7 @@
 static uint32_t ticks,status,length;
 static uint8_t incoming[34];
 static unsigned int rxStarts,txStarts,logs;
-static int32_t startResult=DWT_SUCCESS;
+static int32_t startResult=DWT_SUCCESS,rxResult=DWT_SUCCESS;
 static dwt_config_t profile;
 uint32_t HAL_GetTick(void) { return ticks; }
 int32_t qorvo_probe_and_init(void) { return DWT_SUCCESS; }
@@ -21,7 +21,7 @@ void dwt_setrxtimeout(uint32_t t) { assert(t==50000); }
 void dwt_setpreambledetecttimeout(uint16_t t) { assert(t==0); }
 void dwt_writesysstatuslo(uint32_t bits) { status&=~bits; }
 uint32_t dwt_readsysstatuslo(void) { return status; }
-int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rxStarts++; return DWT_SUCCESS; }
+int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rxStarts++; return rxResult; }
 int32_t dwt_starttx(uint8_t mode) { assert(mode==DWT_START_TX_IMMEDIATE); txStarts++; return startResult; }
 int32_t dwt_writetxdata(uint16_t len,uint8_t *frame,uint16_t at) {
   uint8_t src; uint32_t seq; assert(at==0 && len==32 && phyDiagDecode(frame,len,&src,&seq) && src==0x86); return DWT_SUCCESS;
@@ -52,6 +52,12 @@ int main(void) {
   status=DWT_INT_RXPHE_BIT_MASK; phy_interop_process(); assert(state.errors==2 && phrErrors==1);
   status=DWT_INT_RXFTO_BIT_MASK; phy_interop_process(); assert(state.timeouts==1 && rxStarts==8);
   assert(txStarts==0);
+  length=34; phyDiagEncode(incoming,0x84,1);
+  status=DWT_INT_RXFCG_BIT_MASK|DWT_INT_RXFCE_BIT_MASK; phy_interop_process();
+  assert(state.rx.valid==2 && state.errors==3 && crcErrors==2);
+  rxResult=DWT_ERROR; status=DWT_INT_RXFTO_BIT_MASK; phy_interop_process(); assert(state.pending);
+  unsigned int before=rxStarts; phy_interop_process(); assert(rxStarts==before);
+  rxResult=DWT_SUCCESS; status=DWT_INT_CP_LOCK_BIT_MASK; /* unrelated sticky status */ ticks+=50; phy_interop_process(); assert(!state.pending && rxStarts==before+1);
 #endif
   state.lastTxMs=UINT32_MAX-500; ticks=600; phy_interop_process(); assert(logs>0);
 }
