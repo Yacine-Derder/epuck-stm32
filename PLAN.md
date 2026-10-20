@@ -9,7 +9,8 @@ CP0/CP1: plausible ch5 profile/diagnostic v1 codec and golden vectors establishe
 CP3 `f7f3e9f` pushed; CP4–CP6 final hardening/docs are the commit containing this
 section. LPS CP1 `25bbc97`, CP2 `3f72be3`; validated LPS handoff `92a8759` (exact immutable hardware guide); latest peer
 metadata-only hashes are reported in the final handoff.
-All required software work is complete; user bidirectional hardware gate remains.
+All required software work is complete; user A/B logs now satisfy the Stage3F
+bidirectional packet gate (review2026-10-20). Stage3G may begin.
 
 Validation: codec, TX/RX mocks and all six APP_UWB0/1 x role0/1/2 cases pass
 ASan/UBSan, including failure readiness, passive RX, CRC/framing priority, bounded
@@ -22,11 +23,21 @@ default/28992 RX; clean export28216 default/28640 diagnostic; no diagnostic stat
 linked when disabled. Service compiler frames264 TX/280 RX, not device high-water
 or a hard latency guarantee. No hardware flashed or central/other-repo files edited.
 
-Next exact action: user runs A/B/C from docs/phy_interop.md's canonical guide,
-collecting >=100 TX completions/direction at fixed separation, both raw logs,
-counts/gaps/CRC/framing/timeouts and any asymmetry. Stage3G remains gated on
-valid bidirectional OTA reception; compilation/mocks do not satisfy it. No further
-firmware changes or repeat builds are justified merely while awaiting those logs.
-Normal app switch/role/NVM behavior remains intact; no MUL port, ranging or
-localization is implemented here. The central document can later be updated by
-its owner to Stage3F software ready / physical gate pending; it was not changed.
+Hardware review: A records85 valid packets/89 receiver-span positions,4 gaps,
+103 errors,1634 timeouts, CRC0/PHR-RS8. B records113/137,24 gaps; last STAT at135
+reports56 aggregate errors/2611 timeouts before final RX136. Both transmitters
+show >=100 completions. Capture gaps/repeated startup prefixes and unequal
+windows prevent synchronized PDR or reproducible directional comparisons.
+Provenance and detailed accounting: docs/phy_interop.md and its canonical report.
+
+Next milestone: Stage3G frame-interoperability gate is open; no Stage3G code
+was started here. Carry forward intact overlapping >=100-packet fixed-geometry
+captures and UART latency diagnosis. A has six UART error callbacks and27
+lost/flushed bytes plus console queue loss; B has none. Existing slow SPI with
+global interrupt masking is a latency risk requiring measurement, not a proven
+root cause. Keep motors disarmed for diagnosis; do not optimize radio/driver
+behavior merely from packet-gap percentages. Mixed-radio ranging/timestamps,
+calibration, localization and combined control-loop timing remain unvalidated.
+The central document needs its owner's status update to packet gate accepted
+with these limitations; it remains untouched. This review changes documentation
+only and preserves all pre-existing user firmware/control/streaming edits.
