@@ -2,6 +2,9 @@
 
 Stage3F packet gate accepted from user A/B hardware logs reviewed2026-10-20.
 Both directions demonstrate hardware CRC-good and strict v1 payload reception.
+Stage3G now reuses this profile through a shared configuration helper; see
+[the portable-core integration guide](mul_core.md) for its separate diagnostic
+format and pending hardware gate. The Stage3F packet and evidence are unchanged.
 The canonical profile/packet specification is
 [LPS Stage 3F](https://github.com/Yacine-Derder/lps-node-firmware/blob/25bbc976cdebae4bde1acdbb4a50ff8377cdd665/docs/phy_interop.md).
 Local `Core/Inc/phy_diag.h` and `tests/phy_interop/vectors.json` independently
