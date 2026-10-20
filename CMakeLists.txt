@@ -62,6 +62,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/esp_link.c
     Core/Src/usb_console.c
     Core/Src/uwb_link.c
+    Core/Src/phy_interop.c
     ${QORVO_DRIVER_SOURCES}
     ${QORVO_DW3000_SOURCES}
     ${QORVO_PLATFORM_SOURCES}
@@ -94,3 +95,9 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
 # Enable float support in printf
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -u _printf_float)
+# Experimental PHY packet diagnostic only; app_config/NVM/defaults stay intact.
+set(PHY_INTEROP_ROLE "0" CACHE STRING "0=off, 1=TX, 2=RX")
+if(NOT PHY_INTEROP_ROLE MATCHES "^[012]$")
+    message(FATAL_ERROR "PHY_INTEROP_ROLE must be 0, 1 or 2")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PHY_INTEROP_ROLE=${PHY_INTEROP_ROLE})
