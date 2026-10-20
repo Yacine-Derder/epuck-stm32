@@ -17,5 +17,10 @@ int main(void) {
   DWT->CYCCNT=30; mul_timing_service(20); assert(serviceMax==10 && calls==1);
   DWT->CYCCNT=80; mul_timing_service(50); assert(serviceMax==30 && gapMax==30);
   mul_timing_report(); assert(strstr(lastLine,"spi_off_cycles=21") && strstr(lastLine,"hz=168000000"));
+#if MUL_TWR_ROLE
+  assert(strncmp(lastLine,"MULH TIME",9)==0);
+#else
+  assert(strncmp(lastLine,"MULG TIME",9)==0);
+#endif
   mul_timing_init(); assert(!spiMax && !calls);
 }

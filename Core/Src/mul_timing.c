@@ -25,7 +25,12 @@ void mul_timing_service(uint32_t start) {
 }
 void mul_timing_report(void) {
   char line[192];
-  snprintf(line,sizeof(line),"MULG TIME hz=%" PRIu32 " spi_off_cycles=%" PRIu32 " service_cycles=%" PRIu32 " gap_cycles=%" PRIu32 " calls=%" PRIu32,
+#if MUL_TWR_ROLE
+#define MUL_TIME_PREFIX "MULH TIME"
+#else
+#define MUL_TIME_PREFIX "MULG TIME"
+#endif
+  snprintf(line,sizeof(line),MUL_TIME_PREFIX " hz=%" PRIu32 " spi_off_cycles=%" PRIu32 " service_cycles=%" PRIu32 " gap_cycles=%" PRIu32 " calls=%" PRIu32,
     SystemCoreClock,spiMax,serviceMax,gapMax,calls);
   usb_console_write(line);
 }

@@ -6,7 +6,7 @@ Do not begin Stage 3H, mixed-radio TWR/TDoA or localization from this checkpoint
 Canonical source is LPS `portable/mul_core`. This repository's
 [checked-in snapshot/API and wire specification](../ThirdParty/mul_core/README.md)
 is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to published
-LPS `ccd78acfb56ac9ea42c31b88d5db458380c67564` (ADS/explicit-epoch update). The corresponding STM32 code
+LPS `0e3b5802e04f87e2c6e5e41ae07c165ae07ea0d1` (ADS validity/failure diagnostics update). The corresponding STM32 code
 checkpoint is `1bd3ecdba534549b4c9ac89f17fd8bd7270fe056`. Later documentation
 commits keep this same dependency; record both final HEADs with hardware logs.
 
@@ -147,3 +147,33 @@ failure, missing completion, invalid frames, CRC/error priority, RX retry,
 antenna readback failure, activation guards and compile-time safety isolation.
 The new role code is in Core/Src/mul_ads_radio.c; core remains vendored/offline.
 Do not claim physical ranging or Stage3G closure from these host tests/builds.
+
+
+## Mixed-radio ADS log hardening
+
+The updated canonical guide links the generated first-capture report and all219
+raw samples, exact analyzer command/selection rules, current build/flash artifacts
+and>=500-completion multi-distance calibration procedure. The negative sample is
+reproducible from recorded inputs; no mathematical/conversion fix is justified.
+Hardware exchanges were demonstrated by the user; the hardened images remain
+unflashed and physical accuracy/safety acceptance is pending.
+
+Core104-byte state retains raw ToF and completed counters, adds rangeValid and
+invalidRanges, and records active-abort cause/failed stage with seven saturating
+uint16 counts. RESULT range_valid0 rejects physical use of a negative raw result;
+STAT bad_range is cumulative. Session-tagged TIMES/STAT prevent offline cross-run
+joining. ABORT is emitted only for active cancellation, not every idle RX error.
+TIMES retains associated math-invalid candidates. MUL_ADS_TRACE_TIMES defaults
+ON; turn OFF only for a deliberate bandwidth comparison, not calibration logs.
+
+MUL_TIMING_TRACE now supports ADS and emits MULH TIME; Stage3G still emits MULG
+TIME. Qorvo PRIMASK/SPI policy remains unchanged. A56-byte SPI body alone at
+1.3125MHz exceeds a115200-baud UART character interval, but no fault-time trace
+proves SPI causation. This capture's EPUCK FAULT is USART1, unlike the earlier
+ESP USART3 issue; there is no proof it caused the negative range. No UART/motor/
+watchdog code was changed; existing safety tests remain mandatory.
+
+Use AdsResponderTrace for the next user experiment (exact commands in the
+canonical guide); ELF build/AdsResponderTrace/EPuck_STM32.elf. Raw/accepted/robust
+statistics and abort/UART counts must be reported separately. Source builds do
+not establish physical ranging accuracy or safety deadlines. No new Stage3H work.

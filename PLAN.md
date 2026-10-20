@@ -57,3 +57,24 @@ baseline remain pending (the newer off-baseline file contains DW TX output).
 Canonical [ADS handoff](https://github.com/Yacine-Derder/lps-node-firmware/blob/master/docs/mul_ads_twr.md)
 records exact builds/ELFs, safe stationary tests, limitations and cleanup inventory.
 No ESP/dsPIC update or optional Wi-Fi repair. No hardware flashed.
+
+
+## First ADS logs: audit and hardening
+
+The user's first mixed-radio ranging logs show computed exchanges, not calibrated
+accuracy or a passed safety/hardware gate. The negative sample is reproduced from
+its six inputs without changing the formula; physical cause remains unknown.
+One visible USART1 e-puck ORE report has cumulative uart5/drop14; no synchronized
+link to the initiator outlier can be established from the partial responder log.
+
+Current core pin0e3b5802e04f87e2c6e5e41ae07c165ae07ea0d1 separates raw completion
+from nonnegative range validity, retains raw negatives, and classifies abort causes
+and failed stages. New session-tagged diagnostics and optional ADS timing use
+bounded output, while normal/Stage3G and UWB-only safety behavior stay available.
+No SPI/IRQ policy, antenna constants, ESP/dsPIC or equation changes. Software tests
+and both-role/traced/quiet builds pass; hardened firmware has not been flashed.
+
+Next: canonical docs/mul_ads_twr.md multi-distance procedure,>=500 completions per
+precisely measured separation, full two-device/safety logs and disabled baseline.
+No new Stage3H work or hardware gate closure. Physical accuracy/negative-range
+cause and safety-UART overrun remain unresolved.

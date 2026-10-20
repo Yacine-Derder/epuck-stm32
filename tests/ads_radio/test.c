@@ -12,7 +12,8 @@ static uint64_t txMarker,rxMarker;
 static uint16_t txAnt,rxAnt;
 static bool badAnt;
 static unsigned starts,rearms;
-static int32_t startResult=DWT_SUCCESS,rxResult=DWT_SUCCESS;
+static int32_t startResult=DWT_SUCCESS,rxResult=DWT_SUCCESS,writeResult=DWT_SUCCESS;
+static char captured[16384];
 uint32_t HAL_GetTick(void) { return tick; }
 int32_t uwb_diag_configure(void) { return DWT_SUCCESS; }
 void dwt_settxantennadelay(uint16_t v) { txAnt=v; }
@@ -28,14 +29,14 @@ int32_t dwt_starttx(uint8_t mode) {
  assert(mode==(DWT_START_TX_IMMEDIATE|(p.type==mulAdsReport?0:DWT_RESPONSE_EXPECTED)));
  starts++; return startResult;
 }
-int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at); memcpy(output,p,n); return DWT_SUCCESS; }
+int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at); memcpy(output,p,n); return writeResult; }
 void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert(n==58 && !at && ranging==1); }
 void dwt_setrxaftertxdelay(uint32_t delay) { assert(!delay); }
 uint32_t dwt_read_reg(uint32_t reg) { assert(reg==RX_FINFO_ID); return length; }
 void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n==56 && !at); memcpy(out,input,n); }
 void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(segment==DWT_COMPAT_NONE); mulEncodeTimestamp(out,rxMarker); }
 void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
-void usb_console_write(const char *text) { assert(strlen(text)<192); }
+void usb_console_write(const char *text) { assert(strlen(text)<192); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }
 static void step(void) { tick++; mul_ads_radio_process(); }
 static mulAdsPacket_t sentPacket(void) { mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p)); return p; }
 static void receive(mulAdsPacket_t *p,uint64_t t) {
@@ -55,6 +56,24 @@ int main(void) {
  tick=2000; startResult=DWT_ERROR; step(); assert(state.stage==adsIdle && state.aborted==1 && errors==1);
  startResult=DWT_SUCCESS; tick=3000; step(); assert(state.pending);
  tick=3100; step(); assert(!state.pending && state.aborted==2); /* Lost TX completion. */
+ assert(state.lastAbortReason==adsAbortDeadline && state.lastAbortStage==adsPollTx);
+ tick=4000; step(); txMarker=0x344A792200ULL; status=DWT_INT_TXFRS_BIT_MASK; step();
+ mulAdsPacket_t neg={.source=0x84,.destination=0x86,.session=state.session,.transaction=state.transaction,.type=mulAdsResponse};
+ receive(&neg,0x34502B98D1ULL); txMarker=0x3452F90200ULL;status=DWT_INT_TXFRS_BIT_MASK;step();
+ neg.type=mulAdsReport;neg.stamps[0]=0x761756DDC1ULL;neg.stamps[1]=0x761D0963FCULL;neg.stamps[2]=0x761FD6D14DULL;
+ receive(&neg,0);assert(state.completed==2 && state.invalidRanges==1 && !state.rangeValid && state.tof<0);
+ assert(strstr(captured,"range_valid=0"));
+ tick=5000;writeResult=DWT_ERROR;step();assert(state.lastAbortReason==adsAbortTxStart && state.stage==adsIdle);writeResult=DWT_SUCCESS;
+ tick=6000;step();txMarker=1000;status=DWT_INT_TXFRS_BIT_MASK;step();
+ neg.type=mulAdsResponse;neg.transaction=state.transaction;memset(neg.stamps,0,sizeof(neg.stamps));
+ receive(&neg,2000);txMarker=3000;status=DWT_INT_TXFRS_BIT_MASK;step();neg.type=mulAdsReport;
+ receive(&neg,4000);assert(state.lastAbortReason==adsAbortMath && state.failedStages[adsReportRx-1]==1);
+ assert(strstr(captured,"cause=6 stage=6"));
+#if MUL_ADS_TRACE_TIMES
+ assert(strstr(captured,"TIMES session="));
+#else
+ assert(!strstr(captured,"MULH TIMES"));
+#endif
 #else
  mulAdsPacket_t p={.source=0x84,.destination=0x86,.type=mulAdsPoll,.session=55,.transaction=1};
  receive(&p,MUL_TIMESTAMP_MASK-20); assert(sentPacket().type==mulAdsResponse);
@@ -72,6 +91,17 @@ int main(void) {
  rxResult=DWT_ERROR; status=DWT_INT_RXFTO_BIT_MASK; step(); assert(retryRx);
  rxResult=DWT_SUCCESS; unsigned before=rearms; tick=(tick/50+1)*50-1; step(); assert(rearms==before+1 && !retryRx);
  unsigned n=starts; mul_ads_radio_process(); assert(n==starts);
+ // Bounded formatting at maximal counter and session values, not just small runs.
+ state.stage=adsIdle;state.transaction=UINT32_MAX;state.attempts=state.completed=state.aborted=state.rejected=state.invalidRanges=UINT32_MAX;
+ state.session=UINT64_MAX;errors=invalid=timeouts=UINT32_MAX;status=0;tick+=2000;step();
+ assert(strstr(captured,"bad_range=4294967295")); /* Detect truncation, not just buffer overflow. */
+ for(unsigned j=0;j<7;j++) state.failedStages[j]=UINT16_MAX;
+ logAbort();assert(strstr(captured,"by_stage=65535,65535,65535,65535,65535,65535,65535"));
+#if MUL_ADS_TRACE_TIMES
+ mulAdsPacket_t maximum={.stamps={MUL_TIMESTAMP_MASK,MUL_TIMESTAMP_MASK,MUL_TIMESTAMP_MASK}};
+ for(unsigned j=0;j<3;j++)state.stamps[j]=MUL_TIMESTAMP_MASK;
+ logTimes(&maximum);assert(strstr(captured,"t6=FFFFFFFFFF"));
+#endif
  badAnt=true; assert(mul_ads_radio_init()==DWT_ERROR);
  puts("DWM3000 ADS measured timestamp/auto-RX/start failure/CRC priority/timeout/recovery adapter test passed");
 }
