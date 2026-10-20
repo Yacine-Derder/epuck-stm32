@@ -54,6 +54,35 @@ static void open_session(void) {
  snprintf(record,sizeof(record),"OPEN %s\r\n",id); wire(record); tasks(); assert(esp_valid && !esp_hb_seen);
 }
 static void wifi_arm(void) { cmd("CONTROL_HB"); cmd("ARM"); assert(strcmp(robot_tx,"ARM\n")==0); robot_ack("OK ARM\n"); assert(motor_owner==EPUCK_SOURCE_WIFI && motor_state==MOTOR_ARMED); }
+static void streaming(void) {
+ open_session();
+ cmd("STREAM 50"); assert(stream_desired==50 && motor_owner==EPUCK_SOURCE_NONE && !motor_last_keepalive);
+ assert(strstr(uart3_output,"RSP 0123456789abcdef [STREAM] desired=50"));
+ tick=1000; tasks(); assert(strcmp(robot_tx,"PING\n")==0); robot_ack("PONG\n");
+ assert(strcmp(robot_tx,"STREAM 50\n")==0 && stream_ack_source==EPUCK_SOURCE_WIFI);
+ /* A USB request while the Wi-Fi request is pending does not steal its ACK. */
+ hUsbDeviceFS.dev_state=USBD_STATE_CONFIGURED; hUsbDeviceFS.pClassData=&usb;
+ epuck_link_console_command("STREAM 100"); assert(stream_desired==100 && stream_inflight==50);
+ robot_ack("OK STREAM\n"); assert(strstr(uart3_output,"RSP 0123456789abcdef [STREAM] OK STREAM acknowledged=50"));
+ robot_ack("PONG\n"); assert(strcmp(robot_tx,"STREAM 100\n")==0 && stream_ack_source==EPUCK_SOURCE_USB);
+ robot_ack("OK STREAM\n"); robot_ack("PONG\n");
+ for(int i=0;i<16;i++){usb.TxState=0;usb_console_task();}
+ assert(strstr(usb_output,"OK STREAM acknowledged=100"));
+ cmd("STREAM_STATUS"); assert(strstr(uart3_output,"[STREAM] desired=100"));
+ assert(motor_owner==EPUCK_SOURCE_NONE && !motor_last_keepalive && stream_acknowledged==100);
+ unsigned before=0; for(char *q=uart3_output;(q=strstr(q,"DATA2 "))!=NULL;q+=6) ++before;
+ for(unsigned n=0;n<20;n++) {
+  tick+=50;
+  assert(accept_data("DATA 7 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 -20 21"));
+  for(unsigned k=0;k<4;k++) esp_link_task();
+ }
+ unsigned after=0; for(char *q=uart3_output;(q=strstr(q,"DATA2 "))!=NULL;q+=6) ++after;
+ assert(after==before+1); /* latest-only, maximum 1 Hz despite 20 Hz sensor arrivals */
+ size_t used=strlen(uart3_output);
+ for(unsigned k=0;k<20;k++) esp_link_task();
+ assert(strlen(uart3_output)==used); /* No duplicate cached sample forwarding. */
+
+}
 static void ownership(void) {
  open_session(); cmd("ARM"); assert(!motor_arm_pending && !robot_busy); assert(strstr(uart3_output,"CONTROL_HB required"));
  wifi_arm(); cmd("M 200 -200"); assert(strcmp(robot_tx,"M 200 -200\n")==0); robot_ack("OK M\n");
@@ -179,7 +208,7 @@ static void sensors(void) {
  strcpy(data,"DATA"); for(unsigned i=0;i<21;i++) { strcat(data," ");strcat(data,fields[i]); } assert(!accept_data(data));
  strcat(data," 0 1"); assert(!accept_data(data));
  strcpy(data,"DATA"); fields[0]="0"; for(unsigned i=0;i<22;i++) { strcat(data," ");strcat(data,fields[i]); }
- assert(accept_data(data)); assert(latest_sample.time_ms==0 && latest_sample.accepted_records==2 && esp_count==2); /* Every accepted sample enqueued. */
+ assert(accept_data(data)); assert(latest_sample.time_ms==0 && latest_sample.accepted_records==2 && esp_count==1); /* New raw sample retained; telemetry waits for next 1 Hz slot. */
  for(unsigned i=0;i<310;i++) parse_byte(i<5?(uint8_t)"DATA "[i]:'X'); parse_byte('\n');
  assert(malformed_data==1 && latest_sample.accepted_records==2);
  for(char *p=data;*p;p++) parse_byte((uint8_t)*p); parse_byte('\r');parse_byte('\n');
@@ -187,10 +216,18 @@ static void sensors(void) {
 }
 static void telemetry(void) {
  latest_sample=(epuck_sensor_data_t){.valid=1,.accepted_records=1,.time_ms=65535,.received_at_ms=UINT32_MAX-9,.steps_left=INT32_MIN,.steps_right=INT32_MAX};
+ latest_sample.light[0]=32766;
  latest_sample.prox[0]=INT16_MIN; latest_sample.acc[2]=INT16_MAX; tick=10;
  esp_link_publish_sensor(); esp_link_task();
- assert(strstr(uart3_output,"DATA 1 20 65535 -32768")); assert(strstr(uart3_output,"-2147483648 2147483647\n"));
- esp_link_log("Qorvo\r\nCMD not a command\n"); esp_link_task(); esp_link_task();
+ assert(strstr(uart3_output,"DATA2 1 20 65535 -32768")); assert(strstr(uart3_output,"-2147483648 2147483647\n"));
+ assert(!strstr(uart3_output,"32766")); /* light data is not on the new wire */
+ unsigned first=esp_sample_sequence;
+ latest_sample.accepted_records=2; tick+=999; esp_link_publish_sensor(); assert(esp_sample_sequence==first);
+ tick++; esp_link_publish_sensor(); assert(esp_sample_sequence==2);
+ esp_sample_tick=UINT32_MAX-500; latest_sample.accepted_records=3; tick=498;
+ esp_link_publish_sensor(); assert(esp_sample_sequence==2);
+ tick=499; esp_link_publish_sensor(); assert(esp_sample_sequence==3); /* 1000 ms across wrap */
+ esp_link_log("Qorvo\r\nCMD not a command\n"); for (unsigned i=0;i<16;i++) esp_link_task();
  assert(strstr(uart3_output,"LOG Qorvo\n") && strstr(uart3_output,"LOG CMD not a command\n"));
  assert(!motor_arm_pending && !motor_count);
 }
@@ -206,6 +243,7 @@ int main(int argc,char **argv) {
  else if(strcmp(argv[1],"faults")==0) faults();
  else if(strcmp(argv[1],"telemetry")==0) telemetry();
  else if(strcmp(argv[1],"sensors")==0) sensors();
+ else if(strcmp(argv[1],"streaming")==0) streaming();
  else if(strcmp(argv[1],"diagnostics")==0) diagnostics();
  else if(strcmp(argv[1],"reasons")==0) reason_codes();
  else if(strcmp(argv[1],"initfail")==0) {

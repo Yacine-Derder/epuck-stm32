@@ -24,7 +24,8 @@ static uint16_t esp_length;
 static uint8_t esp_discard, esp_cr, esp_qhead, esp_qtail, esp_count;
 static uint8_t esp_valid, esp_hb_seen;
 static char esp_session_id[17];
-static uint32_t esp_hb_tick, esp_sample_sequence, esp_log_drops;
+static uint32_t esp_hb_tick, esp_sample_sequence, esp_log_drops, esp_sample_tick;
+static uint8_t esp_sample_sent;
 /* ISR callbacks capture flags/counters only. All diagnostic formatting/IO is
  * deferred to the main loop, and reporting never creates another queue fault.
  */
@@ -255,14 +256,17 @@ void esp_link_publish_sensor(void)
   epuck_sensor_data_t sample;
   char record[ESP_LINE];
   if (!esp_active) return;
+  uint32_t now=HAL_GetTick();
+  if (esp_sample_sent && (uint32_t)(now-esp_sample_tick)<APP_WIFI_SENSOR_PERIOD_MS) return;
   if (epuck_link_get_sensor_data(&sample) && sample.accepted_records != esp_sample_sequence) {
     int n = snprintf(record, sizeof(record),
-      "DATA %lu %lu %u %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %ld %ld",
+      "DATA2 %lu %lu %u %d %d %d %d %d %d %d %d %d %d %d %ld %ld",
       (unsigned long)sample.accepted_records, (unsigned long)(HAL_GetTick()-sample.received_at_ms),
       sample.time_ms, sample.prox[0],sample.prox[1],sample.prox[2],sample.prox[3],sample.prox[4],sample.prox[5],sample.prox[6],sample.prox[7],
-      sample.light[0],sample.light[1],sample.light[2],sample.light[3],sample.light[4],sample.light[5],sample.light[6],sample.light[7],
       sample.acc[0],sample.acc[1],sample.acc[2],(long)sample.steps_left,(long)sample.steps_right);
-    if (n > 0 && n < (int)sizeof(record) && esp_enqueue(record,0U)) esp_sample_sequence=sample.accepted_records;
+    if (n > 0 && n < (int)sizeof(record) && esp_enqueue(record,0U)) {
+      esp_sample_sequence=sample.accepted_records; esp_sample_tick=now; esp_sample_sent=1U;
+    }
   }
 }
 void esp_link_task(void)

@@ -18,6 +18,8 @@ extern "C" {
  */
 void epuck_link_init(void);
 void epuck_link_task(void);
+/* Invoke after init and before potentially lengthy radio startup. */
+void epuck_link_boot_safety(void);
 
 /* Raw sensor readings, without calibration or unit conversion.
  * Accelerometer readings require e-puck JE1 bridges 33-34, 35-36, 37-38.
@@ -41,6 +43,16 @@ typedef struct {
  * using unsigned subtraction. Both 32-bit tick and record count may wrap.
  */
 uint8_t epuck_link_get_sensor_data(epuck_sensor_data_t *sample);
+
+typedef struct {
+  uint16_t desired_ms, in_flight_ms, acknowledged_ms;
+  uint8_t pending, waiting_ack, fence_pending, acknowledged_valid, confirmed, stale, attempts, recovering;
+  uint32_t sample_age_ms, received_records;
+} epuck_stream_status_t;
+/* Main-loop snapshot. Confirmation requires OK STREAM, never just a queued TX.
+ * pending includes the ordered PONG fence; sample_age_ms=UINT32_MAX if absent.
+ */
+void epuck_link_get_stream_status(epuck_stream_status_t *status);
 
 /* Main-loop USB console hooks. Motor commands require an explicit ARM and
  * its acknowledgement; speeds are commanded steps/s, not measured speed.

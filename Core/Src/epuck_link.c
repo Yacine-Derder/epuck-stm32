@@ -10,7 +10,7 @@ static char output_session[17];
 static void command_reply(const char *message)
 {
   if (output_source == EPUCK_SOURCE_WIFI) esp_link_reply_to(output_session, message);
-  else usb_console_write(message);
+  else if (APP_DEBUG_TELEMETRY || strcmp(message,"[MOTOR] OK HB")!=0) usb_console_write(message);
 }
 static void command_context(epuck_source_t source)
 {
@@ -31,12 +31,10 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 #define RX_TASK_BUDGET 64U
 
 static const uint8_t ping[] = "PING\n";
-static const uint8_t sensor_request[] = "R\n";
-enum { TX_IDLE, TX_PING, TX_SENSOR, TX_ARM, TX_MOVE, TX_HB, TX_STOP };
+enum { TX_IDLE, TX_PING, TX_STREAM, TX_ARM, TX_MOVE, TX_HB, TX_STOP };
 #define PENDING_PING 1U
-#define PENDING_SENSOR 2U
 static volatile uint8_t tx_command;
-static uint8_t tx_pending, prefer_sensor, tx_retry;
+static uint8_t tx_pending, tx_retry;
 static uint32_t last_tx_attempt;
 static uint8_t incoming;
 /* ISR produces, task consumes. Critical sections protect consumption, fault
@@ -45,14 +43,33 @@ static uint8_t incoming;
 static volatile uint8_t ring[RX_RING_SIZE];
 static volatile uint16_t head, tail;
 static volatile uint8_t active, rx_fault;
-static volatile uint32_t rx_bytes, rx_dropped, uart_errors;
-static volatile uint32_t ping_started, ping_sent, sensor_requests;
+static volatile uint32_t rx_bytes, rx_dropped, uart_errors, uart_error_bits;
+static volatile uint32_t ping_started, ping_sent, stream_requests;
 static uint32_t tx_failures, pong_count, bad_lines, malformed_data;
 static uint32_t last_ping_tick, last_report_tick;
-static char line[256], last_reply[256], usb_report[1024];
+static char line[256], last_reply[256];
+#if APP_DEBUG_TELEMETRY
+static char usb_report[1280];
+#endif
 static uint32_t line_length;
 static uint8_t discard_line, saw_cr, discarded_data;
 static epuck_sensor_data_t latest_sample;
+
+#if APP_EPUCK_STREAM_PERIOD_MS != 0 && (APP_EPUCK_STREAM_PERIOD_MS < 50 || APP_EPUCK_STREAM_PERIOD_MS > 10000)
+#error "APP_EPUCK_STREAM_PERIOD_MS must be 0 or 50..10000"
+#endif
+#define STREAM_ACK_MS 500U
+#define STREAM_RETRY_MS 5000U
+#define STREAM_ATTEMPTS 3U
+static uint16_t stream_desired = APP_EPUCK_STREAM_PERIOD_MS;
+static uint16_t stream_inflight, stream_acknowledged;
+static uint8_t stream_wait, stream_ack_seen, stream_uncertain, stream_known;
+static uint8_t stream_need = 1U, stream_attempts, stream_peer_seen;
+static uint32_t stream_sent_tick, stream_ack_tick, stream_pong_tick, stream_retry_tick;
+static uint32_t stream_fence, stream_late_acks;
+static char stream_tx_buffer[24];
+static epuck_source_t stream_source = EPUCK_SOURCE_USB, stream_ack_source;
+static char stream_session[17], stream_ack_session[17];
 
 #define MOTOR_QUEUE_SIZE 4U
 #define MOTOR_HEARTBEAT_MS 100U
@@ -142,8 +159,8 @@ static void epuck_TxCplt_callback(UART_HandleTypeDef *uart)
   if (active && uart == &huart1) {
     if (tx_command == TX_PING) {
       ++ping_sent;
-    } else if (tx_command == TX_SENSOR) {
-      ++sensor_requests;
+    } else if (tx_command == TX_STREAM) {
+      ++stream_requests;
     }
     tx_command = TX_IDLE;
   }
@@ -155,6 +172,7 @@ static void epuck_Error_callback(UART_HandleTypeDef *uart)
     return;
   }
   ++uart_errors;
+  uart_error_bits |= uart->ErrorCode;
   rx_fault = 1U;
   /* F4 clears PE/FE/NE/ORE by reading SR then DR. HAL has already consumed
    * any error-affected RX byte; also clear errors without RXNE to avoid an
@@ -216,6 +234,146 @@ static uint8_t parse_number(const char **cursor, uint32_t positive_limit,
   *cursor = p;
   *value = negative ? -(int64_t)magnitude : (int64_t)magnitude;
   return 1U;
+}
+
+static uint8_t stream_stale(uint32_t now)
+{
+  if (!stream_desired) return 0U;
+  uint32_t age = (uint32_t)(now - stream_ack_tick);
+  if (latest_sample.valid && (uint32_t)(now-latest_sample.received_at_ms) < age)
+    age = (uint32_t)(now-latest_sample.received_at_ms);
+  return (!latest_sample.valid && !stream_known) || age > (uint32_t)stream_desired*3U+500U;
+}
+
+void epuck_link_get_stream_status(epuck_stream_status_t *status)
+{
+  if (!status) return;
+  uint32_t now = HAL_GetTick();
+  *status = (epuck_stream_status_t){
+    .desired_ms=stream_desired, .in_flight_ms=stream_wait ? stream_inflight : 0U,
+    .acknowledged_ms=stream_acknowledged, .pending=stream_wait || stream_need,
+    .waiting_ack=stream_wait && !stream_ack_seen && !stream_uncertain, .fence_pending=stream_wait,
+    .acknowledged_valid=stream_known,
+    .confirmed=stream_known && stream_acknowledged==stream_desired,
+    .stale=stream_stale(now), .attempts=stream_attempts,
+    .recovering=stream_uncertain || !stream_known,
+    .sample_age_ms=latest_sample.valid ? now-latest_sample.received_at_ms : UINT32_MAX,
+    .received_records=latest_sample.accepted_records
+  };
+}
+
+static void stream_status(void)
+{
+  epuck_stream_status_t s;
+  char message[224];
+  epuck_link_get_stream_status(&s);
+  snprintf(message,sizeof(message),
+    "[STREAM] desired=%u pending=%u in_flight=%u acknowledged=%u ack_valid=%u confirmed=%u attempts=%u recovering=%u waiting_ack=%u fence_pending=%u",
+    s.desired_ms,s.pending,s.in_flight_ms,s.acknowledged_ms,s.acknowledged_valid,
+    s.confirmed,s.attempts,s.recovering,s.waiting_ack,s.fence_pending);
+  command_reply(message);
+  snprintf(message,sizeof(message),"[STREAM] age_ms=%lu records=%lu stale=%u late_ack=%lu (age=4294967295 means no sample)",
+    (unsigned long)s.sample_age_ms,(unsigned long)s.received_records,s.stale,(unsigned long)stream_late_acks);
+  command_reply(message);
+}
+
+static void stream_reply_context(void)
+{
+  output_source=stream_ack_source;
+  memcpy(output_session,stream_ack_session,17U);
+}
+
+static void stream_recover(void)
+{
+  stream_known=0U;
+  stream_peer_seen=0U; /* Wait for a fresh PONG before reconfiguration. */
+  stream_need=MUL_UWB_ONLY || stream_desired!=0U;
+  stream_attempts=0U;
+  stream_retry_tick=HAL_GetTick();
+  if (stream_wait) { stream_uncertain=1U; stream_ack_seen=0U; }
+  /* Never reset PING/PONG fence counters: missing replies can delay a fence,
+   * but must not let an old OK STREAM confirm a newer request. */
+}
+
+static void stream_receive(const char *reply)
+{
+  uint32_t now=HAL_GetTick();
+  if (strcmp(reply,"PONG")==0) { stream_peer_seen=1U; stream_pong_tick=now; }
+  else if (strncmp(reply,"BOOT ",5U)==0) stream_recover();
+  else if (strcmp(reply,"OK STREAM")==0) {
+    if (!stream_wait || stream_ack_seen || stream_uncertain ||
+        (uint32_t)(now-stream_sent_tick)>=STREAM_ACK_MS) { ++stream_late_acks; return; }
+    stream_ack_seen=stream_known=1U;
+    stream_acknowledged=stream_inflight;
+    stream_ack_tick=now;
+    stream_reply_context();
+    char message[128];
+    snprintf(message,sizeof(message),"[STREAM] OK STREAM acknowledged=%u ms desired=%u ms%s",
+      stream_acknowledged,stream_desired,stream_acknowledged==stream_desired?"":" (new setting still pending)");
+    command_reply(message);
+  }
+}
+
+static void stream_task(uint32_t now)
+{
+#if MUL_UWB_ONLY
+  /* The only permitted value is zero: idempotent stop retries cannot confirm
+   * a different period. Normal mode retains its strict ordered ACK fence. */
+  if (stream_wait && !stream_ack_seen && (uint32_t)(now-stream_sent_tick)>=STREAM_RETRY_MS) {
+    stream_wait=0U; stream_need=1U; stream_attempts=0U; stream_peer_seen=0U;
+  }
+  if (!stream_wait && !stream_known && !stream_need &&
+      (uint32_t)(now-stream_sent_tick)>=STREAM_RETRY_MS) {
+    /* A PONG fence may finish after a lost OK STREAM. Zero is still
+     * unconfirmed: retry stopping, even though that old fence completed. */
+    stream_need=1U; stream_attempts=0U; stream_peer_seen=0U;
+  }
+#endif
+  if (stream_wait) {
+    if (!stream_ack_seen && !stream_uncertain && (uint32_t)(now-stream_sent_tick)>=STREAM_ACK_MS) {
+      stream_uncertain=1U; stream_known=0U;
+      stream_reply_context();
+      command_reply("[STREAM] ACK timeout; unconfirmed, draining ordered PONG fence");
+    }
+    /* The peer queues whole replies in command order. Count *all* transmitted
+     * PINGs; a dropped PONG delays this fence rather than completing it early.
+     * No subsequent STREAM can transmit until all older ACKs are behind it.
+     */
+    if ((stream_ack_seen || stream_uncertain) && (int32_t)(pong_count-stream_fence)>=0) {
+      stream_wait=0U;
+      if (stream_inflight!=stream_desired) { stream_need=1U; stream_attempts=0U; }
+      else if (stream_ack_seen) { stream_need=0U; stream_attempts=0U; }
+      else if (stream_desired==0U) stream_need=0U; /* One explicit stop, no automatic retry. */
+      else {
+        stream_need=1U;
+        stream_retry_tick=now+(stream_attempts>=STREAM_ATTEMPTS ? STREAM_RETRY_MS : 100U);
+      }
+    }
+  }
+  if (!stream_wait && stream_need && stream_attempts>=STREAM_ATTEMPTS &&
+      (int32_t)(now-stream_retry_tick)>=0) stream_attempts=0U;
+  if (!stream_wait && !stream_need && stream_known && stream_desired && stream_stale(now)) {
+    stream_known=0U; stream_need=1U; stream_attempts=0U; stream_retry_tick=now;
+    output_source=stream_source; memcpy(output_session,stream_session,17U);
+    command_reply("[STREAM] DATA stale; re-establishing desired period (motors unchanged)");
+  }
+}
+
+static uint8_t stream_ready(uint32_t now)
+{
+  return stream_need && !stream_wait && stream_peer_seen &&
+    (uint32_t)(now-stream_pong_tick)<2500U && stream_attempts<STREAM_ATTEMPTS &&
+    (int32_t)(now-stream_retry_tick)>=0;
+}
+
+static void stream_begin(uint32_t now)
+{
+  stream_inflight=stream_desired;
+  stream_wait=1U; stream_ack_seen=stream_uncertain=stream_known=stream_need=0U;
+  stream_sent_tick=now; ++stream_attempts;
+  stream_ack_source=stream_source; memcpy(stream_ack_session,stream_session,17U);
+  stream_fence=ping_started+1U;
+  tx_pending|=PENDING_PING; /* Next PING follows this STREAM in the shared UART. */
 }
 
 static uint8_t accept_data(const char *record)
@@ -405,10 +563,31 @@ void epuck_link_command(epuck_source_t source, const char *command)
   while (length && text[length - 1U] == ' ') text[--length] = '\0';
   p = text;
   while (*p == ' ') ++p;
-  if (strcmp(p, "HELP") == 0) {
-    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
-    command_reply("M: integer commanded steps/s, -1000..1000; wait for OK ARM. HB every 100 ms; STOP disarms.");
+#if MUL_UWB_ONLY
+  if (strcmp(p,"STOP") && strcmp(p,"HELP") && strcmp(p,"MOTOR_STATUS") && strcmp(p,"STREAM_STATUS") && strcmp(p,"LINK_STATUS")) {
+    command_reply("ERR UWB-only: ARM, movement and stream changes disabled; STOP remains available");
     return;
+  }
+#endif
+  if (strcmp(p, "HELP") == 0) {
+#if MUL_UWB_ONLY
+    command_reply("STOP | MOTOR_STATUS | STREAM_STATUS | LINK_STATUS | HELP; UWB-only movement/stream changes disabled");
+    return;
+#endif
+    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
+    command_reply("M: integer commanded steps/s, -1000..1000; wait for OK ARM. HB every 100 ms; STOP disarms.");
+    command_reply("STREAM: 0 stops automatic DATA; otherwise 50..10000 ms. Queued is not acknowledged.");
+    return;
+  }
+  if (strcmp(p,"STREAM_STATUS")==0) { stream_status(); return; }
+  if (strcmp(p,"LINK_STATUS")==0) {
+    uint32_t mask=__get_PRIMASK(); __disable_irq();
+    uint32_t errors=uart_errors,bits=uart_error_bits,drops=rx_dropped,received=rx_bytes;
+    __set_PRIMASK(mask);
+    snprintf(message,sizeof(message),"[LINK] rx=%lu uart=%lu bits=0x%lx drops=%lu data=%lu bad=%lu motor=%u stop_pending=%u",
+      (unsigned long)received,(unsigned long)errors,(unsigned long)bits,(unsigned long)drops,
+      (unsigned long)latest_sample.accepted_records,(unsigned long)malformed_data,motor_state,motor_stop_pending);
+    command_reply(message); return;
   }
   if (strcmp(p, "MOTOR_STATUS") == 0) {
     static const char *const states[] = { "DISARMED", "ARMING", "ARMED", "STOPPING", "LOST" };
@@ -430,6 +609,21 @@ void epuck_link_command(epuck_source_t source, const char *command)
   if (source == EPUCK_SOURCE_USB && !usb_console_available()) {
     command_reply("ERR USB connection changed; command rejected");
     return;
+  }
+  if (strncmp(p,"STREAM",6U)==0 && (p[6]==' ' || p[6]=='\0')) {
+    p+=6;
+    int64_t period;
+    if (!parse_number(&p,10000U,0U,&period) || (period!=0 && period<50)) {
+      command_reply("ERR STREAM requires exactly one integer: 0 or 50..10000 ms"); return;
+    }
+    while (*p==' ') ++p;
+    if (*p) { command_reply("ERR STREAM requires exactly one integer: 0 or 50..10000 ms"); return; }
+    stream_desired=(uint16_t)period;
+    stream_source=source; memcpy(stream_session,output_session,17U);
+    stream_need=1U; stream_attempts=0U; stream_retry_tick=HAL_GetTick();
+    snprintf(message,sizeof(message),"[STREAM] desired=%u ms queued locally; not acknowledged",stream_desired);
+    command_reply(message);
+    return; /* Independent of motor owner; never refreshes motor watchdogs. */
   }
   if (strcmp(p, "STOP") == 0) {
     motor_stop("[MOTOR] STOP queued; heartbeats disabled", 0U);
@@ -512,6 +706,7 @@ static void parse_byte(uint8_t byte)
         if (strcmp(line, "PONG") == 0) {
           ++pong_count;
         }
+        stream_receive(line);
         motor_reply(line);
       }
     }
@@ -554,6 +749,7 @@ static void consume_rx(void)
     if (tail == head) {
       __set_PRIMASK(primask);
       if (motor_fault) {
+        stream_recover();
         motor_receive_lost();
       }
       break;
@@ -565,10 +761,12 @@ static void consume_rx(void)
   }
 }
 
+#if APP_DEBUG_TELEMETRY
 static void report_status(uint32_t now)
 {
   uint32_t primask, sent, started, requested, received, dropped, errors;
   epuck_sensor_data_t sample;
+  epuck_stream_status_t stream;
   uint8_t ready;
   USBD_CDC_HandleTypeDef *cdc;
   int length;
@@ -585,7 +783,7 @@ static void report_status(uint32_t now)
            cdc != NULL && cdc->TxState == 0U);
   sent = ping_sent;
   started = ping_started;
-  requested = sensor_requests;
+  requested = stream_requests;
   received = rx_bytes;
   dropped = rx_dropped;
   errors = uart_errors;
@@ -594,9 +792,11 @@ static void report_status(uint32_t now)
     return;
   }
   (void)epuck_link_get_sensor_data(&sample);
+  epuck_link_get_stream_status(&stream);
   length = snprintf(usb_report, sizeof(usb_report),
-      "[EPUCK] tx=%lu started=%lu rx=%lu pong=%lu drops=%lu errors=%lu tx_fail=%lu bad_lines=%lu sensor_req=%lu data=%lu data_bad=%lu last=\"%s\"\r\n"
-      "[SENSOR] valid=%u age_ms=%lu time_ms=%u prox=[%d,%d,%d,%d,%d,%d,%d,%d] light=[%d,%d,%d,%d,%d,%d,%d,%d] acc=[%d,%d,%d] steps=[%ld,%ld]\r\n",
+      "[EPUCK] tx=%lu started=%lu rx=%lu pong=%lu drops=%lu errors=%lu tx_fail=%lu bad_lines=%lu stream_tx=%lu data=%lu data_bad=%lu last=\"%s\"\r\n"
+      "[SENSOR] valid=%u age_ms=%lu time_ms=%u prox=[%d,%d,%d,%d,%d,%d,%d,%d] light=[%d,%d,%d,%d,%d,%d,%d,%d] acc=[%d,%d,%d] steps=[%ld,%ld]\r\n"
+      "[STREAM] desired=%u pending=%u in_flight=%u acknowledged=%u ack_valid=%u confirmed=%u stale=%u attempts=%u late_ack=%lu\r\n",
       (unsigned long)sent, (unsigned long)started, (unsigned long)received,
       (unsigned long)pong_count, (unsigned long)dropped, (unsigned long)errors,
       (unsigned long)tx_failures, (unsigned long)bad_lines,
@@ -610,7 +810,9 @@ static void report_status(uint32_t now)
       sample.light[0], sample.light[1], sample.light[2], sample.light[3],
       sample.light[4], sample.light[5], sample.light[6], sample.light[7],
       sample.acc[0], sample.acc[1], sample.acc[2],
-      (long)sample.steps_left, (long)sample.steps_right);
+      (long)sample.steps_left, (long)sample.steps_right,
+      stream.desired_ms,stream.pending,stream.in_flight_ms,stream.acknowledged_ms,
+      stream.acknowledged_valid,stream.confirmed,stream.stale,stream.attempts,(unsigned long)stream_late_acks);
   /* Static report storage; CDC copies accepted data into its owned buffer
    * and does not overwrite that buffer until transmission completes.
    */
@@ -620,6 +822,24 @@ static void report_status(uint32_t now)
   }
 }
 
+#else
+static void report_status(uint32_t now)
+{
+  static uint32_t reported_errors,reported_drops,reported_bad;
+  if ((uint32_t)(now-last_report_tick)<1000U) return;
+  last_report_tick=now;
+  uint32_t mask=__get_PRIMASK(); __disable_irq();
+  uint32_t errors=uart_errors,drops=rx_dropped,bits=uart_error_bits;
+  __set_PRIMASK(mask);
+  if (errors==reported_errors && drops==reported_drops && bad_lines==reported_bad) return;
+  reported_errors=errors; reported_drops=drops; reported_bad=bad_lines;
+  char text[192];
+  snprintf(text,sizeof(text),"[EPUCK] FAULT uart=%lu bits=0x%lx drops=%lu bad_lines=%lu data_bad=%lu",
+    (unsigned long)errors,(unsigned long)bits,(unsigned long)drops,(unsigned long)bad_lines,(unsigned long)malformed_data);
+  usb_console_write(text);
+}
+#endif
+
 static void service_tx(uint32_t now)
 {
   uint32_t primask;
@@ -628,7 +848,7 @@ static void service_tx(uint32_t now)
   uint16_t size;
   if ((uint32_t)(now - last_ping_tick) >= 1000U) {
     last_ping_tick = now;
-    tx_pending |= PENDING_PING | PENDING_SENSOR;
+    tx_pending |= PENDING_PING;
   }
   uint32_t retry_ms = (motor_stop_pending || motor_arm_pending || motor_state == MOTOR_ARMED)
                      ? 10U : 100U;
@@ -642,7 +862,7 @@ static void service_tx(uint32_t now)
     return;
   }
   /* Reserved STOP slot cannot fill. Heartbeats take priority over queued
-   * speed changes, then ARM/movement, then the existing background polls.
+   * speed changes, then ARM/movement, then streaming configuration and background PING.
    * Only one motor command awaits acknowledgement at any time.
    */
   if (motor_stop_pending) {
@@ -660,11 +880,10 @@ static void service_tx(uint32_t now)
     snprintf(motor_tx_buffer, sizeof(motor_tx_buffer), "M %d %d\n",
              motor_moves[motor_tail].left, motor_moves[motor_tail].right);
     buffer = (const uint8_t *)motor_tx_buffer;
-  } else if (tx_pending & PENDING_SENSOR &&
-             (prefer_sensor || !(tx_pending & PENDING_PING))) {
-    command = TX_SENSOR;
-    bit = PENDING_SENSOR;
-    buffer = sensor_request;
+  } else if (stream_ready(now)) {
+    command = TX_STREAM;
+    snprintf(stream_tx_buffer, sizeof(stream_tx_buffer), "STREAM %u\n", stream_desired);
+    buffer = (const uint8_t *)stream_tx_buffer;
   } else if (tx_pending & PENDING_PING) {
     command = TX_PING;
     bit = PENDING_PING;
@@ -685,11 +904,10 @@ static void service_tx(uint32_t now)
   if (HAL_UART_Transmit_IT(&huart1, buffer, size) == HAL_OK) {
     tx_pending &= (uint8_t)~bit;
     tx_retry = 0U;
-    if (command == TX_PING || command == TX_SENSOR) {
-      prefer_sensor = (command == TX_PING);
-      if (command == TX_PING) {
-        ++ping_started;
-      }
+    if (command == TX_PING) {
+      ++ping_started;
+    } else if (command == TX_STREAM) {
+      stream_begin(now);
     } else {
       motor_wait = command;
       motor_ack_source = command == TX_STOP ? motor_stop_source : motor_owner;
@@ -718,6 +936,15 @@ static void service_tx(uint32_t now)
   __set_PRIMASK(primask);
 }
 
+void epuck_link_boot_safety(void)
+{
+#if MUL_UWB_ONLY
+  command_context(EPUCK_SOURCE_USB);
+  motor_stop("[SAFETY] UWB-only startup STOP; ARM/movement disabled",0U);
+  service_tx(HAL_GetTick());
+#endif
+}
+
 void epuck_link_task(void)
 {
   uint32_t now, primask;
@@ -732,6 +959,7 @@ void epuck_link_task(void)
   motor_check_deadlines(now); /* Reject late ACKs before consuming them. */
   consume_rx(); /* At most 64 bytes per invocation; no waiting or printf IRQ. */
   now = HAL_GetTick();
+  stream_task(now);
   service_tx(now);
   report_status(now);
 }
@@ -740,12 +968,17 @@ void epuck_link_task(void)
 
 void epuck_link_init(void) {}
 void epuck_link_task(void) {}
+void epuck_link_boot_safety(void) {}
+void epuck_link_get_stream_status(epuck_stream_status_t *status)
+{
+  if (status) *status=(epuck_stream_status_t){.sample_age_ms=UINT32_MAX};
+}
 void epuck_link_source_lost(epuck_source_t source, const char *reason) { (void)source; (void)reason; }
 void epuck_link_command(epuck_source_t source, const char *command)
 {
   command_context(source);
   if (strcmp(command, "HELP") == 0) {
-    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS");
+    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
     command_reply("Commanded steps/s: -1000..1000; e-puck feature is disabled");
   } else {
     command_reply("ERR e-puck feature disabled (APP_EPUCK_ENABLED=0)");

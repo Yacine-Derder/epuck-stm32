@@ -131,3 +131,7 @@ if(MUL_TIMING_TRACE AND MUL_DIAG_ROLE STREQUAL "0")
 endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     MUL_DIAG_ROLE=${MUL_DIAG_ROLE} MUL_TIMING_TRACE=$<BOOL:${MUL_TIMING_TRACE}>)
+
+# Secondary-function isolation only: keep dsPIC UART safety/STOP servicing.
+option(MUL_UWB_ONLY "Disable ESP and automatic sensor streaming; prohibit ARM/movement" OFF)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_UWB_ONLY=$<BOOL:${MUL_UWB_ONLY}>)

@@ -24,7 +24,7 @@ boundary. STM32 validates commands again after unwrapping.
 | STM32 → ESP32 | `SESSION <id> LOST` | Invalid framing, UART loss, response overflow or client-heartbeat expiry. |
 | STM32 → ESP32 | `DIAG <id> <fields>` | Best-effort invalidation diagnostics; also available on STM32 USB. |
 | STM32 → ESP32 | `RSP <id> <text>` | Source-specific command response, acknowledgement or error. |
-| STM32 → ESP32 | `DATA ...` | Validated sensor telemetry, described below. |
+| STM32 → ESP32 | `DATA2 ...` | Compact telemetry; legacy DATA also accepted, described below. |
 | STM32 → ESP32 | `LOG <text>` | Debug/Qorvo output; never a command or telemetry record. |
 
 IDs are 16 lowercase hexadecimal characters, generated from 64 random bits
@@ -79,26 +79,27 @@ wheel speed. Steps counters are commanded steps, not measured wheel motion.
 
 ## Sensor telemetry
 
-One-shot `R\n` polling and PING remain once per second. Every newly accepted
-DATA sample is offered to the USART3 queue independently of USB or TCP
-connectivity. No invalid or uninitialized sample is published.
+Normal acquisition defaults to1000ms; no periodic R polling is used. PING and
+safety control retain their independent deadlines. The latest valid new sample
+is offered at most once per1000ms; faster acquisition is coalesced. Sequence gaps
+can therefore be intentional and do not measure network loss.
 
 ```text
-DATA sequence age_ms epuck_time_ms prox0 ... prox7 light0 ... light7 acc_x acc_y acc_z steps_left steps_right
+DATA2 sequence age_ms epuck_time_ms prox0 ... prox7 acc_x acc_y acc_z steps_left steps_right
 ```
 
-Exactly 24 decimal fields follow DATA:
+Exactly16 decimal numeric fields follow DATA2: uint32 sequence and age_ms,
+uint16 peer time_ms, eleven int16 proximity/accelerometer readings, and two
+int32 commanded-step counters. Sequence/tick arithmetic wraps modulo2^32 and
+peer time modulo2^16. Age excludes later queue/network delays. Steps are not
+measured motion. No light-sensor values are transmitted. Raw dsPIC DATA still
+contains its original22 numeric fields, including lights; that parser is unchanged.
 
-| Fields | Type and meaning |
-| --- | --- |
-| sequence | uint32, accepted-record counter; wraps modulo 2^32. Gaps indicate missing samples/backpressure. |
-| age_ms | uint32, unsigned STM32 tick difference from full-record acceptance to publication. Tick arithmetic wraps modulo 2^32. It excludes network/transmit queue delay. |
-| epuck_time_ms | uint16, peer milliseconds wrapping every 65536 ms. |
-| prox[8], light[8], acc[3] | int16 raw readings, no calibration/unit conversion. |
-| steps_left, steps_right | int32 commanded-step counters, not encoders/measured motion. |
-
-Valid accelerometer readings require JE1 bridges **33–34, 35–36, 37–38**.
-Sensors may become stale; inspect age, sequence progress and arrival time.
+The updated ESP bridge/client also accept legacy DATA with24 numeric fields
+(the same metadata/readings plus8 lights). New STM32 DATA2 needs the updated
+ESP allowlist; an old bridge drops that prefix. The client omits light display.
+Accelerometer readings require JE1 bridges33–34,35–36,37–38. Inspect age,
+sequence progress and client arrival time; raw values can repeat.
 
 ## Bounded buffering and failures
 
@@ -151,7 +152,7 @@ Hardware verification (no hardware was flashed by this change):
    USB unplugged; HELP/MOTOR_STATUS should work without arming.
 4. With wheels lifted, explicitly ARM, wait for OK ARM, then `M 200 200`,
    `M -200 200`, MOTOR_STATUS and STOP. Verify requested versus acknowledged
-   speeds and OK STOP. Sensor polling must continue.
+   speeds and OK STOP. Sensor streaming must continue.
 5. Repeat on USB. While one source owns the session, verify the other's ARM/M
    are rejected and STOP is accepted from either. Unplug USB during a Wi-Fi
    session and verify it continues; unplug it during a USB session and verify

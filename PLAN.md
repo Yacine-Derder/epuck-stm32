@@ -2,45 +2,39 @@
 
 ## Verified baseline
 
-Stage 3F's bidirectional channel5 packet gate is accepted from user hardware
-logs. Counts, capture limits and UART faults are in docs/phy_interop.md. This
-does not establish ranging/timestamp compatibility or combined safety timing.
-Project-wide source is ../MUL UWB FIRMWARE PROJECT.md, read-only for this task;
-its Stage 3F-not-started status is stale and needs an owner update.
+Stage3F bidirectional channel5 packet interoperability is accepted from user
+logs; this does not validate ranging or combined safety timing. The central
+project document remains read-only and needs an owner status update.
 
-## Stage 3G
+## Stage3G
 
-**Software/build validation complete; hardware validation PENDING. Do not begin Stage 3H.**
-CP0/CP1: small canonical LPS portable/mul_core with explicit committed vendoring,
-not a new remote/submodule. Consumer configure/build rejects file-hash drift.
-No sibling/unpublished source is required. Existing user files remain unchanged.
-CP2: legacy codec/identity/sequence/40-bit helpers extracted without semantic
-changes; new44-byte type0x70/version1 diagnostic and caller-owned metadata API.
-No clock/TWR/correction/localization rewrite or packet change to Stage 3E.
-CP3/CP4: narrow adapters on both radios, shared Stage 3F profile; default paths
-preserved. Raw40-bit RX, actual TX completion and previous-TX packet metadata
-have explicit clock identity/units. At-most-once-per-ms task-level polling;
-no new ISR queue, heap, delay or safety logic changes.
+**Implemented/software tested; hardware gate pending. Do not begin Stage3H.**
+Canonical LPS portable/mul_core is vendored with offline hash verification,
+pinned to1b807c5c7507d67d802ee976ae4dfe5b27fd88e9. No sibling checkout, third
+remote or new submodule is required. The44-byte diagnostic carries explicit
+clock identity/40-bit DTU and previous completed TX metadata. Stage3E math,
+radio frame formats and the core pin are unchanged in this follow-up.
 
-Compatible published implementation: LPS/canonical core
-1b807c5c7507d67d802ee976ae4dfe5b27fd88e9; STM32
-1bd3ecdba534549b4c9ac89f17fd8bd7270fe056. UPSTREAM.json pins the former.
-Final docs commits retain the dependency. docs/mul_core.md links exact API,
-source ownership, resources, build and hardware procedures.
+User A/B marker comparisons match43/43 and62/62, but TX endpoints89/93 fall
+short of the >=100 requirement. C demonstrates >=542 valid RX with6 gaps and
+USART3 ORE0x8. No recorded new gap occurs near that visible fault. Confirmed
+UWB-disabled baseline sessions1000ms and100ms have zero UART/drop/parser faults.
+Unequal captures prevent a matched delivery ratio or proof of SPI causation.
+SPI IRQ-off297.5us is a concrete concern; masking/speed/priorities remain unchanged.
 
-CP5: core/golden/fuzz/reset/wrap, TX/RX, six activation/init-failure/IRQ, timing
-and 9 interleaved safety/sensor/ESP scenarios pass ASan/UBSan;15 console/9 ESP
-regressions pass. Clean committed export independently tests/builds (6 console,
-8 ESP,8 coexistence), including normal UWB-enabled/channel9. All default,
-Stage 3F and Stage 3G Release builds pass. New workspace RX RAM29024 bytes,
-RX+trace29048; disabled default28568 unchanged. Clean code uses352 fewer bytes
-from absent user streaming changes. Stack estimates are not high-water proof.
+Follow-up integrates the reviewed local streaming work, adds explicit UWB-only
+startup STOP/disarm/stream-off and command rejection, quiet debug telemetry,
+concise fault/counter output, and normal1Hz compact DATA2 without lights.
+Normal mode remains available; safety deadlines/heartbeats are not throttled.
+The compatible ESP bridge/client update is required for normal DATA2 operation.
+No dsPIC change. Tests cover policy safety/ACK retry, telemetry tick wrap and
+coalescing, core/diagnostic/timing,15 console/9 ESP/9 interleaved cases. Five
+Release profiles build; UwbOnlyRX static RAM17020, CoexistRX27792 bytes.
+Software tests do not establish physical interrupt latency or motor safety.
 
-CP6: optional DWT cycle maxima for outer SPI IRQ-off/service/start gaps; no SPI
-speed/masking/priority change and no claimed UART fault fix. CP7 guide complete.
-**Next exact action:** user A/B >=100 completed TX per direction with matching
-previous actual TX metadata, plus concurrent RX/sensors/ESP and disabled baseline,
-UART/drop/age/timing and secured zero-speed STOP/ARM/heartbeat validation.
-The user streaming patch enables100ms trials; published baseline retains 1 Hz
-polling. Keep that provenance explicit. Physical timing/ranging, UART causation
-and full Stage 3G acceptance await hardware logs. No flash or Stage 3H work.
+Next: user sustained UWB-only >=10min/>=500 completed TX per direction, then
+matched UwbOffSafe baseline; optional NormalBaseline/CoexistRX comparison.
+Require STOP acknowledgement/disarm, exact metadata, UART/drop/error/timing and
+capture endpoints. [docs/mul_core.md](docs/mul_core.md) links canonical results,
+exact builds, CubeProgrammer ELF paths and acceptance instructions. No hardware
+flashed. Full Stage3G validation and Stage3H await adequate physical evidence.

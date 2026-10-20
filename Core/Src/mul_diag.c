@@ -6,6 +6,7 @@
 #include "uwb_diag_profile.h"
 #include "qorvo_platform.h"
 #include "usb_console.h"
+#include "app_config.h"
 #include "dw3000_deca_regs.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -35,6 +36,9 @@ int32_t mul_diag_init(void) {
   usb_console_write(MUL_DIAG_ROLE==1 ?
     "MULG INIT radio=DWM3000 role=TX src=86 core=1 type=70 version=1 bytes=44 bits=40 unit=DTU ch=5" :
     "MULG INIT radio=DWM3000 role=RX src=86 core=1 type=70 version=1 bytes=44 bits=40 unit=DTU ch=5");
+  char policy[96];
+  snprintf(policy,sizeof(policy),"MULG POLICY uwb_only=%u esp=%u stream_ms=%u",(unsigned)MUL_UWB_ONLY,(unsigned)APP_ESP_ENABLED,(unsigned)APP_EPUCK_STREAM_PERIOD_MS);
+  usb_console_write(policy);
   if (MUL_DIAG_ROLE==2) rearm();
   return DWT_SUCCESS;
 }
@@ -85,11 +89,9 @@ void mul_diag_process(void) {
       rearm();
       if (valid) {
         mulCoreObserveSequence(&state.rx,message.sequence);
-        snprintf(line,sizeof(line),"MULG RX src=84 seq=%" PRIu32 " valid=1 rx=%02X%02X%02X%02X%02X gaps=%" PRIu32 " bits=40 unit=DTU",
-          message.sequence,stamp[4],stamp[3],stamp[2],stamp[1],stamp[0],state.rx.gaps);
-        usb_console_write(line);
-        snprintf(line,sizeof(line),"MULG META seq=%" PRIu32 " prev_valid=%u prev_seq=%" PRIu32 " prev_tx=%02X%08" PRIX32,
-          message.sequence,message.markerValid,message.markerSequence,(unsigned)(message.txMarker>>32),(uint32_t)message.txMarker);
+        snprintf(line,sizeof(line),"MULG RX src=84 seq=%" PRIu32 " valid=1 rx=%02X%02X%02X%02X%02X gaps=%" PRIu32 " prev_valid=%u prev_seq=%" PRIu32 " prev_tx=%02X%08" PRIX32 " bits=40 unit=DTU",
+          message.sequence,stamp[4],stamp[3],stamp[2],stamp[1],stamp[0],state.rx.gaps,
+          message.markerValid,message.markerSequence,(unsigned)(message.txMarker>>32),(uint32_t)message.txMarker);
         usb_console_write(line);
       } else state.invalid++;
     } else if (status&SYS_STATUS_ALL_RX_TO) { state.timeouts++; rearm(); }

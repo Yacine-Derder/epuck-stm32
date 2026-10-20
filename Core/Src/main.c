@@ -122,6 +122,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   esp_link_init();
   epuck_link_init();
+  epuck_link_boot_safety();
   HAL_GPIO_WritePin(LED_ST_GPIO_Port, LED_ST_Pin, GPIO_PIN_RESET);
 
   led_toggle_period_ms = 1000U / (2U * LED_FREQ);

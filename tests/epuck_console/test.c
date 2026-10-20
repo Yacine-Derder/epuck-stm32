@@ -23,7 +23,7 @@ uint32_t HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *buffer, uint16_t
 }
 uint32_t HAL_UART_Transmit_IT(UART_HandleTypeDef *uart, const uint8_t *buffer, uint16_t size) {
   assert(uart==&huart1 && irq_mask && !mock_tx_busy && size<sizeof(mock_tx_copy));
-  assert((size==5 && memcmp(buffer,"PING\n",5)==0) || (size==2 && memcmp(buffer,"R\n",2)==0) ||
+  assert((size==5 && memcmp(buffer,"PING\n",5)==0) || (size>=9 && memcmp(buffer,"STREAM ",7)==0) ||
          (size==4 && memcmp(buffer,"ARM\n",4)==0) || (size==3 && memcmp(buffer,"HB\n",3)==0) ||
          (size==5 && memcmp(buffer,"STOP\n",5)==0) || (size>2 && memcmp(buffer,"M ",2)==0));
   ++tx_calls;
@@ -92,7 +92,7 @@ static void cancellation(void) {
   finish(); reply("OK M\nOK ARM\n"); step(1000);
   assert(strcmp(mock_tx_copy,"STOP\n")==0 && motor_state!=MOTOR_ARMED);
   stop_ack(); assert(ping_started==1); /* Background can run after STOP completes. */
-  finish(); step(tick); assert(strcmp(mock_tx_copy,"R\n")==0); finish();
+  finish(); step(tick); assert(!mock_tx_busy);
   assert(!motor_count && !motor_arm_pending && motor_state==MOTOR_DISARMED);
   /* STOP also cancels an ARM that has not yet transmitted. */
   console("ARM\nSTOP\n"); step(tick); assert(strcmp(mock_tx_copy,"STOP\n")==0 && !motor_arm_pending); stop_ack();
@@ -102,9 +102,9 @@ static void heartbeats(void) {
   for(unsigned t=100;t<=1000;t+=100) {
     step(t); assert(strcmp(mock_tx_copy,"HB\n")==0); uint32_t calls=tx_calls;
     step(t); assert(tx_calls==calls); finish(); reply("OK HB\n"); step(t+1);
-    if(t==1000) { assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); step(t+1); assert(strcmp(mock_tx_copy,"R\n")==0); finish(); }
+    if(t==1000) { assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); step(t+1); assert(!mock_tx_busy); }
   }
-  assert(motor_state==MOTOR_ARMED && ping_sent==1 && sensor_requests==1);
+  assert(motor_state==MOTOR_ARMED && ping_sent==1 && stream_requests==0);
   console("ARM\n"); step(1002); assert(strcmp(mock_tx_copy,"ARM\n")==0 && motor_state==MOTOR_ARMING); /* Explicit re-arm resets movement. */
   finish(); reply("OK ARM\n"); step(1003);
   console("STOP\n"); step(1102); assert(strcmp(mock_tx_copy,"STOP\n")==0); stop_ack();
@@ -147,6 +147,124 @@ static void retry(void) {
   step(9); assert(tx_calls==1); console("STOP\n");
   mock_tx_result=HAL_OK; step(9); assert(strcmp(mock_tx_copy,"STOP\n")==0 && !motor_arm_pending); stop_ack();
 }
+static void stream_start(void) {
+  step(1000); assert(strcmp(mock_tx_copy,"PING\n")==0); finish();
+  reply("PONG\n"); step(1001); assert(strncmp(mock_tx_copy,"STREAM ",7)==0 && stream_wait && !stream_known);
+}
+static void stream_confirm(void) {
+  finish(); reply("OK STREAM\r\n"); step(tick+1);
+  assert(stream_known && stream_wait && strcmp(mock_tx_copy,"PING\n")==0);
+  finish(); reply("PONG\n"); step(tick+1); assert(!stream_wait || tx_command==TX_STREAM);
+}
+static void stream_validation(void) {
+  const char *bad[]={"STREAM\n","STREAM 1\n","STREAM 49\n","STREAM 10001\n","STREAM -0\n","STREAM -100\n","STREAM 50x\n","STREAM 50 100\n","STREAM 1.0\n","STREAM_STATUS 1\n"};
+  for (unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
+    console(bad[i]); step(0); assert(stream_desired==APP_EPUCK_STREAM_PERIOD_MS && !tx_calls && motor_owner==EPUCK_SOURCE_NONE);
+  }
+  console("STREAM +50\n"); assert(stream_desired==50);
+  console("STREAM 10000\n"); assert(stream_desired==10000);
+  console("STREAM 0\nSTREAM_STATUS\nHELP\n"); output();
+  assert(stream_desired==0 && !tx_calls && !motor_last_keepalive);
+  assert(strstr(mock_usb_log,"desired=0") && strstr(mock_usb_log,"not acknowledged") && strstr(mock_usb_log,"STREAM_STATUS"));
+}
+static void stream_startup(void) {
+  stream_start(); assert(stream_inflight==APP_EPUCK_STREAM_PERIOD_MS && stream_attempts==1);
+  stream_confirm();
+  epuck_stream_status_t status; epuck_link_get_stream_status(&status);
+  assert(status.confirmed && status.acknowledged_ms==APP_EPUCK_STREAM_PERIOD_MS && !status.pending);
+  assert(status.sample_age_ms==UINT32_MAX && stream_requests==1 && motor_owner==EPUCK_SOURCE_NONE);
+  /* Every newly accepted sample is published once, never cached as a new record. */
+  const char *data="DATA 7 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 -20 21";
+  assert(accept_data(data)); assert(accept_data(data));
+  uint32_t count=latest_sample.accepted_records; step(tick+1); assert(latest_sample.accepted_records==count && count==2);
+}
+static void stream_changes(void) {
+  stream_start(); uint32_t count=tx_calls;
+  console("STREAM 50\nSTREAM 10000\n"); step(1001);
+  assert(tx_calls==count && stream_inflight==APP_EPUCK_STREAM_PERIOD_MS && stream_desired==10000);
+  stream_confirm(); /* Old ACK confirms only old setting; newest setting transmits after fence. */
+  assert(stream_wait && stream_inflight==10000 && strcmp(mock_tx_copy,"STREAM 10000\n")==0 && !stream_known);
+  console("STREAM 50\n"); stream_confirm();
+  assert(stream_inflight==50 && stream_wait && !stream_known);
+  stream_confirm(); assert(stream_acknowledged==50 && stream_known);
+}
+static void stream_late(void) {
+  stream_start(); finish(); step(1002); assert(strcmp(mock_tx_copy,"PING\n")==0); finish();
+  console("STREAM 50\n"); reply("OK STREAM\n"); step(1600);
+  assert(!stream_known && stream_uncertain && stream_inflight==APP_EPUCK_STREAM_PERIOD_MS && stream_late_acks==1);
+  uint32_t calls=tx_calls; step(1600); assert(tx_calls==calls); /* No change until the fence. */
+  reply("PONG\n"); step(1601); assert(strcmp(mock_tx_copy,"STREAM 50\n")==0 && !stream_known);
+  stream_confirm(); assert(stream_known && stream_acknowledged==50);
+}
+static void stream_missing(void) {
+  stream_start();
+  for (unsigned attempt=1;attempt<=3;++attempt) {
+    uint32_t sent=tick;
+    assert(stream_attempts==attempt && stream_wait);
+    finish(); step(sent+1); assert(strcmp(mock_tx_copy,"PING\n")==0); finish();
+    reply("PONG\n"); step(sent+2);
+    step(sent+500); assert(!stream_wait && !stream_known);
+    if (mock_tx_busy) { assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(tick); }
+    if (attempt<3) { step(sent+600); assert(strcmp(mock_tx_copy,"STREAM 1000\n")==0 && mock_tx_busy); }
+  }
+  uint32_t resume=stream_retry_tick;
+  step(resume-1); assert(strcmp(mock_tx_copy,"PING\n")==0 && stream_attempts==3); finish();
+  reply("PONG\n"); step(resume-1); assert(!mock_tx_busy);
+  step(resume); assert(strcmp(mock_tx_copy,"STREAM 1000\n")==0 && stream_attempts==1);
+  stream_confirm(); assert(stream_known);
+}
+static void stream_off(void) {
+  stream_start(); stream_confirm(); console("STREAM 0\n"); step(tick+1);
+  assert(strcmp(mock_tx_copy,"STREAM 0\n")==0); stream_confirm();
+  assert(stream_known && stream_acknowledged==0 && !stream_stale(UINT32_MAX));
+  uint32_t requests=stream_requests;
+  for (unsigned t=2000;t<15000;t+=1000) {
+    step(t); assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(t+1); assert(!mock_tx_busy);
+  }
+  assert(stream_requests==requests);
+  console("STREAM 0\n"); step(tick+1); uint32_t sent=tick;
+  finish(); step(sent+1); finish(); reply("PONG\n"); step(sent+2);
+  step(sent+500); assert(!stream_need && !stream_known && !stream_wait);
+  step(sent+10000); assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(tick+1);
+  assert(!mock_tx_busy && stream_requests==requests+1); /* No retries or R even with missing ACK. */
+}
+static void stream_recovery(void) {
+  console("STREAM 10000\n"); stream_start(); stream_confirm(); uint32_t ack=stream_ack_tick;
+  step(ack+10000); assert(!stream_stale(tick) && strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(tick+1);
+  step(ack+30501); assert(!stream_known && stream_need && strcmp(mock_tx_copy,"PING\n")==0); finish();
+  reply("PONG\n"); step(tick+1); assert(strcmp(mock_tx_copy,"STREAM 10000\n")==0); stream_confirm();
+  reply("BOOT EPUCK_UART_BRIDGE 1\n"); step(tick+1); assert(!stream_known && !stream_peer_seen && stream_need);
+  step(tick+1000); assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(tick+1);
+  assert(strcmp(mock_tx_copy,"STREAM 10000\n")==0); stream_confirm();
+  huart1.ErrorCode=1; HAL_UART_ErrorCallback(&huart1); step(tick+1);
+  assert(!stream_known && !stream_peer_seen && stream_need);
+  reply("\n"); step(tick+1); step(tick+1000); finish(); reply("PONG\n"); step(tick+1);
+  assert(strcmp(mock_tx_copy,"STREAM 10000\n")==0 && motor_owner==EPUCK_SOURCE_NONE);
+}
+static void stream_fence_loss(void) {
+  stream_start(); finish(); reply("OK STREAM\n"); step(1002);
+  assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); /* Drop this fence PONG. */
+  console("STREAM 50\n"); step(1003); assert(stream_wait && stream_inflight==APP_EPUCK_STREAM_PERIOD_MS);
+  step(2000); assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(2001);
+  assert(strcmp(mock_tx_copy,"STREAM 50\n")==0 && !stream_known);
+  finish(); reply("OK STREAM\n"); step(2002); finish(); reply("PONG\n"); step(2003);
+  assert(stream_wait && stream_fence==4 && pong_count==3 && stream_known);
+  console("STREAM 0\n"); step(2004); assert(stream_inflight==50); /* No early fence after a lost PONG. */
+  step(3000); finish(); reply("PONG\n"); step(3001);
+  assert(strcmp(mock_tx_copy,"STREAM 0\n")==0 && !stream_known);
+}
+static void stream_priority(void) {
+  arm(); stream_peer_seen=1; stream_pong_tick=tick;
+  uint32_t keepalive=motor_last_keepalive;
+  epuck_link_command(EPUCK_SOURCE_WIFI,"STREAM 50");
+  assert(motor_owner==EPUCK_SOURCE_USB && motor_last_keepalive==keepalive); step(100);
+  assert(strcmp(mock_tx_copy,"HB\n")==0); finish(); reply("OK HB\n"); step(101);
+  assert(strcmp(mock_tx_copy,"STREAM 50\n")==0); finish();
+  step(200); assert(strcmp(mock_tx_copy,"HB\n")==0); finish(); reply("OK HB\n"); step(201);
+  assert(strcmp(mock_tx_copy,"PING\n")==0); /* Streaming ACK pending does not block motor HB. */
+  console("STOP\n"); finish(); step(202); assert(strcmp(mock_tx_copy,"STOP\n")==0); stop_ack();
+}
+
 #endif
 int main(int argc, char **argv) {
   setup();
@@ -158,15 +276,25 @@ int main(int argc, char **argv) {
   else if(strcmp(argv[1],"lost")==0) lost();
   else if(strcmp(argv[1],"disconnect")==0) disconnects();
   else if(strcmp(argv[1],"retry")==0) retry();
+  else if(strcmp(argv[1],"stream_validation")==0) stream_validation();
+  else if(strcmp(argv[1],"stream_startup")==0) stream_startup();
+  else if(strcmp(argv[1],"stream_changes")==0) stream_changes();
+  else if(strcmp(argv[1],"stream_late")==0) stream_late();
+  else if(strcmp(argv[1],"stream_missing")==0) stream_missing();
+  else if(strcmp(argv[1],"stream_off")==0) stream_off();
+  else if(strcmp(argv[1],"stream_recovery")==0) stream_recovery();
+  else if(strcmp(argv[1],"stream_priority")==0) stream_priority();
+  else if(strcmp(argv[1],"stream_fence_loss")==0) stream_fence_loss();
   else assert(0);
 #else
   (void)argc; (void)argv;
-  console("ARM\nM 200 200\nSTOP\nMOTOR_STATUS\nHELP\n"); step(1000); output();
+  console("ARM\nM 200 200\nSTOP\nMOTOR_STATUS\nSTREAM 100\nSTREAM_STATUS\nHELP\n"); step(1000); output();
   assert(tx_calls==0 && rx_calls==0 && enable_calls==0 && clear_calls==0);
   assert(strstr(mock_usb_log,"feature disabled") && strstr(mock_usb_log,"Commanded steps/s"));
   epuck_sensor_data_t sample; assert(!epuck_link_get_sensor_data(&sample) && !sample.valid);
 #endif
   puts("PASS");
+  return 0;
 }
 
 uint8_t esp_link_rx_callback(void *uart) { (void)uart; return 0; }

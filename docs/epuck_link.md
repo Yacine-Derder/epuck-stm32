@@ -1,15 +1,16 @@
-# E-puck UART test and sensor polling
+# E-puck UART test and sensor streaming
 
 Enable the module with `APP_EPUCK_ENABLED 1` in `Core/Inc/app_config.h`,
 then rebuild and flash. Set it to `0` to disable UART activity and module
 diagnostics. UWB uses its separate, unchanged `APP_UWB_ENABLED` switch.
 
 On the existing USART1 connection (PA9 TX, PA10 RX, 115200 8N1), the module
-sends `PING\n` and one sensor request `R\n` per second. It starts the next
-command only after the previous interrupt-driven transmission completes.
-Commands pending during a delay are coalesced into a single pair rather
-than accumulated. Sensor streaming remains disabled. Motor commands are
-sent only through the explicitly operated USB console described below.
+sends PING once per second and configures automatic DATA after PONG. The
+boot default is1000ms; use STREAM 0 or STREAM 50..10000 and STREAM_STATUS
+from USB or Wi-Fi. Periodic R polling is disabled. See
+[sensor streaming](sensor_streaming.md) for acknowledgement ordering, bounded
+retries, stale recovery, status fields and client commands. Motor commands
+still require explicit operation through the console below.
 
 The peer's sensor reply contains exactly 22 decimal numeric fields:
 
@@ -56,12 +57,12 @@ completion. Output consists of the existing diagnostic line followed by a
 sensor line, for example:
 
 ```text
-[EPUCK] tx=2 started=2 rx=180 pong=2 drops=0 errors=0 tx_fail=0 bad_lines=0 sensor_req=2 data=2 data_bad=0 last="PONG"
+[EPUCK] tx=2 started=2 rx=180 pong=2 drops=0 errors=0 tx_fail=0 bad_lines=0 stream_tx=1 data=2 data_bad=0 last="PONG"
 [SENSOR] valid=1 age_ms=150 time_ms=2000 prox=[0,1,2,3,4,5,6,7] light=[10,11,12,13,14,15,16,17] acc=[-100,0,100] steps=[0,0]
 ```
 
 - `tx` and `started`: completed and started PING transmissions.
-- `sensor_req`: completed `R\n` transmissions, not confirmed peer receipt.
+- `stream_tx`: completed STREAM transmissions, not acknowledgement confirmation.
 - `rx` and `pong`: received bytes and exact valid PONG replies.
 - `data` and `data_bad`: accepted and rejected identifiable DATA records;
   DATA records lost before identification cannot be counted here.
@@ -75,6 +76,13 @@ The task processes at most 64 queued receive bytes and starts at most one
 UART transmission per call. Reception uses a 1024-byte ring with 1023 usable
 slots. Keep calling the existing task regularly so queued replies are
 consumed. Missing replies alone do not prove reversed wiring.
+
+Default debug output is quiet (`APP_DEBUG_TELEMETRY=0`): periodic sensor arrays
+and routine USB HB ACKs are suppressed. The verbose examples above require
+APP_DEBUG_TELEMETRY=1 in normal mode. LINK_STATUS provides concise counters;
+UART/drop/parser changes still produce important fault messages. Wi-Fi ACKs,
+safety heartbeats and deadlines remain active. UWB-only policy is described in
+[mul_core.md](mul_core.md).
 
 ## USB motor console
 
@@ -92,6 +100,10 @@ in `usb_console_task()` and `epuck_link_task()` in the main loop.
 | `HELP`         | Show command syntax and units.                                                                                                                                                            |
 | `MOTOR_STATUS` | Show local session state, requested/acknowledged speeds, acknowledgement validity, queued movement count and latest acknowledgement.                                                      |
 
+`STREAM <ms>` and `STREAM_STATUS` are also accepted from USB and Wi-Fi,
+independently of motor ownership. Valid periods are 0 or 50..10000 ms;
+configuration acknowledgements and retries are described in the streaming guide.
+
 Unknown commands, extra/missing arguments, invalid numbers, control
 characters and lines longer than 63 characters are rejected without being
 forwarded. There are four movement queue slots; a full queue rejects the new
@@ -99,9 +111,9 @@ command. STOP has a reserved slot and cannot be rejected due to queue fullness.
 Output also uses a bounded queue and reports dropped messages when full.
 
 After matching `OK ARM`, the scheduler sends `HB\n` every 100 ms while armed;
-`M` also refreshes the peer's 250 ms watchdog. PING and sensor requests do not
+`M` also refreshes the peer's 250 ms watchdog. PING and streaming configuration do not
 refresh it. Only one motor command waits for acknowledgement at a time.
-Priority is STOP, due heartbeat, ARM/movement, then sensor/PING polling.
+Priority is STOP, due heartbeat, ARM/movement, then streaming configuration and PING.
 No transmit buffer is reused until its active UART transfer completes.
 
 The module never arms or starts movement at startup or on reconnect. A motor
@@ -122,7 +134,7 @@ command finishes before STOP; cancelled queued commands cannot follow STOP.
 `acknowledged` changes only after a matching `OK M`, `OK ARM` or `OK STOP`.
 `known=0` means acknowledged state is uncertain, not that wheel motion has
 been measured. `latest_ack` includes errors and ignored late acknowledgements.
-HB acknowledgements are printed as well. With `APP_EPUCK_ENABLED=0`, the
+HB acknowledgements are forwarded to Wi-Fi (USB printing requires debug telemetry). With `APP_EPUCK_ENABLED=0`, the
 console reports that the feature is disabled and makes no UART transfers.
 
 Example (periodic sensor/PING diagnostics omitted):

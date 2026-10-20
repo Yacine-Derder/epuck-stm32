@@ -9,7 +9,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
 # Uses the actual app_config.h; when disabled the same test checks no UART.
 printf '%s\n' 'validation / disabled feature'
 if "$test_dir/test" validation; then
-  for case_name in stop heartbeat lost disconnect retry; do
+  for case_name in stop heartbeat lost disconnect retry stream_validation stream_startup stream_changes stream_late stream_missing stream_off stream_recovery stream_priority stream_fence_loss; do
     printf '%s\n' "$case_name"
     "$test_dir/test" "$case_name"
   done
