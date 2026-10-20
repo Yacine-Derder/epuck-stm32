@@ -64,6 +64,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_link.c
     Core/Src/phy_interop.c
     Core/Src/uwb_diag_profile.c
+    Core/Src/mul_ads_radio.c
+    ThirdParty/mul_core/mul_ads.c
     Core/Src/mul_diag.c
     Core/Src/mul_timing.c
     ThirdParty/mul_core/mul_core.c
@@ -135,3 +137,19 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 # Secondary-function isolation only: keep dsPIC UART safety/STOP servicing.
 option(MUL_UWB_ONLY "Disable ESP and automatic sensor streaming; prohibit ARM/movement" OFF)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_UWB_ONLY=$<BOOL:${MUL_UWB_ONLY}>)
+
+set(MUL_TWR_ROLE "0" CACHE STRING "ADS: 0=off, 1=initiator, 2=responder")
+set(MUL_TWR_SESSION "0" CACHE STRING "Fresh nonzero uint64 decimal initiator run/session ID")
+if(NOT MUL_TWR_ROLE MATCHES "^[012]$" OR NOT MUL_TWR_SESSION MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "Invalid ADS role/session")
+endif()
+if(NOT MUL_TWR_ROLE STREQUAL "0")
+    if(NOT MUL_UWB_ONLY OR NOT MUL_DIAG_ROLE STREQUAL "0" OR NOT PHY_INTEROP_ROLE STREQUAL "0")
+        message(FATAL_ERROR "ADS requires UWB-only and exclusive radio ownership")
+    endif()
+    if(MUL_TWR_ROLE STREQUAL "1" AND MUL_TWR_SESSION STREQUAL "0")
+        message(FATAL_ERROR "Initiator needs a fresh nonzero session ID")
+    endif()
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    MUL_TWR_ROLE=${MUL_TWR_ROLE} MUL_TWR_SESSION=${MUL_TWR_SESSION}ULL)

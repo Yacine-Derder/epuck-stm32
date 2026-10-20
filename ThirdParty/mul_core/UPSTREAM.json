@@ -1,18 +1,21 @@
 {
   "url": "https://github.com/Yacine-Derder/lps-node-firmware.git",
-  "revision": "1b807c5c7507d67d802ee976ae4dfe5b27fd88e9",
+  "revision": "ccd78acfb56ac9ea42c31b88d5db458380c67564",
   "path": "portable/mul_core",
   "sha256": {
     "LICENSE": "c011ab8ee407a146225305a9038baf0f3bd80883507fd3d34da2823c5dcb4e5a",
-    "README.md": "6c6e6de61bcc11b7d2016d3d4e6a405d96e95a81402f0501a6ea5c3322f7b30f",
+    "README.md": "ad8bf51dc0e8742321fb27cc213361bf90136c1b466070fc1cf71764bb4e079f",
+    "mul_ads.c": "1ef1e5cc38a3b347f2127e1284bbfc7393579a41b6bf8396ce849be35d12a64c",
+    "mul_ads.h": "c78326e8fc60fff49de891aec67e02109ab6bee9b28baef0bfec49f28ea42101",
     "mul_common.c": "e2685d14be3dd86218b9dd7ffcf3578b01ecf9523c1a011e5067861bba697dc9",
     "mul_common.h": "51d5578359078f0d51c8c6b4004de8c0664eb734c433695ba7dd42cdadec19ca",
-    "mul_core.c": "184d85cab0304c4a618da60ffcf5466b5fe0f2588d7720ee8537871c9650c2ec",
-    "mul_core.h": "afea61c269272972ce730e6a26a8f1445d107ddf752a547e4120b77580221a7c",
-    "mul_diag_config.h": "d35024c66290dc8a2894644fc4e4cacf9a0108f56b77b6c9d5f13bcce2e479b6",
+    "mul_core.c": "2603d2f9cad9b7ec2cf722eeab43d389722d058facbdce42b39512b2d9f379ef",
+    "mul_core.h": "eb5cda3395f2bc4c8ab7a2fba478b2223ebd2771c2ee0947893df88af2bdaa21",
+    "mul_diag_config.h": "49d8a5f4e748bf31c59d8b7f3267c8c42e847d833753d577752574cc828ced4f",
     "tests/golden.h": "0d556c4119f74466b05fab8b2b7197fe1cd60c87ecde8c0e08600ed83f870a7d",
-    "tests/run.sh": "f53660580210e0d4372058506d1c5fc3fa85168417046082f755979fc56facca",
-    "tests/test_core.c": "853729cbb6dcdc341352e493e70b3368181f6e19d1e6565b5104849d55757508",
+    "tests/run.sh": "00926a8fe504a44def65d42554dd3288a5e9d4944f30171752fcdce91fddb71f",
+    "tests/test_ads.c": "7d4be9526d3b515138c4c5a6b61a214473a64b1e02d2387e507748ff50a78889",
+    "tests/test_core.c": "d1005bca50450f80af8ae14c2cdcb02240e5b91f133839e50ad5206ac2226d8e",
     "tests/vectors.json": "4a40d06a25fd1d460d1e37997051ec453b452c293587bd671a8a4635628a14b4",
     "verify.py": "7ef9859035f78cc05f443d43f9b531f3d1ae8869e745e3bb87fbdfefa138da2f"
   }

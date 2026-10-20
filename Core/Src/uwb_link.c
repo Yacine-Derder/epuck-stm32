@@ -2,11 +2,12 @@
 #include "main.h"
 #include "phy_interop.h"
 #include "mul_diag.h"
-#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#include "mul_ads_radio.h"
+#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
 #include "usb_console.h"
 #endif
 
-#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
 #include "qorvo_platform.h"
 #include <stdio.h>
 
@@ -21,10 +22,13 @@ void uwb_link_init(void)
    */
   HAL_NVIC_DisableIRQ(EXTI0_IRQn);
 
-#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
   ready = 0U;
-#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE
-#if MUL_DIAG_ROLE
+#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
+#if MUL_TWR_ROLE
+  if (mul_ads_radio_init()==DWT_SUCCESS) ready=1U;
+  else usb_console_write("MULH INIT FAILED");
+#elif MUL_DIAG_ROLE
   if (mul_diag_init()==DWT_SUCCESS) ready=1U;
   else usb_console_write("MULG INIT FAILED");
 #else
@@ -52,10 +56,12 @@ void uwb_link_init(void)
 
 void uwb_link_task(void)
 {
-#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
   if (ready) {
-#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE
-#if MUL_DIAG_ROLE
+#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
+#if MUL_TWR_ROLE
+    mul_ads_radio_process();
+#elif MUL_DIAG_ROLE
     mul_diag_process();
 #else
     phy_interop_process();
@@ -69,8 +75,8 @@ void uwb_link_task(void)
 
 void uwb_link_exti_callback(uint16_t gpio_pin)
 {
-#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE
-#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
+#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
   (void)gpio_pin;
 #else
   if (ready && gpio_pin == DWM_IRQ_Pin) {

@@ -13,7 +13,7 @@
 #include <string.h>
 static struct {
   mulCoreSequence_t rx;
-  uint32_t sequence,attempts,done,invalid,errors,timeouts,lastTxMs,lastReportMs;
+  uint32_t sequence,attempts,done,invalid,errors,timeouts,lastTxMs,lastReportMs,lastRxMs;
   uint8_t frame[MUL_CORE_DIAG_LENGTH+2];
   bool pending,markerValid;
   uint64_t lastTxMarker;
@@ -88,9 +88,18 @@ void mul_diag_process(void) {
       }
       rearm();
       if (valid) {
-        mulCoreObserveSequence(&state.rx,message.sequence);
-        snprintf(line,sizeof(line),"MULG RX src=84 seq=%" PRIu32 " valid=1 rx=%02X%02X%02X%02X%02X gaps=%" PRIu32 " prev_valid=%u prev_seq=%" PRIu32 " prev_tx=%02X%08" PRIX32 " bits=40 unit=DTU",
-          message.sequence,stamp[4],stamp[3],stamp[2],stamp[1],stamp[0],state.rx.gaps,
+        /* v1 has no boot ID. After >=5s without a decoded expected peer,
+         * begin an explicitly logged ordering epoch, preserving totals. This
+         * does not prove a reboot or count loss across the idle boundary. */
+        if (state.rx.baseline && (uint32_t)(now-state.lastRxMs)>=5000U) {
+          snprintf(line,sizeof(line),"MULG EPOCH reason=idle previous=%" PRIu32 " next=%" PRIu32 " idle_ms=%" PRIu32,state.rx.last,message.sequence,now-state.lastRxMs);
+          usb_console_write(line);
+          mulCoreSequenceBeginEpoch(&state.rx);
+        }
+        state.lastRxMs=now;
+        mulCoreOrder_t order=mulCoreObserveSequence(&state.rx,message.sequence);
+        snprintf(line,sizeof(line),"MULG RX src=84 seq=%" PRIu32 " valid=1 order=%u rx=%02X%02X%02X%02X%02X gaps=%" PRIu32 " prev_valid=%u prev_seq=%" PRIu32 " prev_tx=%02X%08" PRIX32 " bits=40 unit=DTU",
+          message.sequence,(unsigned)order,stamp[4],stamp[3],stamp[2],stamp[1],stamp[0],state.rx.gaps,
           message.markerValid,message.markerSequence,(unsigned)(message.txMarker>>32),(uint32_t)message.txMarker);
         usb_console_write(line);
       } else state.invalid++;

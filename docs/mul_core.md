@@ -6,7 +6,7 @@ Do not begin Stage 3H, mixed-radio TWR/TDoA or localization from this checkpoint
 Canonical source is LPS `portable/mul_core`. This repository's
 [checked-in snapshot/API and wire specification](../ThirdParty/mul_core/README.md)
 is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to published
-LPS `1b807c5c7507d67d802ee976ae4dfe5b27fd88e9`. The corresponding STM32 code
+LPS `ccd78acfb56ac9ea42c31b88d5db458380c67564` (ADS/explicit-epoch update). The corresponding STM32 code
 checkpoint is `1bd3ecdba534549b4c9ac89f17fd8bd7270fe056`. Later documentation
 commits keep this same dependency; record both final HEADs with hardware logs.
 
@@ -123,3 +123,27 @@ LINK_STATUS endpoints. No SPI-related cause or fix is claimed.
 Stage3G remains hardware-pending; do not begin Stage3H. No hardware was flashed,
 no dsPIC or central project document was changed. Normal Wi-Fi is secondary;
 UWB-only reliability and UART impact must first be demonstrated physically.
+
+## ADS profile and newer sequence findings
+
+The canonical [UWB-only ADS guide](https://github.com/Yacine-Derder/lps-node-firmware/blob/master/docs/mul_ads_twr.md)
+is authoritative for the new protocol, exact CMake/DFU/ELF commands, timestamps,
+stationary experiment and remaining hardware gates. MUL_TWR_ROLE1 initiates,
+2 responds;0 preserves other paths. CMake requires UWB-only and exclusive radio
+ownership. Both roles capture actual TX completions and CRC-good adjusted40-bit
+RX; REPORT supplies measured responder t2/t3/t6. No delayed TX is requested.
+Configured/readback16380 DTU antenna delays are nominal, not calibrated.
+
+Diagnostic v1 has no boot ID. Valid includes OLD/duplicates; accepted count is
+valid-old-dup. RX order0/1/2/3/4 labels first/forward/gap/duplicate/old. After5s
+without an expected decoded peer a logged idle epoch discards only the ordering
+baseline. Rapid restarts are still ambiguous; reset RX for a new experiment.
+This explains the observed OLD growth without treating it as stale RF traffic.
+The new ADS protocol has an explicit fresh session/transaction instead.
+
+Run `sh tests/ads_radio/run.sh` in addition to the suites above. It tests both
+radio roles, simultaneous TX/RX status, actual40-bit markers, immediate start
+failure, missing completion, invalid frames, CRC/error priority, RX retry,
+antenna readback failure, activation guards and compile-time safety isolation.
+The new role code is in Core/Src/mul_ads_radio.c; core remains vendored/offline.
+Do not claim physical ranging or Stage3G closure from these host tests/builds.

@@ -10,7 +10,7 @@ project document remains read-only and needs an owner status update.
 
 **Implemented/software tested; hardware gate pending. Do not begin Stage3H.**
 Canonical LPS portable/mul_core is vendored with offline hash verification,
-pinned to1b807c5c7507d67d802ee976ae4dfe5b27fd88e9. No sibling checkout, third
+initially pinned to1b807c5c7507d67d802ee976ae4dfe5b27fd88e9 (current pin below). No sibling checkout, third
 remote or new submodule is required. The44-byte diagnostic carries explicit
 clock identity/40-bit DTU and previous completed TX metadata. Stage3E math,
 radio frame formats and the core pin are unchanged in this follow-up.
@@ -38,3 +38,22 @@ Require STOP acknowledgement/disarm, exact metadata, UART/drop/error/timing and
 capture endpoints. [docs/mul_core.md](docs/mul_core.md) links canonical results,
 exact builds, CubeProgrammer ELF paths and acceptance instructions. No hardware
 flashed. Full Stage3G validation and Stage3H await adequate physical evidence.
+
+## ADS-TWR foundation
+
+Portable core pin updated to ccd78acfb56ac9ea42c31b88d5db458380c67564. New opt-in
+MUL_TWR_ROLE1/2 is exclusive with diagnostics and requires MUL_UWB_ONLY=ON.
+Both initiator/responder adapters compile and pass measured-timestamp/recovery
+host tests. Three ranging frames plus REPORT return all six actual40-bit
+markers to the initiator; no intended TX timestamp is substituted. Fresh explicit
+initiator session required after restart; timeouts retry whole exchanges.
+Physical ranging, accuracy and antenna equivalence remain unverified.
+
+Stage3G logs now locally available reproduce the retained-baseline OLD anomaly;
+valid counts decoding, not acceptance. Explicit order and logged idle epochs
+make this visible without changing counter meanings. No console/PHY count alone
+establishes zero loss. Reverse sustained hardware gate and genuine STM32 disabled
+baseline remain pending (the newer off-baseline file contains DW TX output).
+Canonical [ADS handoff](https://github.com/Yacine-Derder/lps-node-firmware/blob/master/docs/mul_ads_twr.md)
+records exact builds/ELFs, safe stationary tests, limitations and cleanup inventory.
+No ESP/dsPIC update or optional Wi-Fi repair. No hardware flashed.

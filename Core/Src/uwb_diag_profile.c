@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "uwb_diag_profile.h"
 #include "mul_diag_config.h"
-#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE
+#if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
 #include "qorvo_platform.h"
 #include "dw3000_deca_regs.h"
 #define RX_EVENTS (SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | DWT_INT_RXOVRR_BIT_MASK)

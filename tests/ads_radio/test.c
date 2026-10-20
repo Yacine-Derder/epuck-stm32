@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: LGPL-3.0-or-later */
+#include "mul_ads.h"
+#include "deca_device_api.h"
+#include "dw3000_deca_regs.h"
+#include <assert.h>
+#include <string.h>
+#include <stdio.h>
+#include "../../Core/Src/mul_ads_radio.c"
+static uint32_t tick,status,length;
+static uint8_t input[56],output[56];
+static uint64_t txMarker,rxMarker;
+static uint16_t txAnt,rxAnt;
+static bool badAnt;
+static unsigned starts,rearms;
+static int32_t startResult=DWT_SUCCESS,rxResult=DWT_SUCCESS;
+uint32_t HAL_GetTick(void) { return tick; }
+int32_t uwb_diag_configure(void) { return DWT_SUCCESS; }
+void dwt_settxantennadelay(uint16_t v) { txAnt=v; }
+void dwt_setrxantennadelay(uint16_t v) { rxAnt=v; }
+uint16_t dwt_gettxantennadelay(void) { return txAnt^(badAnt ? 1u : 0u); }
+uint16_t dwt_getrxantennadelay(void) { return rxAnt; }
+void dwt_forcetrxoff(void) {}
+void dwt_writesysstatuslo(uint32_t bits) { status&=~bits; }
+uint32_t dwt_readsysstatuslo(void) { return status; }
+int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rearms++; return rxResult; }
+int32_t dwt_starttx(uint8_t mode) {
+ mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p));
+ assert(mode==(DWT_START_TX_IMMEDIATE|(p.type==mulAdsReport?0:DWT_RESPONSE_EXPECTED)));
+ starts++; return startResult;
+}
+int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at); memcpy(output,p,n); return DWT_SUCCESS; }
+void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert(n==58 && !at && ranging==1); }
+void dwt_setrxaftertxdelay(uint32_t delay) { assert(!delay); }
+uint32_t dwt_read_reg(uint32_t reg) { assert(reg==RX_FINFO_ID); return length; }
+void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n==56 && !at); memcpy(out,input,n); }
+void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(segment==DWT_COMPAT_NONE); mulEncodeTimestamp(out,rxMarker); }
+void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
+void usb_console_write(const char *text) { assert(strlen(text)<192); }
+static void step(void) { tick++; mul_ads_radio_process(); }
+static mulAdsPacket_t sentPacket(void) { mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p)); return p; }
+static void receive(mulAdsPacket_t *p,uint64_t t) {
+ assert(mulAdsEncode(input,sizeof(input),p)); length=58; rxMarker=t; status|=DWT_INT_RXFCG_BIT_MASK; step();
+}
+int main(void) {
+ assert(mul_ads_radio_init()==DWT_SUCCESS && txAnt==16380 && rxAnt==16380);
+#if MUL_TWR_ROLE==1
+ tick=1000; step(); mulAdsPacket_t p=sentPacket(); assert(p.type==mulAdsPoll && p.source==0x86 && p.destination==0x84);
+ p.source=0x84; p.destination=0x86; p.type=mulAdsResponse;
+ txMarker=MUL_TIMESTAMP_MASK-99999999; status=DWT_INT_TXFRS_BIT_MASK;
+ receive(&p,50000001); /* TX completion and CRC-good together: TX first, no lost RX. */
+ assert(state.stamps[0]==txMarker && state.stamps[1]==50000001 && sentPacket().type==mulAdsFinal);
+ txMarker=250000001; status=DWT_INT_TXFRS_BIT_MASK; step();
+ p.type=mulAdsReport; p.stamps[0]=10000; p.stamps[1]=150000000; p.stamps[2]=350010000;
+ receive(&p,300000000); assert(state.completed==1 && state.stage==adsIdle && state.stamps[2]==txMarker);
+ tick=2000; startResult=DWT_ERROR; step(); assert(state.stage==adsIdle && state.aborted==1 && errors==1);
+ startResult=DWT_SUCCESS; tick=3000; step(); assert(state.pending);
+ tick=3100; step(); assert(!state.pending && state.aborted==2); /* Lost TX completion. */
+#else
+ mulAdsPacket_t p={.source=0x84,.destination=0x86,.type=mulAdsPoll,.session=55,.transaction=1};
+ receive(&p,MUL_TIMESTAMP_MASK-20); assert(sentPacket().type==mulAdsResponse);
+ txMarker=10000000; status=DWT_INT_TXFRS_BIT_MASK; step();
+ p.type=mulAdsFinal; receive(&p,20000000);
+ mulAdsPacket_t report=sentPacket(); assert(report.type==mulAdsReport && report.stamps[0]==MUL_TIMESTAMP_MASK-20 && report.stamps[1]==txMarker && report.stamps[2]==20000000);
+ status=DWT_INT_TXFRS_BIT_MASK; step(); assert(state.completed==1 && state.stage==adsIdle);
+ p.type=mulAdsPoll; p.transaction=2; receive(&p,0);
+ status=DWT_INT_RXFCE_BIT_MASK|DWT_INT_RXFCG_BIT_MASK; step(); assert(state.stage==adsIdle && errors==1 && state.aborted==1);
+ p.transaction=3; receive(&p,1); assert(state.pending); status=DWT_INT_TXFRS_BIT_MASK; step();
+ p.type=mulAdsFinal; p.transaction=1; receive(&p,2); assert(state.rejected && state.stage==adsFinalRx);
+ status=DWT_INT_RXFTO_BIT_MASK; step(); assert(state.stage==adsIdle);
+#endif
+ length=127; status=DWT_INT_RXFCG_BIT_MASK; step(); assert(invalid==1);
+ rxResult=DWT_ERROR; status=DWT_INT_RXFTO_BIT_MASK; step(); assert(retryRx);
+ rxResult=DWT_SUCCESS; unsigned before=rearms; tick=(tick/50+1)*50-1; step(); assert(rearms==before+1 && !retryRx);
+ unsigned n=starts; mul_ads_radio_process(); assert(n==starts);
+ badAnt=true; assert(mul_ads_radio_init()==DWT_ERROR);
+ puts("DWM3000 ADS measured timestamp/auto-RX/start failure/CRC priority/timeout/recovery adapter test passed");
+}

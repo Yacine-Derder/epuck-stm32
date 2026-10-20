@@ -72,6 +72,12 @@ int main(void) {
   encodeIncoming(2); incoming[33]=MUL_CORE_DW3000; status=DWT_INT_RXFCG_BIT_MASK; step();
   assert(state.invalid==3); /* valid core packet, wrong peer family */
 #endif
+#if MUL_DIAG_ROLE==2
+  length=46; encodeIncoming(3000); status=DWT_INT_RXFCG_BIT_MASK; step();
+  encodeIncoming(0); status=DWT_INT_RXFCG_BIT_MASK; step(); assert(state.rx.old==1 && state.rx.last==3000);
+  ticks+=5000; encodeIncoming(1); status=DWT_INT_RXFCG_BIT_MASK; step();
+  assert(state.rx.old==1 && state.rx.last==1 && state.rx.valid==5); /* Explicit idle epoch, totals retained. */
+#endif
   unsigned int unchanged=logs; mul_diag_process(); assert(logs==unchanged); /* same-ms no SPI/log work */
   state.lastTxMs=UINT32_MAX-500; ticks=600; step(); assert(logs>0);
 }
