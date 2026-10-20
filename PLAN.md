@@ -72,3 +72,15 @@ assessment; CP7 exact hardware instructions and compatible Git SHA handoff.
 Preserve all pre-existing user edits, default/Stage3E/Stage3F operation. Do not
 flash, implement mixed-radio ranging/TDoA, or begin Stage3H. Stage3G hardware
 acceptance remains pending user A/B/concurrent UART experiment logs.
+
+CP4/CP6: STM32 opt-in TX/RX adapter uses the same shared diagnostic; core pinned
+at LPS1b807c5c7507d67d802ee976ae4dfe5b27fd88e9 with offline per-file build checks.
+Stage3F's proven profile is factored into one common setup without changing its
+settings. Main-loop radio service is limited to one status pass per millisecond,
+RX rearmed before log formatting. No new radio ISR or event queue. Existing USB
+16x192-byte queue exposes drops; no heap. Optional MUL_TIMING_TRACE records DWT
+cycle maxima for service/start gap and outer SPI IRQ-off windows; nesting/wrap
+host tests pass. IRQ masking/speed remain unchanged; no claimed UART fault fix.
+New core/TX/RX/six activation tests, nine interleaved UWB+ESP/sensor/safety cases
+and timing tests pass sanitizers. Final clean-tree/build/resource/hardware guide
+validation remains; full hardware acceptance awaits user experiments.

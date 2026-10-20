@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "phy_interop.h"
+#include "uwb_diag_profile.h"
 #if PHY_INTEROP_ROLE
 #include "qorvo_platform.h"
 #include "usb_console.h"
@@ -20,17 +21,7 @@ static void rearm(void) {
 int32_t phy_interop_init(void) {
   memset(&state,0,sizeof(state));
   crcErrors=phrErrors=lastErrorStatus=reportedErrors=0;
-  if (qorvo_probe_and_init()!=DWT_SUCCESS) return DWT_ERROR;
-  dwt_config_t config={0};
-  config.chan=DWT_CH5; config.txPreambLength=DWT_PLEN_128; config.rxPAC=DWT_PAC8;
-  config.txCode=config.rxCode=9; config.sfdType=DWT_SFD_IEEE_4A;
-  config.dataRate=DWT_BR_6M8; config.phrMode=DWT_PHRMODE_STD; config.phrRate=DWT_PHRRATE_STD;
-  config.sfdTO=129; config.stsMode=DWT_STS_MODE_OFF; config.stsLength=DWT_STS_LEN_64; config.pdoaMode=DWT_PDOA_M0;
-  if (dwt_configure(&config)!=DWT_SUCCESS) return DWT_ERROR;
-  qorvo_spi_set_fastrate();
-  dwt_forcetrxoff(); dwt_setinterrupt(0,0,DWT_ENABLE_INT_ONLY);
-  dwt_configureframefilter(0,0); dwt_setrxtimeout(50000); dwt_setpreambledetecttimeout(0);
-  dwt_writesysstatuslo(RX_EVENTS | DWT_INT_TXFRS_BIT_MASK);
+  if (uwb_diag_configure()!=DWT_SUCCESS) return DWT_ERROR;
   state.lastTxMs=state.lastReportMs=HAL_GetTick();
   usb_console_write(PHY_INTEROP_ROLE==1 ?
     "PHY INIT radio=DWM3000 role=TX src=86 ch=5 prf=64 pre=128 code=9 sfd=4A rate=6800 phr=STD sts=OFF bytes=34" :

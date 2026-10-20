@@ -63,6 +63,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/usb_console.c
     Core/Src/uwb_link.c
     Core/Src/phy_interop.c
+    Core/Src/uwb_diag_profile.c
+    Core/Src/mul_diag.c
+    Core/Src/mul_timing.c
+    ThirdParty/mul_core/mul_core.c
+    ThirdParty/mul_core/mul_common.c
     ${QORVO_DRIVER_SOURCES}
     ${QORVO_DW3000_SOURCES}
     ${QORVO_PLATFORM_SOURCES}
@@ -73,6 +78,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     ThirdParty/qorvo_dw3/platform
+    ThirdParty/mul_core
     ThirdParty/qorvo_dw3/driver
     ThirdParty/qorvo_dw3/driver/dw3000
     ThirdParty/qorvo_dw3/driver/lib/qmath/include
@@ -101,3 +107,27 @@ if(NOT PHY_INTEROP_ROLE MATCHES "^[012]$")
     message(FATAL_ERROR "PHY_INTEROP_ROLE must be 0, 1 or 2")
 endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PHY_INTEROP_ROLE=${PHY_INTEROP_ROLE})
+
+# Offline, pinned canonical source; fail on drift at configure AND every build.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/ThirdParty/mul_core/verify.py
+    RESULT_VARIABLE MUL_CORE_VERIFY_RESULT)
+if(NOT MUL_CORE_VERIFY_RESULT EQUAL 0)
+    message(FATAL_ERROR "MUL core snapshot verification failed")
+endif()
+add_custom_target(verify_mul_core ALL
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/ThirdParty/mul_core/verify.py)
+add_dependencies(${CMAKE_PROJECT_NAME} verify_mul_core)
+set(MUL_DIAG_ROLE "0" CACHE STRING "Stage3G: 0=off, 1=TX, 2=RX")
+option(MUL_TIMING_TRACE "Opt-in Stage3G DWT cycle timing" OFF)
+if(NOT MUL_DIAG_ROLE MATCHES "^[012]$")
+    message(FATAL_ERROR "MUL_DIAG_ROLE must be 0, 1 or 2")
+endif()
+if(NOT MUL_DIAG_ROLE STREQUAL "0" AND NOT PHY_INTEROP_ROLE STREQUAL "0")
+    message(FATAL_ERROR "Stage3F and Stage3G diagnostics are mutually exclusive")
+endif()
+if(MUL_TIMING_TRACE AND MUL_DIAG_ROLE STREQUAL "0")
+    message(FATAL_ERROR "Timing instrumentation requires the Stage3G diagnostic")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    MUL_DIAG_ROLE=${MUL_DIAG_ROLE} MUL_TIMING_TRACE=$<BOOL:${MUL_TIMING_TRACE}>)
