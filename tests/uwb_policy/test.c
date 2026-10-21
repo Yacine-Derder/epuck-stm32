@@ -4,7 +4,8 @@
 #undef main
 int main(void) {
   assert(MUL_UWB_ONLY && !APP_ESP_ENABLED && APP_EPUCK_ENABLED && APP_EPUCK_STREAM_PERIOD_MS==0 && !APP_DEBUG_TELEMETRY);
-  setup(); epuck_link_boot_safety();
+  setup();
+  assert(!epuck_link_flash_safe()); epuck_link_boot_safety();
   assert(mock_tx_busy && strcmp(mock_tx_copy,"STOP\n")==0);
   assert(motor_state==MOTOR_STOPPING && !motor_count && !motor_arm_pending);
   stop_ack();
@@ -14,6 +15,7 @@ int main(void) {
   assert(stream_desired==0 && strstr(mock_usb_log,"UWB-only"));
   step(1000); assert(strcmp(mock_tx_copy,"PING\n")==0); finish(); reply("PONG\n"); step(1001);
   assert(strcmp(mock_tx_copy,"STREAM 0\n")==0); stream_confirm(); assert(stream_known && !stream_desired);
+  assert(tick<2000U && !epuck_link_flash_safe());
   /* Lost STREAM0 acknowledgement with a completed PONG fence must still
    * retry idempotent stream stop after 5s, awaiting a fresh peer response. */
   reply("BOOT peer\n"); step(2000);
@@ -26,6 +28,7 @@ int main(void) {
   finish(); reply("PONG\n"); step(tick+1);
   assert(strcmp(mock_tx_copy,"STREAM 0\n")==0); stream_confirm();
   console("STOP\n"); step(tick+1); assert(strcmp(mock_tx_copy,"STOP\n")==0); stop_ack();
+  assert(epuck_link_flash_safe());
   console("LINK_STATUS\n"); output(); assert(strstr(mock_usb_log,"[LINK]"));
   output(); assert(!strstr(mock_usb_log,"[SENSOR]") && !strstr(mock_usb_log,"light=["));
   huart1.ErrorCode=8; HAL_UART_ErrorCallback(&huart1); step(tick+1000); output();
@@ -35,7 +38,7 @@ int main(void) {
     reply(strncmp(command,"STREAM",6)==0 ? "OK STREAM\n" : "PONG\n"); step(tick+1);
   }
   assert(!mock_tx_busy);
-  epuck_link_boot_safety(); assert(strcmp(mock_tx_copy,"STOP\n")==0); finish(); step(tick+151);
+  epuck_link_boot_safety(); assert(!epuck_link_flash_safe()); assert(strcmp(mock_tx_copy,"STOP\n")==0); finish(); step(tick+151);
   assert(motor_state==MOTOR_LOST && strcmp(mock_tx_copy,"STOP\n")==0 && !motor_arm_pending && !motor_count);
   stop_ack(); /* missing STOP ACK retries STOP only, never re-arms */
   puts("UWB-only boot STOP, movement/stream rejection, STREAM0, emergency STOP and fault reporting passed");

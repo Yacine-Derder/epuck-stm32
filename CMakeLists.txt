@@ -64,6 +64,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_link.c
     Core/Src/phy_interop.c
     Core/Src/uwb_diag_profile.c
+    Core/Src/uwb_config.c
+    Core/Src/uwb_config_flash.c
+    Core/Src/uwb_runtime.c
     Core/Src/mul_ads_radio.c
     ThirdParty/mul_core/mul_ads.c
     Core/Src/mul_diag.c
@@ -122,6 +125,16 @@ add_custom_target(verify_mul_core ALL
 add_dependencies(${CMAKE_PROJECT_NAME} verify_mul_core)
 set(MUL_DIAG_ROLE "0" CACHE STRING "Stage3G: 0=off, 1=TX, 2=RX")
 set(MUL_TWR_ROLE "0" CACHE STRING "ADS: 0=off, 1=initiator, 2=responder")
+option(MUL_UNIVERSAL "Runtime configurable UWB-only ADS image (both roles)" OFF)
+if(MUL_UNIVERSAL)
+    if(NOT MUL_TWR_ROLE STREQUAL "0" OR NOT MUL_DIAG_ROLE STREQUAL "0" OR NOT PHY_INTEROP_ROLE STREQUAL "0")
+        message(FATAL_ERROR "Universal profile requires legacy role selectors all zero")
+    endif()
+    # Pinned core uses this macro only as a profile inclusion/timing guard.
+    # In the universal adapter it never selects the runtime ADS role.
+    set(MUL_TWR_ROLE "2")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_UNIVERSAL=$<BOOL:${MUL_UNIVERSAL}>)
 set(MUL_TWR_SESSION "0" CACHE STRING "Fresh nonzero uint64 decimal initiator run/session ID")
 option(MUL_TIMING_TRACE "Opt-in MUL diagnostic/ADS DWT cycle timing" OFF)
 if(NOT MUL_DIAG_ROLE MATCHES "^[012]$")

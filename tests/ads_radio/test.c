@@ -104,4 +104,5 @@ int main(void) {
 #endif
  badAnt=true; assert(mul_ads_radio_init()==DWT_ERROR);
  puts("DWM3000 ADS measured timestamp/auto-RX/start failure/CRC priority/timeout/recovery adapter test passed");
+ return 0;
 }

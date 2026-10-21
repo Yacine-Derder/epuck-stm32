@@ -57,8 +57,12 @@ MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
 CCMRAM (xrw)      : ORIGIN = 0x10000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 768K
 }
+
+__uwb_config_start__ = 0x080C0000;
+__uwb_config_end__ = 0x08100000;
+ASSERT(ORIGIN(FLASH) + LENGTH(FLASH) == __uwb_config_start__, "UWB config overlaps application");
 
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */

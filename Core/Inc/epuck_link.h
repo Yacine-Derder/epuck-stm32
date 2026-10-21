@@ -20,6 +20,9 @@ void epuck_link_init(void);
 void epuck_link_task(void);
 /* Invoke after init and before potentially lengthy radio startup. */
 void epuck_link_boot_safety(void);
+/* UWB-only maintenance: confirmed STOP/STREAM0, or silent absent peer after
+ * the startup STOP/watchdog grace period. Never authorizes movement. */
+uint8_t epuck_link_flash_safe(void);
 
 /* Raw sensor readings, without calibration or unit conversion.
  * Accelerometer readings require e-puck JE1 bridges 33-34, 35-36, 37-38.

@@ -23,6 +23,18 @@
 static mulAds_t state;
 static uint32_t lastPoll,lastStart,lastReport,errors,invalid,timeouts;
 static bool retryRx;
+#if MUL_UNIVERSAL
+static uwb_config_t config;
+static uint64_t runtimeSession;
+static bool configured;
+static uint32_t lastTelemetry;
+void mul_ads_radio_configure(const uwb_config_t *c,uint64_t session) {config=*c;runtimeSession=session;}
+static bool initiator(void) {return config.role==1;}
+static unsigned verbosity(void) {return (unsigned)config.verbosity;}
+#else
+static bool initiator(void) {return MUL_TWR_ROLE==1;}
+static unsigned verbosity(void) {return 2;}
+#endif
 static void logAbort(void) {
   char text[192];
   snprintf(text,sizeof(text),"MULH ABORT session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " cause=%u stage=%u by_stage=%u,%u,%u,%u,%u,%u,%u",
@@ -45,15 +57,42 @@ static void abortExchange(mulAdsAbortReason_t cause) {
   mulAdsAbortWithReason(&state,cause); rearm();
   if(state.aborted!=before) logAbort();
 }
+#if MUL_UNIVERSAL
+void mul_ads_radio_stop(void) {
+  if(!configured) return;
+  if(state.stage!=adsIdle) {mulAdsAbort(&state);logAbort();}
+  dwt_forcetrxoff();dwt_writesysstatuslo(RX_EVENTS|DWT_INT_TXFRS_BIT_MASK);
+}
+#endif
 int32_t mul_ads_radio_init(void) {
   if(uwb_diag_configure()!=DWT_SUCCESS) return DWT_ERROR;
+#if MUL_UNIVERSAL
+  configured=true;
+  dwt_settxantennadelay((uint16_t)config.tx_ant_dtu);dwt_setrxantennadelay((uint16_t)config.rx_ant_dtu);
+  if(dwt_gettxantennadelay()!=config.tx_ant_dtu||dwt_getrxantennadelay()!=config.rx_ant_dtu) return DWT_ERROR;
+  if(!mulAdsInit(&state,(uint8_t)config.node,(uint8_t)config.peer,initiator(),runtimeSession)) return DWT_ERROR;
+  lastTelemetry=HAL_GetTick();
+#else
   dwt_settxantennadelay(MUL_ADS_DWM_ANT_DTU); dwt_setrxantennadelay(MUL_ADS_DWM_ANT_DTU);
   if(dwt_gettxantennadelay()!=MUL_ADS_DWM_ANT_DTU || dwt_getrxantennadelay()!=MUL_ADS_DWM_ANT_DTU) return DWT_ERROR;
   mulAdsInit(&state,0x86,0x84,MUL_TWR_ROLE==1,MUL_TWR_SESSION ? MUL_TWR_SESSION : 1);
+#endif
   errors=invalid=timeouts=0; lastPoll=lastStart=lastReport=HAL_GetTick();
   char line[192];
-  snprintf(line,sizeof(line),"MULH INIT radio=DWM3000 role=%u session=%08" PRIX32 "%08" PRIX32 " ant=%u ch=5 version=1 bytes=56 uwb_only=1 uncalibrated=1",MUL_TWR_ROLE,(uint32_t)(state.session>>32),(uint32_t)state.session,MUL_ADS_DWM_ANT_DTU);
-  usb_console_write(line); mul_timing_init(); rearm(); return DWT_SUCCESS;
+  snprintf(line,sizeof(line),"MULH INIT radio=DWM3000 role=%u session=%08" PRIX32 "%08" PRIX32 " ant=%u ch=5 version=1 bytes=56 uwb_only=1 uncalibrated=1",(unsigned)(initiator()?1:2),(uint32_t)(state.session>>32),(uint32_t)state.session,
+#if MUL_UNIVERSAL
+    (unsigned)config.tx_ant_dtu
+#else
+    MUL_ADS_DWM_ANT_DTU
+#endif
+  );
+  usb_console_write(line);
+#if MUL_UNIVERSAL
+  snprintf(line,sizeof(line),"MULH CONFIG node=0x%02X peer=0x%02X identity=%lu tx_ant_dtu=%lu rx_ant_dtu=%lu interval_ms=%lu calibration=%lu correction_mm=%ld",
+    state.local,state.peer,(unsigned long)config.identity,(unsigned long)config.tx_ant_dtu,(unsigned long)config.rx_ant_dtu,(unsigned long)config.interval_ms,(unsigned long)config.calibration,(long)config.correction_mm);
+  usb_console_write(line);
+#endif
+  mul_timing_init(); rearm(); return DWT_SUCCESS;
 }
 void mul_ads_radio_process(void) {
   uint32_t now=HAL_GetTick();
@@ -77,18 +116,23 @@ void mul_ads_radio_process(void) {
         dwt_readrxdata(frame,sizeof(frame),0); dwt_readrxtimestamp(t,DWT_COMPAT_NONE);
         if(!mulAdsDecode(frame,sizeof(frame),&p)) invalid++;
         else {
-          log=MUL_TWR_ROLE==1 && state.stage==adsReportRx && !state.pending && p.type==mulAdsReport &&
+          log=initiator() && state.stage==adsReportRx && !state.pending && p.type==mulAdsReport &&
             p.session==state.session && p.transaction==state.transaction && p.source==state.peer && p.destination==state.local;
           mulAdsReceive(&state,&p,mulDecodeTimestamp(t),now);
         }
       } else invalid++;
       rearm();
       if(state.aborted!=before) logAbort();
-      if(MUL_ADS_TRACE_TIMES && log) logTimes(&p);
+      if(MUL_ADS_TRACE_TIMES && verbosity()>=2 && log) logTimes(&p);
     } else if(status&SYS_STATUS_ALL_RX_TO) { timeouts++; abortExchange(adsAbortRxTimeout); }
     else if(retryRx && now%50U==0) rearm();
   }
-  if(MUL_TWR_ROLE==1 && state.stage==adsIdle && (uint32_t)(now-lastStart)>=1000U) {
+#if MUL_UNIVERSAL
+  uint32_t interval=config.interval_ms;
+#else
+  uint32_t interval=1000U;
+#endif
+  if(initiator() && state.stage==adsIdle && (uint32_t)(now-lastStart)>=interval) {
     lastStart=now; mulAdsBegin(&state,now);
   }
   mulAdsPacket_t p;
@@ -108,16 +152,35 @@ void mul_ads_radio_process(void) {
     }
   }
   char line[192];
-  if(MUL_TWR_ROLE==1 && state.completed!=completed) {
+  if(initiator() && state.completed!=completed) {
     snprintf(line,sizeof(line),"MULH RESULT session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " tof_dtu=%.6f ratio=%.9f nominal_m=%.4f uncalibrated=1 range_valid=%u",(uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,state.tof,state.rateRatio,state.tof*(299792458.0/63897600000.0),(unsigned)state.rangeValid);
-    usb_console_write(line);
+    if(verbosity()) usb_console_write(line);
+#if MUL_UNIVERSAL
+    double raw=state.tof*(299792458.0/63897600000.0),calibrated;
+    bool valid=uwb_config_range(&config,raw,state.rangeValid,&calibrated);
+    snprintf(line,sizeof(line),"MULH CAL session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu range_valid=%u",
+      (uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)config.calibration,(unsigned)valid);
+    if(verbosity())usb_console_write(line);
+    if(config.samples) {
+      snprintf(line,sizeof(line),"TLM RANGE node=0x%02X peer=0x%02X session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu valid=%u",
+        state.local,state.peer,(uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)config.calibration,(unsigned)valid);
+      uwb_runtime_telemetry(line);
+    }
+#endif
   }
   if((uint32_t)(now-lastReport)>=1000U) {
     lastReport=now;
     snprintf(line,sizeof(line),"MULH STAT attempt=%" PRIu32 " done=%" PRIu32 " abort=%" PRIu32 " reject=%" PRIu32 " invalid=%" PRIu32 " err=%" PRIu32 " to=%" PRIu32 " stage=%u session=%08" PRIX32 "%08" PRIX32 " bad_range=%" PRIu32,state.attempts,state.completed,state.aborted,state.rejected,invalid,errors,timeouts,state.stage,(uint32_t)(state.session>>32),(uint32_t)state.session,state.invalidRanges);
-    usb_console_write(line);
-    mul_timing_report();
+    if(verbosity()) {usb_console_write(line);mul_timing_report();}
   }
+#if MUL_UNIVERSAL
+  if(config.telemetry && (uint32_t)(now-lastTelemetry)>=config.telemetry_ms) {
+    lastTelemetry=now;
+    snprintf(line,sizeof(line),"TLM STAT node=0x%02X peer=0x%02X role=%u session=%08" PRIX32 "%08" PRIX32 " attempt=%" PRIu32 " done=%" PRIu32 " abort=%" PRIu32 " reject=%" PRIu32 " bad_range=%" PRIu32,
+      state.local,state.peer,(unsigned)(initiator()?1:2),(uint32_t)(state.session>>32),(uint32_t)state.session,state.attempts,state.completed,state.aborted,state.rejected,state.invalidRanges);
+    uwb_runtime_telemetry(line);
+  }
+#endif
   mul_timing_service(started);
 }
 #endif

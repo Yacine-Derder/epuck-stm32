@@ -4,6 +4,11 @@
 #include <assert.h>
 #include "../../Core/Src/uwb_link.c"
 static int enabled,initCalls,processCalls,isrCalls,fail;
+#if MUL_UNIVERSAL
+static int runtimeInitialized;
+void uwb_runtime_init(void) {initCalls++;runtimeInitialized=1;}
+void uwb_runtime_task(void) {if(runtimeInitialized&&!fail)processCalls++;}
+#endif
 void HAL_NVIC_DisableIRQ(int irq) { assert(irq==EXTI0_IRQn); enabled=0; }
 void HAL_NVIC_EnableIRQ(int irq) { assert(irq==EXTI0_IRQn); enabled=1; }
 void HAL_Delay(uint32_t t) { assert(t==100); }

@@ -2,6 +2,7 @@
 #define USB_CONSOLE_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /* ISR hooks only copy bytes/mark connection loss; never transmit or parse. */
 void usb_console_receive_isr(const uint8_t *bytes, uint32_t length);
@@ -12,5 +13,7 @@ uint8_t usb_console_available(void);
 void usb_console_task(void);
 /* Main-loop only: enqueue a bounded message for an idle/configured CDC. */
 void usb_console_write(const char *message);
+/* False on backpressure/oversize, without consuming a queued telemetry item. */
+bool usb_console_try_write(const char *message);
 
 #endif

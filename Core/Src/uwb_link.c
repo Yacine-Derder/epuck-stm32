@@ -1,4 +1,5 @@
 #include "uwb_link.h"
+#include "uwb_runtime.h"
 #include "main.h"
 #include "phy_interop.h"
 #include "mul_diag.h"
@@ -17,6 +18,11 @@ static volatile uint8_t ready;
 
 void uwb_link_init(void)
 {
+#if MUL_UNIVERSAL
+  HAL_NVIC_DisableIRQ(EXTI0_IRQn);
+  uwb_runtime_init();
+  return;
+#endif
   /* CubeMX GPIO setup enables EXTI0. Take ownership before touching the
    * radio; a disabled or failed link must leave the interrupt disabled.
    */
@@ -56,6 +62,10 @@ void uwb_link_init(void)
 
 void uwb_link_task(void)
 {
+#if MUL_UNIVERSAL
+  uwb_runtime_task();
+  return;
+#endif
 #if APP_UWB_ENABLED || PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
   if (ready) {
 #if PHY_INTEROP_ROLE || MUL_DIAG_ROLE || MUL_TWR_ROLE
