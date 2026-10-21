@@ -13,6 +13,8 @@
 #include "dw3000_deca_regs.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <math.h>
+#include <string.h>
 #ifndef MUL_ADS_DWM_ANT_DTU
 #define MUL_ADS_DWM_ANT_DTU 16380u /* Existing platform nominal, not calibrated */
 #endif
@@ -28,6 +30,22 @@ static uwb_config_t config;
 static uint64_t runtimeSession;
 static bool configured;
 static uint32_t lastTelemetry;
+static uint64_t lastRemoteStamps[3];
+static bool mm(double value,int32_t *out) {
+  double x=value*1000.0;if(!isfinite(x)||x<INT32_MIN||x>INT32_MAX){*out=INT32_MIN;return false;}
+  *out=(int32_t)llround(x);return true;
+}
+static mulTelemetry_t telemetry_record(uint8_t type) {
+  uint32_t timing[4];mul_timing_snapshot(timing);
+  mulTelemetry_t r={.type=type,.peer=state.peer,.exchange=state.session,.transaction=state.transaction,
+   .attempts=state.attempts,.completed=state.completed,.aborted=state.aborted,.rejected=state.rejected,.invalid=state.invalidRanges,
+   .radioErrors=errors,.timeouts=timeouts,.spiCycles=timing[0],.serviceCycles=timing[1],.gapCycles=timing[2],.clockHz=timing[3]};return r;
+}
+bool mul_ads_radio_reset_stats(void) {
+  if(state.stage!=adsIdle)return false;
+  state.attempts=state.completed=state.aborted=state.rejected=state.invalidRanges=0;
+  memset(state.failedStages,0,sizeof(state.failedStages));errors=invalid=timeouts=0;mul_timing_reset_stats();return true;
+}
 void mul_ads_radio_configure(const uwb_config_t *c,uint64_t session) {config=*c;runtimeSession=session;}
 static bool initiator(void) {return config.role==1;}
 static unsigned verbosity(void) {return (unsigned)config.verbosity;}
@@ -127,6 +145,9 @@ void mul_ads_radio_process(void) {
         else {
           log=initiator() && state.stage==adsReportRx && !state.pending && p.type==mulAdsReport &&
             p.session==state.session && p.transaction==state.transaction && p.source==state.peer && p.destination==state.local;
+#if MUL_UNIVERSAL
+          if(log)memcpy(lastRemoteStamps,p.stamps,sizeof(lastRemoteStamps));
+#endif
           mulAdsReceive(&state,&p,mulDecodeTimestamp(t),now);
         }
       } else invalid++;
@@ -171,9 +192,13 @@ void mul_ads_radio_process(void) {
       (uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)config.calibration,(unsigned)valid);
     if(verbosity())usb_console_write(line);
     if(config.samples) {
-      snprintf(line,sizeof(line),"TLM RANGE node=0x%02X peer=0x%02X session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu valid=%u",
-        state.local,state.peer,(uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)config.calibration,(unsigned)valid);
-      uwb_runtime_telemetry(line);
+      mulTelemetry_t r=telemetry_record(mulTlmRange);
+      bool rawFits=mm(raw,&r.rawMm),calFits=mm(calibrated,&r.calMm);
+      r.flags=(state.rangeValid&&rawFits?mulTlmRawValid:0)|(config.calibration?mulTlmCalibration:0)|(valid&&calFits?mulTlmCalValid:0)|mulTlmStampValid;
+      r.quality=(!rawFits||!calFits)?1:0;
+      r.stamps[0]=state.stamps[0];r.stamps[1]=lastRemoteStamps[0];r.stamps[2]=lastRemoteStamps[1];
+      r.stamps[3]=state.stamps[1];r.stamps[4]=state.stamps[2];r.stamps[5]=lastRemoteStamps[2];
+      uwb_runtime_publish(&r);
     }
 #endif
   }
@@ -185,9 +210,7 @@ void mul_ads_radio_process(void) {
 #if MUL_UNIVERSAL
   if(config.telemetry && (uint32_t)(now-lastTelemetry)>=config.telemetry_ms) {
     lastTelemetry=now;
-    snprintf(line,sizeof(line),"TLM STAT node=0x%02X peer=0x%02X role=%u session=%08" PRIX32 "%08" PRIX32 " attempt=%" PRIu32 " done=%" PRIu32 " abort=%" PRIu32 " reject=%" PRIu32 " bad_range=%" PRIu32,
-      state.local,state.peer,(unsigned)(initiator()?1:2),(uint32_t)(state.session>>32),(uint32_t)state.session,state.attempts,state.completed,state.aborted,state.rejected,state.invalidRanges);
-    uwb_runtime_telemetry(line);
+    mulTelemetry_t r=telemetry_record(mulTlmSummary);uwb_runtime_publish(&r);
   }
 #endif
   mul_timing_service(started);

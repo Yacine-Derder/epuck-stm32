@@ -40,7 +40,7 @@ uint32_t dwt_read_reg(uint32_t reg) { assert(reg==RX_FINFO_ID); return length; }
 void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n==56 && !at); memcpy(out,input,n); }
 void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(segment==DWT_COMPAT_NONE); mulEncodeTimestamp(out,rxMarker); }
 void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
-void usb_console_write(const char *text) { assert(strlen(text)<192); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }
+void usb_console_write(const char *text) { assert(strlen(text)<(MUL_UNIVERSAL?320:192)); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }
 static void step(void) { tick++; mul_ads_radio_process(); }
 static mulAdsPacket_t sentPacket(void) { mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p)); return p; }
 static void receive(mulAdsPacket_t *p,uint64_t t) {

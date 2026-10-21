@@ -2,6 +2,11 @@
 #define ESP_LINK_H
 #include <stdint.h>
 void esp_link_init(void);
+void esp_link_set_enabled(uint8_t enabled);
+uint8_t esp_link_telemetry(const char *line);
+uint32_t esp_link_uart_errors(void);
+uint32_t esp_link_telemetry_dropped(void);
+void esp_link_reset_diagnostics(void);
 void esp_link_task(void);
 /* Main-loop USB-only diagnostic snapshot, even when UART3 is broken. */
 void esp_link_usb_status(void);

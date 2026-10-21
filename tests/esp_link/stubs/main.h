@@ -18,6 +18,8 @@ uint32_t HAL_GetTick(void);
 void HAL_NVIC_ClearPendingIRQ(int irq);
 void HAL_NVIC_SetPriority(int irq, uint32_t priority, uint32_t subpriority);
 void HAL_NVIC_EnableIRQ(int irq);
+void HAL_NVIC_DisableIRQ(int irq);
+uint32_t HAL_UART_Abort(UART_HandleTypeDef *uart);
 void mock_clear(UART_HandleTypeDef *uart);
 #define __HAL_UART_CLEAR_OREFLAG(uart) mock_clear(uart)
 uint32_t HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *buffer, uint16_t size);

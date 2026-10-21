@@ -13,7 +13,7 @@ static void put(uint8_t *p,uint32_t v) { for(unsigned i=0;i<4;i++) p[i]=(uint8_t
 static void fields(const uwb_config_t *c,uint32_t v[FIELDS]) {
   const uint32_t a[FIELDS]={c->node,c->peer,c->identity,c->mode,c->role,c->interval_ms,c->phy,
     c->tx_ant_dtu,c->rx_ant_dtu,c->calibration,(uint32_t)c->correction_mm,c->verbosity,
-    c->telemetry,c->telemetry_ms,c->samples,c->reserved[0],c->reserved[1],c->reserved[2]};
+    c->telemetry,c->telemetry_ms,c->samples,c->wifi,c->telemetry_format,c->peer_count};
   memcpy(v,a,sizeof(a));
 }
 static void assign(uwb_config_t *c,const uint32_t *v) {
@@ -22,17 +22,17 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
   /* Explicit two's complement conversion without out-of-range signed cast. */
   c->correction_mm=v[10]<=INT32_MAX?(int32_t)v[10]:-1-(int32_t)(UINT32_MAX-v[10]);
   c->verbosity=v[11];c->telemetry=v[12];c->telemetry_ms=v[13];c->samples=v[14];
-  for(unsigned i=0;i<3;i++) c->reserved[i]=v[15+i];
+  c->wifi=v[15];c->telemetry_format=v[16];c->peer_count=v[17];
 }
 void uwb_config_defaults(uwb_config_t *c) {
   *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
-    .tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000};
+    .tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
 }
 const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
   if(c->identity>2) return "identity: standalone, alr, rlr";
-  if(c->mode>1) return "mode: supported values off, twr";
+  if(c->mode>1) return "mode: off, twr";
   if(c->role!=1&&c->role!=2) return "role: initiator, responder";
   if(c->interval_ms<250||c->interval_ms>60000) return "interval_ms: 250..60000";
   if(c->phy) return "phy: only mixed (channel5/6M8/code9) supported";
@@ -40,11 +40,19 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->calibration>1||c->correction_mm < -10000||c->correction_mm>10000) return "calibration: on/off; correction_mm: -10000..10000";
   if(c->verbosity>2||c->telemetry>1||c->samples>1) return "verbosity: quiet/summary/full; telemetry/samples: on/off";
   if(c->telemetry_ms<1000||c->telemetry_ms>60000) return "telemetry_ms: 1000..60000";
-  if(c->reserved[0]||c->reserved[1]||c->reserved[2]) return "reserved fields must be zero";
+  if(c->wifi>1||c->telemetry_format) return "wifi: on/off; telemetry_format: compact";
+  if(!c->peer_count||c->peer_count>UWB_MAX_PEERS) return "peer count: 1..8";
+  if(c->peer!=c->peers[0].address||c->interval_ms!=c->peers[0].interval_ms) return "primary peer alias mismatch";
+  for(unsigned i=0;i<UWB_MAX_PEERS;i++) {
+    const uwb_peer_t *p=&c->peers[i];
+    if(i>=c->peer_count) {if(p->address||p->enabled||p->interval_ms)return "unused peers must be zero";continue;}
+    if(p->address==c->node||p->enabled>1||p->interval_ms<250||p->interval_ms>60000)return "invalid peer/self/interval";
+    for(unsigned j=0;j<i;j++)if(p->address==c->peers[j].address)return "duplicate peer";
+  }
   return NULL;
 }
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
-  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return memcmp(av,bv,sizeof(av))==0;
+  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
 }
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) {
   char fieldLower[24],valueLower[24];
@@ -55,22 +63,22 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   fieldLower[f]=valueLower[valueLength]=0;field=fieldLower;value=valueLower;
   if(!strcmp(field,"address"))field="node";
   static const char *names[]={"node","peer","identity","mode","role","interval_ms","phy","tx_ant_dtu","rx_ant_dtu",
-    "calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples"};
-  unsigned index=15;for(unsigned i=0;i<15;i++) if(!strcmp(field,names[i])) {index=i;break;}
-  if(index==15) return "unknown field; use CFG HELP";
+    "calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples","wifi","telemetry_format"};
+  unsigned index=17;for(unsigned i=0;i<17;i++) if(!strcmp(field,names[i])) {index=i;break;}
+  if(index==17) return "unknown field; use CFG HELP";
   static const struct {unsigned field;const char *name;const char *number;} aliases[]={
     {2,"standalone","0"},{2,"alr","1"},{2,"rlr","2"},
-    {3,"off","0"},{3,"twr","1"},{4,"initiator","1"},{4,"responder","2"},
+    {3,"off","0"},{3,"twr","1"},{3,"beacon","2"},{3,"listen","3"},{4,"initiator","1"},{4,"responder","2"},
     {6,"mixed","0"},{9,"off","0"},{9,"on","1"},
     {11,"quiet","0"},{11,"summary","1"},{11,"full","2"},
-    {12,"off","0"},{12,"on","1"},{14,"off","0"},{14,"on","1"}};
+    {12,"off","0"},{12,"on","1"},{14,"off","0"},{14,"on","1"},{15,"off","0"},{15,"on","1"},{16,"compact","0"}};
   for(unsigned i=0;i<sizeof(aliases)/sizeof(*aliases);i++)
     if(aliases[i].field==index && !strcmp(aliases[i].name,value)) {value=aliases[i].number;break;}
-  if((index==2||index==3||index==4||index==6||index==9||index==11||index==12||index==14) &&
+  if((index==2||index==3||index==4||index==6||index==9||index==11||index==12||index==14||index==15||index==16) &&
      (value[0]<'0'||value[0]>'9')) {
-    static const char *errors[]={"identity: standalone, alr, rlr","mode: supported values off, twr","role: initiator, responder"};
+    static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr","role: initiator, responder"};
     if(index>=2&&index<=4) return errors[index-2];
-    return index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
+    return index==16?"telemetry_format: compact":index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
   }
   const char *p=value;bool negative=false;unsigned base=10;
   if(index==10 && *p=='-') {negative=true;p++;}
@@ -83,8 +91,10 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   }
   if(index==10 && n>INT32_MAX) return "correction_mm overflow";
   uint32_t v[FIELDS];fields(c,v);v[index]=negative?0u-n:n;
-  uwb_config_t candidate;assign(&candidate,v);
+  uwb_config_t candidate=*c;assign(&candidate,v);
   if((index==7||index==8)&&v[index]!=(index==7?c->tx_ant_dtu:c->rx_ant_dtu)) candidate.calibration=0;
+  if(index==1) candidate.peers[0].address=(uint8_t)candidate.peer;
+  if(index==5) for(unsigned i=0;i<candidate.peer_count;i++)candidate.peers[i].interval_ms=(uint16_t)candidate.interval_ms;
   const char *error=uwb_config_validate(&candidate);
   if(!error) *c=candidate;
   return error;
@@ -97,13 +107,20 @@ uint32_t uwb_config_crc(const uint8_t *data,size_t size) {
 void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c,uint32_t generation) {
   memset(out,0,UWB_CONFIG_RECORD_SIZE);put(out,MAGIC);put(out+4,UWB_CONFIG_VERSION);put(out+8,UWB_CONFIG_RECORD_SIZE);put(out+12,generation);
   uint32_t v[FIELDS];fields(c,v);for(unsigned i=0;i<FIELDS;i++) put(out+16+4*i,v[i]);
+  for(unsigned i=0;i<UWB_MAX_PEERS;i++) {out[88+4*i]=c->peers[i].address;out[89+4*i]=c->peers[i].enabled;out[90+4*i]=(uint8_t)c->peers[i].interval_ms;out[91+4*i]=(uint8_t)(c->peers[i].interval_ms>>8);}
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
 bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
-  if(get(in)!=MAGIC||get(in+4)!=UWB_CONFIG_VERSION||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
-  for(unsigned i=88;i<120;i++) if(in[i]) return false;
+  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
+
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
-  uwb_config_t candidate;assign(&candidate,v);if(uwb_config_validate(&candidate)) return false;
+  uwb_config_t candidate={0};assign(&candidate,v);
+  if(get(in+4)==1) {
+    if(candidate.wifi||candidate.telemetry_format||candidate.peer_count)return false;
+    for(unsigned i=88;i<120;i++)if(in[i])return false;
+    candidate.peer_count=1;candidate.peers[0]=(uwb_peer_t){(uint8_t)candidate.peer,1,(uint16_t)candidate.interval_ms};
+  } else for(unsigned i=0;i<UWB_MAX_PEERS;i++) candidate.peers[i]=(uwb_peer_t){in[88+4*i],in[89+4*i],(uint16_t)(in[90+4*i]|(in[91+4*i]<<8))};
+  if(uwb_config_validate(&candidate)) return false;
   *c=candidate;*generation=get(in+12);return true;
 }
 typedef struct {bool valid;uint32_t generation,offset,free[2];uwb_config_t config;} scan_t;

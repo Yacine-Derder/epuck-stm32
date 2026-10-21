@@ -14,6 +14,10 @@ extern UART_HandleTypeDef huart3;
 #define ESP_FAULT_UART 1U
 #define ESP_FAULT_OVERFLOW 2U
 #define ESP_FAULT_TX 4U
+static uint8_t esp_requested;
+static char esp_telemetry_line[310];
+static uint8_t esp_telemetry_pending;
+static uint32_t esp_telemetry_tick,esp_telemetry_drops;
 static volatile uint8_t esp_active, esp_fault, esp_tx_fault, esp_busy;
 static uint8_t esp_byte;
 static volatile uint8_t esp_ring[ESP_RING];
@@ -54,6 +58,28 @@ static uint8_t esp_enqueue(const char *line, uint8_t control)
   return ok;
 }
 
+static void esp_invalidate(const char *reason);
+uint32_t esp_link_uart_errors(void) {return esp_uart_errors;}
+uint32_t esp_link_telemetry_dropped(void) {return esp_telemetry_drops;}
+void esp_link_reset_diagnostics(void) {esp_uart_errors=esp_rx_overflows=esp_control_full=esp_telemetry_drops=0;}
+uint8_t esp_link_telemetry(const char *line) {
+  if(!esp_link_owner_alive(esp_session_id)||esp_telemetry_pending)return 0;
+  if(strlen(line)!=309U||strncmp(line,"UWB2 ",5))return 0;
+  memcpy(esp_telemetry_line,line,310);esp_telemetry_line[309]='\n';
+  esp_telemetry_tick=HAL_GetTick();esp_telemetry_pending=1;return 1;
+}
+void esp_link_set_enabled(uint8_t enabled) {
+#if MUL_UNIVERSAL
+  if(!enabled && esp_active) {
+    esp_invalidate("telemetry_disabled");HAL_NVIC_DisableIRQ(USART3_IRQn);
+    (void)HAL_UART_Abort(&huart3);esp_active=esp_busy=esp_valid=esp_hb_seen=0;
+    esp_qhead=esp_qtail=esp_count=0;esp_tail=esp_head;esp_telemetry_pending=0;
+  }
+  esp_requested=enabled;if(enabled)esp_link_init();
+#else
+  esp_requested=enabled;
+#endif
+}
 static void esp_fault_status(void)
 {
   char text[192];
@@ -148,6 +174,9 @@ static void esp_restart(void)
 }
 void esp_link_init(void)
 {
+#if MUL_UNIVERSAL
+  if(!esp_requested) return;
+#endif
   uint32_t mask = __get_PRIMASK();
   __disable_irq();
   if (!esp_active) {
@@ -271,6 +300,7 @@ void esp_link_publish_sensor(void)
 }
 void esp_link_task(void)
 {
+  uint8_t control_sent=0;
   char record[64];
   uint32_t mask;
   if (!esp_active) return;
@@ -288,6 +318,7 @@ void esp_link_task(void)
       esp_tail = esp_head; esp_fault = esp_tx_fault = 0U;
       esp_qhead = esp_qtail = esp_count = 0U;
       esp_length = 0U; esp_discard = 1U; esp_cr = 0U;
+      if(esp_telemetry_pending) {esp_telemetry_drops++;esp_telemetry_pending=0;}
     }
     if (fault || esp_tail == esp_head) {
       __set_PRIMASK(mask);
@@ -303,8 +334,16 @@ void esp_link_task(void)
   if (!esp_busy && esp_count) {
     memcpy(esp_tx,esp_queue[esp_qtail],ESP_LINE); esp_busy=1U;
     if (HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,(uint16_t)strlen(esp_tx))==HAL_OK) {
-      esp_qtail=(uint8_t)((esp_qtail+1U)%ESP_QUEUE); --esp_count;
+      esp_qtail=(uint8_t)((esp_qtail+1U)%ESP_QUEUE); --esp_count;control_sent=1;
     } else esp_busy=0U;
+  }
+  if(esp_telemetry_pending && (!esp_link_owner_alive(esp_session_id)||(uint32_t)(HAL_GetTick()-esp_telemetry_tick)>1000U)) {
+    esp_telemetry_pending=0;esp_telemetry_drops++;
+  }
+  if(!control_sent&&!esp_busy&&!esp_count&&esp_telemetry_pending) {
+    memcpy(esp_tx,esp_telemetry_line,310);esp_tx[310]=0;esp_busy=1;
+    if(HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,310)==HAL_OK)esp_telemetry_pending=0;
+    else esp_busy=0;
   }
   uint32_t dropped=esp_log_drops;
   if (esp_count < ESP_QUEUE-4U) esp_log_drops=0U; else dropped=0U;
@@ -313,6 +352,11 @@ void esp_link_task(void)
 }
 #else
 void esp_link_init(void) {}
+void esp_link_set_enabled(uint8_t enabled) {(void)enabled;}
+uint8_t esp_link_telemetry(const char *line) {(void)line;return 0;}
+uint32_t esp_link_uart_errors(void) {return 0;}
+uint32_t esp_link_telemetry_dropped(void) {return 0;}
+void esp_link_reset_diagnostics(void) {}
 void esp_link_task(void) {}
 void esp_link_publish_sensor(void) {}
 void esp_link_usb_status(void) { usb_console_write("[ESP] disabled (APP_ESP_ENABLED=0)"); }

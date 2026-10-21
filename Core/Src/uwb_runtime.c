@@ -10,16 +10,21 @@
 #include "deca_device_api.h"
 #include "epuck_link.h"
 #include "usb_console.h"
+#include "esp_link.h"
 #include <stdio.h>
 #include <string.h>
 static uwb_config_t current,saved,active;
 static uint32_t generation;
 static bool savedValid,started,initialized,radioTouched,applied,loadedAtBoot,durabilityKnown;
 #define TLM_CAPACITY 4u
-#define TLM_LENGTH 192u
+#define TLM_LENGTH MUL_TLM_LINE
 static char telemetry[TLM_CAPACITY][TLM_LENGTH];
 static unsigned head,tail,count,highWater;
-static uint32_t dropped,accepted;
+static uint32_t dropped,accepted,telemetrySequence,lastIdleReport;
+static uint64_t telemetryEpoch;
+static char wifiQueue[TLM_CAPACITY][TLM_LENGTH];
+static uint32_t wifiQueuedAt[TLM_CAPACITY],wifiDrops;
+static unsigned wifiHead,wifiTail,wifiCount,wifiHigh;
 static unsigned display,displayIndex;
 static uwb_config_t displayConfig;
 static const char *displayState;
@@ -31,7 +36,7 @@ static const char *const help[]={
   "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
   "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
   "identity: standalone (factory), alr, rlr; metadata, never motor authorization",
-  "mode: off (factory), twr; TDMA/TDoA unsupported",
+  "mode: off (factory), twr; beacon/listen not enabled in this phase",
   "role: responder (factory), initiator; independent of robot identity",
   "interval_ms: 250..60000 ms; factory 1000; initiator transaction interval",
   "phy: mixed (factory/only): channel5, 6.8Mbps, code9, preamble128",
@@ -40,8 +45,9 @@ static const char *const help[]={
   "correction_mm: -10000..10000 mm; factory 0; calibrated = raw + correction/1000",
   "Antenna delay changes disable calibration; refit before explicitly enabling",
   "verbosity: quiet, summary, full (factory); full retains six raw timestamps",
-  "telemetry: off (factory), on; bounded local queue; no UART/Wi-Fi forwarding",
+  "telemetry: off (factory), on; bounded USB + Wi-Fi queues; CFG SET wifi on enables UART3",
   "telemetry_ms: 1000..60000 ms; factory 1000; samples: off (factory), on",
+  "wifi: off (factory), on; telemetry_format: compact (only); no motor authorization",
   "CFG SHOW [ACTIVE|SAVED|DEFAULTS]; includes schema and saved-settings boot status",
   "CFG DEFAULTS: activate and persist factory settings (UWB off, calibration off)",
   "CFG LOAD (REVERT alias): activate last valid saved settings; read failure preserves state",
@@ -59,13 +65,32 @@ static const char *const help[]={
   "STOP / MOTOR_STATUS / STREAM_STATUS / LINK_STATUS remain available; ARM prohibited"
 };
 const uwb_config_t *uwb_runtime_active(void) {return &active;}
-void uwb_runtime_telemetry(const char *line) {
+void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
-  size_t length=0;while(length<TLM_LENGTH&&line[length]) length++;
-  if(count==TLM_CAPACITY||length>TLM_LENGTH-3u) {dropped++;return;}
-  memcpy(telemetry[head],line,length+1);head=(head+1)%TLM_CAPACITY;count++;
-  if(count>highWater) highWater=count;
+  r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
+  r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)active.role;
+  r->uptimeMs=HAL_GetTick();r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
+  r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
+  char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
+  if(count==TLM_CAPACITY)dropped++;
+  else {memcpy(telemetry[head],line,sizeof(line));head=(head+1)%TLM_CAPACITY;count++;if(count>highWater)highWater=count;}
+  if(active.wifi) {
+    if(wifiCount==TLM_CAPACITY)wifiDrops++;
+    else {memcpy(wifiQueue[wifiHead],line,sizeof(line));wifiQueuedAt[wifiHead]=HAL_GetTick();wifiHead=(wifiHead+1)%TLM_CAPACITY;wifiCount++;if(wifiCount>wifiHigh)wifiHigh=wifiCount;}
+  }
   accepted++;
+}
+void uwb_runtime_telemetry(const char *line) {
+  mulTelemetry_t r;if(mulTelemetryDecode(line,&r))uwb_runtime_publish(&r);else dropped++;
+}
+static void telemetry_task(void) {
+  if(wifiCount) {
+    if((uint32_t)(HAL_GetTick()-wifiQueuedAt[wifiTail])>=1000U) {wifiDrops++;wifiTail=(wifiTail+1)%TLM_CAPACITY;wifiCount--;}
+    else if(esp_link_telemetry(wifiQueue[wifiTail])) {wifiTail=(wifiTail+1)%TLM_CAPACITY;wifiCount--;}
+  }
+  if(active.telemetry&&!active.mode&&(uint32_t)(HAL_GetTick()-lastIdleReport)>=active.telemetry_ms) {
+    lastIdleReport=HAL_GetTick();mulTelemetry_t r={.type=mulTlmSummary};uwb_runtime_publish(&r);
+  }
 }
 static void reply(const char *s) {usb_console_write(s);}
 static void stop(void) {
@@ -78,7 +103,7 @@ static bool prepare(const uwb_config_t *c) {
   stop();
   if(!c->mode) return true;
   uint64_t session;if(!uwb_runtime_session(&session)) return false;
-  mul_ads_radio_configure(c,session);radioTouched=true;
+  telemetryEpoch=session;mul_ads_radio_configure(c,session);radioTouched=true;
   int32_t status=mul_ads_radio_init();mul_ads_radio_stop();
   return status==DWT_SUCCESS;
 }
@@ -123,7 +148,8 @@ committed:
    * Retrying LOAD uses the same saved settings without another flash write. */
   current=*candidate;
   if(!resume(candidate)) {applied=false;reply("ERR configuration SAVED but radio OFF; check hardware, retry CFG LOAD");return false;}
-  dropped+=count;head=tail=count=0;
+  dropped+=count;head=tail=count=0;wifiDrops+=wifiCount;wifiHead=wifiTail=wifiCount=0;
+  esp_link_set_enabled((uint8_t)active.wifi);
   reply("CFG SAVED / ACTIVE");return true;
 }
 void uwb_runtime_init(void) {
@@ -132,7 +158,9 @@ void uwb_runtime_init(void) {
   durabilityKnown=true;
   if(savedValid) current=saved;
   initialized=true;
+  if(!uwb_runtime_session(&telemetryEpoch))telemetryEpoch=0;
   if(!prepare(&current)||!resume(&current)) {stop();applied=false;reply("ERR startup radio failed; inspect CFG SHOW, retry CFG LOAD");}
+  esp_link_set_enabled((uint8_t)(applied&&current.wifi));
   reply(applied?"STM32/DWM3000 UWB ready; Type HELP or CFG HELP for commands":
     "STM32/DWM3000 console ready; radio OFF (startup error); Type CFG HELP");
 }
@@ -155,7 +183,7 @@ static void display_output(void) {
   case 0:snprintf(text,sizeof(text),"Node address:       0x%02lX",(unsigned long)c->node);break;
   case 1:snprintf(text,sizeof(text),"Peer address:       0x%02lX",(unsigned long)c->peer);break;
   case 2:snprintf(text,sizeof(text),"Robot identity:     %s",identity(c->identity));break;
-  case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode?"TWR":"OFF");break;
+  case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode==1?"TWR":c->mode==2?"BEACON":c->mode==3?"LISTEN":"OFF");break;
   case 4:snprintf(text,sizeof(text),"TWR role:           %s",c->role==1?"Initiator":"Responder");break;
   case 5:snprintf(text,sizeof(text),"Interval:           %lu ms",(unsigned long)c->interval_ms);break;
   case 6:snprintf(text,sizeof(text),"PHY:                Mixed channel5 / 6.8Mbps / code9 / preamble128");break;
@@ -169,13 +197,15 @@ static void display_output(void) {
   case 14:snprintf(text,sizeof(text),"Ranging samples:    %s",onoff(c->samples));break;
   case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
+  case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
+  case 19:snprintf(text,sizeof(text),"Configured peers: %lu (maximum 8)",(unsigned long)c->peer_count);break;
   case 17:snprintf(text,sizeof(text),"Saved generation:   %lu; UWB-only safety policy",(unsigned long)displayGeneration);break;
   default:display=0;return;
   }
   if(usb_console_try_write(text)) displayIndex++;
 }
 void uwb_runtime_task(void) {
-  display_output();
+  display_output();telemetry_task();
   if(initialized&&started) mul_ads_radio_process();
 }
 bool uwb_runtime_command(const char *line) {
@@ -193,6 +223,11 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
+  if(nt==2&&!strcmp(token[0],"diag")&&!strcmp(token[1],"reset")) {
+    if(active.mode==1&&!mul_ads_radio_reset_stats())reply("ERR transaction active; retry DIAG RESET when idle");
+    else {dropped=wifiDrops=accepted=0;highWater=count;wifiHigh=wifiCount;esp_link_reset_diagnostics();reply("DIAG counters reset; safety/session/transaction IDs unchanged");}
+    return true;
+  }
   if(nt==1&&!strcmp(token[0],"help")) {display=1;displayIndex=0;return true;}
   if(strcmp(token[0],"cfg")&&strcmp(token[0],"tlm")) return false;
   if(!strcmp(token[0],"tlm")) {
@@ -200,8 +235,8 @@ bool uwb_runtime_command(const char *line) {
       if(!count) reply("TLM EMPTY");
       else if(usb_console_try_write(telemetry[tail])) {tail=(tail+1)%TLM_CAPACITY;count--;}
     } else if(nt==2&&!strcmp(token[1],"status")) {
-      char text[192];snprintf(text,sizeof(text),"TLM STATUS occupancy=%u capacity=%u high_water=%u dropped=%lu accepted=%lu sink=USB_PULL uart_forwarding=0",
-        count,TLM_CAPACITY,highWater,(unsigned long)dropped,(unsigned long)accepted);reply(text);
+      char text[192];snprintf(text,sizeof(text),"TLM STATUS usb=%u wifi=%u capacity_each=4 high=%u/%u drops=%lu/%lu accepted=%lu uart_errors=%lu",
+        count,wifiCount,highWater,wifiHigh,(unsigned long)dropped,(unsigned long)wifiDrops,(unsigned long)accepted,(unsigned long)esp_link_uart_errors());reply(text);
     } else reply("ERR TLM NEXT | STATUS");
     return true;
   }

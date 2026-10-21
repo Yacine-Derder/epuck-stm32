@@ -5,6 +5,12 @@
 #undef main
 #include "../../Core/Src/uwb_runtime.c"
 static uint8_t nv[2*UWB_CONFIG_SECTOR_SIZE],backup[sizeof(nv)];
+static bool wifiEnabled;
+void esp_link_set_enabled(uint8_t enabled) {wifiEnabled=enabled;}
+uint8_t esp_link_telemetry(const char *line) {(void)line;return 0;}
+uint32_t esp_link_uart_errors(void) {return 0;}
+uint32_t esp_link_telemetry_dropped(void) {return 0;}
+void esp_link_reset_diagnostics(void) {}
 static bool flashSafe=true,rngGood=true,usbReady=true,readFail,failAfterCommit,failResume;
 static int writeBudget=-1;
 static uint8_t outputSlots=16;
@@ -76,7 +82,7 @@ int main(void) {
  tick+=500;uwb_runtime_task();p=sentPacket();p.source=0x11;p.destination=0x10;p.type=mulAdsResponse;
  txMarker=MUL_TIMESTAMP_MASK-99999999;status=DWT_INT_TXFRS_BIT_MASK;receive(&p,50000001);
  txMarker=250000001;status=DWT_INT_TXFRS_BIT_MASK;step();p.type=mulAdsReport;p.stamps[0]=10000;p.stamps[1]=150000000;p.stamps[2]=350010000;
- receive(&p,300000000);assert(state.completed==1&&strstr(captured,"MULH CAL"));assert(count==1&&strstr(telemetry[tail],"calibration=1"));
+ receive(&p,300000000);assert(state.completed==1&&strstr(captured,"MULH CAL"));assert(count==1&&({mulTelemetry_t decoded;mulTelemetryDecode(telemetry[tail],&decoded)&&(decoded.flags&mulTlmCalibration);}));
  command("CFG SET tx_ant_dtu 16383");assert(!active.calibration);persisted();
  /* Flash failure at every word: previous saved record survives, old radio
   * resumes, no setter success and no pending RAM config. */
@@ -116,8 +122,14 @@ int main(void) {
   * A valid old-schema fixture loads unchanged, without writing migration data. */
  memset(nv,0,sizeof(nv));command("CFG LOAD");assert(applied&&active.mode==0);
  uwb_runtime_init();assert(!loadedAtBoot&&!savedValid&&!started&&applied);
- uwb_config_t legacy;uwb_config_defaults(&legacy);legacy.node=0x86;legacy.peer=0x84;legacy.identity=2;
- memset(nv,255,sizeof(nv));uwb_config_encode(nv,&legacy,77);beforeWrites=nvWrites;uwb_runtime_init();
- assert(loadedAtBoot&&active.node==0x86&&active.peer==0x84&&generation==77&&nvWrites==beforeWrites);
+ uwb_config_t legacy;uwb_config_defaults(&legacy);legacy.node=0x86;legacy.peer=0x84;legacy.identity=2;legacy.calibration=1;legacy.correction_mm=-1234;
+ memset(nv,255,sizeof(nv));uwb_config_encode(nv,&legacy,77);nv[4]=1;memset(nv+76,0,44);
+ uint32_t legacyCrc=uwb_config_crc(nv,120);for(unsigned i=0;i<4;i++)nv[120+i]=(uint8_t)(legacyCrc>>(8*i));
+ beforeWrites=nvWrites;uwb_runtime_init();
+ assert(loadedAtBoot&&active.node==0x86&&active.peer==0x84&&generation==77&&nvWrites==beforeWrites&&active.calibration&&active.correction_mm==-1234);
+ command("CFG SET wifi on");assert(wifiEnabled&&active.wifi);persisted();
+ command("CFG SET telemetry on");tick+=1000;uwb_runtime_task();assert(count&&wifiCount);
+ unsigned lost=wifiDrops;tick+=1001;uwb_runtime_task();assert(wifiDrops>lost);
+ command("CFG SET telemetry_format compact");command("CFG SET wifi off");assert(!wifiEnabled);persisted();
  puts("same-binary immediate persistence/rollback/roles/8-bit IDs/help/old SAVE sequence/recovery tests passed");return 0;
 }

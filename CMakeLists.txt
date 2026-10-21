@@ -68,6 +68,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_config_flash.c
     Core/Src/uwb_runtime.c
     Core/Src/mul_ads_radio.c
+    ThirdParty/mul_core/mul_telemetry.c
+    ThirdParty/mul_core/mul_beacon.c
+    ThirdParty/mul_core/mul_time.c
     ThirdParty/mul_core/mul_ads.c
     Core/Src/mul_diag.c
     Core/Src/mul_timing.c

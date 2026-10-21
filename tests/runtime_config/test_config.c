@@ -29,7 +29,7 @@ int main(void) {
  b=a;assert(uwb_config_set(&b,"peer","0x00"));assert(uwb_config_set(&b,"mode","3"));assert(uwb_config_set(&b,"phy","1"));
  assert(uwb_config_set(&b,"tdma","1"));assert(!uwb_config_set(&b,"node","0x85"));assert(!uwb_config_set(&b,"identity","1"));assert(!uwb_config_set(&b,"role","1"));
  for(unsigned node=0;node<256;node++) for(unsigned peer=0;peer<256;peer++) {
-   uwb_config_t full=a;full.node=node;full.peer=peer;
+   uwb_config_t full=a;full.node=node;full.peer=peer;full.peers[0].address=(uint8_t)peer;
    assert((uwb_config_validate(&full)==NULL)==(node!=peer));
  }
  b=a;assert(!uwb_config_set(&b,"ADDRESS","0XFF")&&b.node==255);
@@ -41,7 +41,8 @@ int main(void) {
  assert(!uwb_config_set(&b,"calibration","OFF")&&!b.calibration);
  assert(!uwb_config_set(&b,"verbosity","summary")&&b.verbosity==1);
  /* Existing v1 records retain old values; defaults change without a migration write. */
- c=a;c.node=0x86;c.peer=0x84;uwb_config_encode(record,&c,42);
+ c=a;c.node=0x86;c.peer=0x84;uwb_config_encode(record,&c,42);record[4]=1;memset(record+76,0,44);
+ uint32_t legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
  assert(uwb_config_decode(record,&b,&gen)&&gen==42&&b.node==0x86&&b.peer==0x84);
  double derived;assert(uwb_config_range(&a,1.5,true,&derived)&&derived==1.5);
  assert(!uwb_config_set(&a,"correction_mm","-500"));assert(uwb_config_range(&a,1.5,true,&derived)&&derived==1.5);
@@ -72,7 +73,7 @@ int main(void) {
  memset(flash,255,sizeof(flash));uwb_config_encode(flash,&a,UINT32_MAX);
  assert(uwb_config_save(&store,&b,&gen)&&gen==0);assert(uwb_config_load(&store,&c,&gen)&&gen==0&&uwb_config_equal(&c,&b));
  /* Unsupported version with a valid CRC is still rejected. */
- flash[128+4]=2;uint32_t crc=uwb_config_crc(flash+128,120);
+ flash[128+4]=3;uint32_t crc=uwb_config_crc(flash+128,120);
  for(unsigned i=0;i<4;i++)flash[128+120+i]=(uint8_t)(crc>>(8*i));
  assert(uwb_config_load(&store,&c,&gen)&&gen==UINT32_MAX&&uwb_config_equal(&c,&a));
  /* Last slot appends without erase; only the next save rotates/erases.

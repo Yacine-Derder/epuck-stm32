@@ -23,6 +23,8 @@ void mul_timing_service(uint32_t start) {
   if (hasStart && start-lastStart>gapMax) gapMax=start-lastStart;
   lastStart=start; hasStart=1; calls++;
 }
+void mul_timing_snapshot(uint32_t out[4]) {out[0]=spiMax;out[1]=serviceMax;out[2]=gapMax;out[3]=SystemCoreClock;}
+void mul_timing_reset_stats(void) {spiMax=serviceMax=gapMax=calls=0;hasStart=0;}
 void mul_timing_report(void) {
   char line[192];
 #if MUL_TWR_ROLE

@@ -260,4 +260,5 @@ int main(int argc,char **argv) {
  assert(tx_calls==calls);
 #endif
  puts("PASS");
+ return 0;
 }

@@ -280,3 +280,36 @@ Software validation completed for this correction:
 Universal resource sizes: text 92480, data 764, BSS 17480 bytes. Stack high-water,
 physical flash endurance/power cuts, actual radio/UART timing and accuracy remain
 unmeasured. No hardware was flashed or operated by the assistant.
+
+
+## Untethered telemetry extension (software-tested)
+
+Universal UWB-only now includes optional UART3 Wi-Fi transport. Factory `wifi off`
+retains the quiet radio baseline. `CFG SET wifi on` enables the existing ESP32
+bridge; `CFG SET telemetry on` produces bounded summaries, and `CFG SET samples on`
+adds range records. `telemetry_ms` is 1000..60000. `telemetry_format compact` is
+currently the only encoding. `TLM NEXT` also retrieves the same records over USB.
+`DIAG RESET` resets diagnostics only while an ADS transaction is idle.
+
+The line format is UWB2 plus 304 hexadecimal characters: 152 binary bytes with
+CRC16-CCITT, full 40-bit timestamps, integer millimetres and explicit radio epochs.
+Receivers accept UWB1 too. STM32 has separate four-record USB and Wi-Fi queues;
+ESP32 has eight optional records. Old Wi-Fi records expire after one second.
+Safety/control queues have priority. An already started 310-byte UART record
+cannot be preempted (about 27ms at 115200 baud); physical coexistence needs testing.
+Telemetry and identity never authorize ARM or movement in this image.
+
+With the existing ESP32 provisioned on Wi-Fi, run from epuck-esp32:
+
+```sh
+python3 tools/uwb_collect.py --robot 192.168.1.21:3333 --robot 192.168.1.22:3333 --output captures
+```
+
+The read-only collector sends session heartbeats and saves per-robot JSONL files,
+including separate host UTC/monotonic reception times, sequence gaps and reconnects.
+It never sends motor commands. Only one client can own each existing bridge port.
+Host reception times are not radio timestamps. Queue loss and UART/PHY errors are
+explicit measurements, not evidence of their causes. Compare Wi-Fi disabled,
+connected/telemetry off and connected/telemetry on before claiming coexistence.
+Schema-v1 persistent records migrate in RAM, preserving calibration and antenna
+delays; Wi-Fi defaults off. No automatic boot write or configuration reset occurs.

@@ -12,7 +12,7 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 #define CONSOLE_RING_SIZE 1024U
 #define CONSOLE_BUDGET 128U
 #define CONSOLE_MESSAGES 16U
-#define CONSOLE_MESSAGE_SIZE 192U
+#define CONSOLE_MESSAGE_SIZE 320U
 static volatile uint8_t console_ring[CONSOLE_RING_SIZE];
 static volatile uint16_t console_head, console_tail;
 static volatile uint8_t console_overflow, console_disconnect;
