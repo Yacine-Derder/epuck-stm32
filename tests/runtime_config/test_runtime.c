@@ -35,6 +35,7 @@ int main(void) {
  command("CFG SET telemetry 1");command("CFG SET samples 1");command("CFG APPLY");
  for(unsigned i=0;i<6;i++){tick+=1000;uwb_runtime_task();}
  assert(count==4&&dropped==2&&highWater==4);
+ char oversized[192];memset(oversized,'X',191);oversized[191]=0;uwb_runtime_telemetry(oversized);assert(count==4&&dropped==3);
  usbReady=false;command("TLM NEXT");assert(count==4);usbReady=true;command("TLM NEXT");assert(count==3);command("TLM STATUS");assert(strstr(captured,"uart_forwarding=0"));
  command("CFG SET role 1");command("CFG SET correction_mm -500");command("CFG SET calibration 1");command("CFG APPLY");assert(!count&&config.calibration);
  tick+=500;uwb_runtime_task();p=sentPacket();assert(p.type==mulAdsPoll&&p.source==0x85);

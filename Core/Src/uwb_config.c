@@ -62,7 +62,9 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   }
   if(index==10 && n>INT32_MAX) return "correction_mm overflow";
   uint32_t v[FIELDS];fields(c,v);v[index]=negative?0u-n:n;
-  uwb_config_t candidate;assign(&candidate,v);const char *error=uwb_config_validate(&candidate);
+  uwb_config_t candidate;assign(&candidate,v);
+  if((index==7||index==8)&&v[index]!=(index==7?c->tx_ant_dtu:c->rx_ant_dtu)) candidate.calibration=0;
+  const char *error=uwb_config_validate(&candidate);
   if(!error) *c=candidate;
   return error;
 }

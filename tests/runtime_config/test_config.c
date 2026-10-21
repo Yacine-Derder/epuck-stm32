@@ -35,6 +35,8 @@ int main(void) {
  a.correction_mm=500;assert(!uwb_config_range(&a,-.1,false,&derived)&&derived==.4);
  a.correction_mm=-500;assert(!uwb_config_range(&a,.1,true,&derived)&&derived<0);
  assert(!uwb_config_range(&a,NAN,true,&derived));
+ a.calibration=1;assert(!uwb_config_set(&a,"tx_ant_dtu","16381")&&!a.calibration);
+ a.calibration=1;assert(!uwb_config_set(&a,"rx_ant_dtu","16382")&&!a.calibration);
  memset(flash,255,sizeof(flash));assert(!uwb_config_load(&store,&c,&gen));assert(uwb_config_save(&store,&a,&gen)&&gen==1);
  assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&a,&c));unsigned old=writes;
  assert(uwb_config_save(&store,&a,&gen)&&old==writes);

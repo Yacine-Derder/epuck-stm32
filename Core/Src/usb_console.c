@@ -58,7 +58,9 @@ uint8_t usb_console_available(void)
 
 bool usb_console_try_write(const char *message)
 {
-  if (strlen(message) > CONSOLE_MESSAGE_SIZE - 3U || console_message_count == CONSOLE_MESSAGES) return false;
+  size_t length = 0U;
+  while (length <= CONSOLE_MESSAGE_SIZE - 3U && message[length]) ++length;
+  if (length > CONSOLE_MESSAGE_SIZE - 3U || console_message_count == CONSOLE_MESSAGES) return false;
   snprintf(console_messages[console_message_head], CONSOLE_MESSAGE_SIZE, "%s\r\n", message);
   console_message_head = (uint8_t)((console_message_head + 1U) % CONSOLE_MESSAGES);
   ++console_message_count;
@@ -90,7 +92,12 @@ static void console_parse_byte(uint8_t byte)
 #endif
       if (strcmp(console_line,"ESP_STATUS")==0) esp_link_usb_status();
       else {
-        if (strcmp(console_line,"HELP")==0) usb_console_write("ESP_STATUS: STM32 ESP session and fault diagnostics");
+        if (strcmp(console_line,"HELP")==0) {
+          usb_console_write("ESP_STATUS: STM32 ESP session and fault diagnostics");
+#if MUL_UNIVERSAL
+          usb_console_write("CFG SHOW | SET field value | APPLY | SAVE | LOAD | REVERT | DEFAULTS; TLM STATUS | NEXT");
+#endif
+        }
         epuck_link_console_command(console_line);
       }
     }

@@ -23,8 +23,9 @@ static uint32_t dropped,accepted;
 const uwb_config_t *uwb_runtime_active(void) {return &active;}
 void uwb_runtime_telemetry(const char *line) {
   if(!active.telemetry) return;
-  if(count==TLM_CAPACITY||strlen(line)>=TLM_LENGTH) {dropped++;return;}
-  memcpy(telemetry[head],line,strlen(line)+1);head=(head+1)%TLM_CAPACITY;count++;
+  size_t length=0;while(length<TLM_LENGTH&&line[length]) length++;
+  if(count==TLM_CAPACITY||length>TLM_LENGTH-3u) {dropped++;return;}
+  memcpy(telemetry[head],line,length+1);head=(head+1)%TLM_CAPACITY;count++;
   if(count>highWater) highWater=count;
   accepted++;
 }
@@ -67,7 +68,7 @@ static void show(const char *which,const uwb_config_t *c) {
 }
 bool uwb_runtime_command(const char *line) {
   if(strncmp(line,"CFG",3)&&strncmp(line,"TLM",3)) return false;
-  char copy[64];size_t n=strlen(line);
+  char copy[64];size_t n=0;while(n<sizeof(copy)&&line[n]) n++;
   if(n>=sizeof(copy)) {reply("ERR oversized configuration command");return true;}
   memcpy(copy,line,n+1);char *token[5]={0};unsigned nt=0;char *p=copy;
   while(*p) {
@@ -96,8 +97,12 @@ bool uwb_runtime_command(const char *line) {
     else reply("ERR unknown SHOW target");
   } else if(nt==4&&!strcmp(token[1],"SET")) {
     const char *field=!strcmp(token[2],"address")?"node":token[2];
+    uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;
     const char *error=uwb_config_set(&current,field,token[3]);
-    if(error) {reply("ERR invalid configuration");reply(error);}else reply("CFG updated; APPLY required; not saved");
+    if(error) {reply("ERR invalid configuration");reply(error);}else {
+      reply("CFG updated; APPLY required; not saved");
+      if(oldTx!=current.tx_ant_dtu||oldRx!=current.rx_ant_dtu) reply("CFG antenna change disables calibration; refit before enabling");
+    }
   } else if(nt==2&&!strcmp(token[1],"APPLY")) apply();
   else if(nt==2&&(!strcmp(token[1],"LOAD")||!strcmp(token[1],"REVERT"))) {
     uwb_config_t loaded;uint32_t gen;

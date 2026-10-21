@@ -53,8 +53,9 @@ range; a positive measured bias normally proposes a negative correction. No
 scale factor is supported. Default correction=0, calibration=0. Raw invalid or
 negative input remains invalid even if the offset makes its output positive;
 a negative calibrated result also remains invalid. Neither value is clamped.
-Changing hardware antenna delays invalidates any previously fitted software
-offset: collect new calibration data with the intended delay configuration.
+Changing either hardware antenna delay disables calibration in the current desired
+configuration. The offset is retained for inspection; collect new calibration data
+before explicitly enabling it again.
 
 ## Build and console
 
@@ -178,7 +179,7 @@ CFG SET telemetry 0
 CFG APPLY
 ```
 
-The separate machine queue holds four complete records of <=191 bytes. Producers
+The separate machine queue holds four complete records of <=189 payload bytes (plus CRLF/NUL). Producers
 run only in the main loop, never transmit or format in interrupts, never allocate
 memory, and drop newest on saturation. STATUS exposes occupancy/capacity/high
 water/cumulative dropped and accepted. APPLY accounts for discarded old records.
@@ -197,3 +198,79 @@ service cycles, service gaps, calls, clock Hz) with telemetry disabled/enabled a
 with a stalled USB reader. Instrumentation covers formatting/enqueue work; it is
 not a worst-case execution-time proof. Saves and APPLY initialization are excluded
 from steady-state timing and must be marked as maintenance in captures.
+
+
+## Host calibration analysis
+
+From lps-node-firmware; references below are nominal metres, and 0.10 m is an
+illustrative uncertainty assumption to replace with a justified measurement bound:
+
+```sh
+python3 tools/test/calibrate_ads.py \
+  --run 0.5=../ADS-050cm-ALR.log --run 1=../ADS-100cm-ALR.log \
+  --run 2=../ADS-200cm-ALR.log --run 3=../ADS-300cm-ALR.log \
+  --run 5=../ADS-500cm-ALR.log --reference-uncertainty-m 0.10 \
+  --report /tmp/ads-calibration.md --proposal /tmp/ads-calibration.json \
+  --samples /tmp/ads-calibration.csv
+```
+
+The standard-library utility reuses the independently tested six-stamp audit,
+retains raw/candidate rows and explicit exclusions, and equally weights the five
+run medians. It exports an opt-in proposal with calibration=0 and review-only
+commands. No settings are flashed, saved or applied. Current data propose -469 mm;
+this is specific to the captured pair and delay settings. Only the 5 m run has
+>=500 audited valid samples. See the LPS `docs/ads_additive_calibration.md` report
+for the per-distance bias/residuals; calibration accuracy remains unvalidated.
+
+## Software verification and hardware handoff
+
+Host tests (ASan/UBSan) in `tests/runtime_config/run.sh` exercise the actual runtime
+manager and radio adapter in one executable: both roles, changed IDs/identities,
+rate, antenna readback, opt-in calibration, telemetry saturation/backpressure,
+off mode, saved reboot, corrupt storage and failed entropy/radio initialization.
+Schema tests cover CRC32's standard vector, every record-byte corruption,
+unsupported version, strict fields, identity/role independence, duplicate IDs,
+raw negative/invalid results, antenna-change invalidation, and sign/units.
+The journal simulator cuts saves after each word and at sector rollover, checks
+generation wrap, and verifies identical SAVE performs no writes. Actual backend
+mocks check 1 MiB geometry, both reserved sectors, address/size/alignment bounds,
+cache invalidation, relocking on failure and RNG failure paths. USB tests cover
+fragmented commands, CRLF, control characters, overlong input, disconnect and
+output backpressure; existing robot safety tests verify the SAVE safety predicate.
+
+Builds: Universal, legacy AdsInitiator/AdsResponder, NormalBaseline and UwbOffSafe.
+Portable core/vendor verification, ADS adapter, MUL diagnostics, PHY interoperability,
+USB/e-puck, ESP bridge, UWB-only policy and nine coexistence scenarios are regression
+checks. `python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf`
+checks actual file-backed load segments below 0x080C0000 and reserved linker symbols.
+Existing vendor unused-function/chan_ctrl and motor-message truncation warnings
+remain; they were not introduced by this configuration work.
+
+Next user-operated hardware checks (not performed by software tests):
+
+1. Back up each board's settings/working ELF. Use STM32CubeProgrammer with
+   `/home/derder/Documents/epuck-stm32/build/Universal/EPuck_STM32.elf` and a
+   sector-only erase/program policy preserving sectors 10/11; do not mass erase
+   unless intentionally testing defaults. The installed CLI is
+   `/home/derder/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI`.
+2. With wheels isolated, verify startup STOP, rejected ARM/movement, STREAM0 and
+   LINK_STATUS/MOTOR_STATUS. Test absent e-puck/ESP/USB; UWB must run independently.
+3. Configure matching opposite roles on two nodes (existing DW1000 image or second
+   universal STM32), verify source/peer IDs and all six timestamps. Switch role
+   with SET/APPLY, using exactly the same ELF; repeat across identities/addresses.
+4. Stop radio, SAVE desired ADS settings, inspect SAVED, reboot/power-cycle and
+   verify applied fields. Repeatedly interrupt SAVE on a nonmoving test board;
+   recover old/new complete settings or safe defaults if no valid record exists.
+   Also test deliberately corrupt/incompatible records using a backed-up test unit.
+5. Repeat sustained stationary ranging uncalibrated, then opt in to a reviewed
+   offset without changing hardware delays. Check raw output unchanged by the
+   software correction, exact signed millimetre offset, negative/invalid retention,
+   and disable/revert. Change antenna delay and verify calibration auto-disables.
+6. Compare telemetry off/on, samples off/on, USB reader stalled/disconnected and
+   queue saturation. Record TIME maxima, UART faults, counts and safety endpoints;
+   do not infer safety from the configured 1 Hz rate. Repeat a true UWB-off baseline.
+
+No flash, motion, radio experiment, hardware power-loss test or accuracy validation
+was performed here. Stage3G hardware gates remain open. Rollback: the prior STM32
+baseline is 34e8c73595410ed46e9770e19986847fa475161d. Older unrestricted images may
+use the reserved region; back up configuration before rolling back.
