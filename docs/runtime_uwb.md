@@ -274,3 +274,33 @@ No flash, motion, radio experiment, hardware power-loss test or accuracy validat
 was performed here. Stage3G hardware gates remain open. Rollback: the prior STM32
 baseline is 34e8c73595410ed46e9770e19986847fa475161d. Older unrestricted images may
 use the reserved region; back up configuration before rolling back.
+
+Validation performed for this milestone:
+
+- All new runtime/config/flash/USB ASan+UBSan executables passed; one executable
+  switches initiator/responder and saves/reloads changed settings.
+- STM32 ADS, diagnostic and PHY adapter/profile tests passed; 15 USB/e-puck,
+  9 ESP bridge and 9 coexistence scenarios passed; UWB-only safety passed.
+- LPS 195 Unity tests, 178 MUL sanitizer tests, real-driver ADS, codec/profile
+  and vendor-contract checks passed. All 20 Python log/calibration tests passed.
+- Universal, AdsInitiator, AdsResponder, NormalBaseline, UwbOffSafe and clean LPS
+  default builds passed. Universal: text 87052, data 764, BSS 17392 bytes; actual
+  FLASH load is below the reserved boundary. Runtime stack high-water is unmeasured.
+
+Reproduce the STM32 host checks:
+
+```sh
+sh ThirdParty/mul_core/tests/run.sh
+for suite in runtime_config ads_radio mul_diag phy_interop epuck_console esp_link uwb_policy; do
+  sh tests/$suite/run.sh || exit 1
+done
+python3 tests/mul_diag/run_coexist.py
+```
+
+LPS checks: `rake unit summary`, `sh portable/mul_core/tests/run.sh`,
+`python3 tools/test/ads.py`, `python3 tools/test/mul_core.py`,
+`python3 tools/test/phy_interop.py`,
+`python3 tools/test/mul_slots.py --slot 10 --prop-age 6000 --speed 0 --sanitize`,
+and `python3 -m unittest discover -s tools/test -p 'test_*ads*.py' -v`.
+This host used a temporary Python3 `python` path shim for the legacy Rake runner;
+no repository dependency was changed.
