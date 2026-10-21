@@ -15,5 +15,7 @@ void usb_console_task(void);
 void usb_console_write(const char *message);
 /* False on backpressure/oversize, without consuming a queued telemetry item. */
 bool usb_console_try_write(const char *message);
+/* Main-loop capacity for an atomic configuration reply group. */
+uint8_t usb_console_write_slots(void);
 
 #endif

@@ -23,6 +23,8 @@ void epuck_link_boot_safety(void);
 /* UWB-only maintenance: confirmed STOP/STREAM0, or silent absent peer after
  * the startup STOP/watchdog grace period. Never authorizes movement. */
 uint8_t epuck_link_flash_safe(void);
+/* NULL when safe, otherwise an actionable reason; no state mutation. */
+const char *epuck_link_flash_error(void);
 
 /* Raw sensor readings, without calibration or unit conversion.
  * Accelerometer readings require e-puck JE1 bridges 33-34, 35-36, 37-38.

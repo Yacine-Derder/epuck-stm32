@@ -56,6 +56,8 @@ uint8_t usb_console_available(void)
   return available;
 }
 
+uint8_t usb_console_write_slots(void) { return CONSOLE_MESSAGES - console_message_count; }
+
 bool usb_console_try_write(const char *message)
 {
   size_t length = 0U;
@@ -133,8 +135,17 @@ void usb_console_task(void)
     console_cr = 0U;
     console_discard = overflow;
   }
+#if MUL_UNIVERSAL
+  uint8_t newly_connected = configured && !console_was_connected;
+#endif
   console_was_connected = configured;
   __set_PRIMASK(primask);
+#if MUL_UNIVERSAL
+  if (newly_connected) {
+    usb_console_write("STM32/DWM3000 UWB console ready");
+    usb_console_write("Type HELP or CFG HELP for commands");
+  }
+#endif
   if (disconnected) {
     console_message_head = console_message_tail = console_message_count = 0U;
     epuck_link_console_lost("USB disconnected; explicit ARM required");

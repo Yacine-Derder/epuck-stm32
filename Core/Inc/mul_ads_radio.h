@@ -7,6 +7,7 @@
 #if MUL_UNIVERSAL
 void mul_ads_radio_configure(const uwb_config_t *config,uint64_t session);
 void mul_ads_radio_stop(void);
+int32_t mul_ads_radio_resume(void);
 #endif
 int32_t mul_ads_radio_init(void);
 void mul_ads_radio_process(void);

@@ -5,10 +5,22 @@
 int main(void) {
   assert(MUL_UWB_ONLY && !APP_ESP_ENABLED && APP_EPUCK_ENABLED && APP_EPUCK_STREAM_PERIOD_MS==0 && !APP_DEBUG_TELEMETRY);
   setup();
-  assert(!epuck_link_flash_safe()); epuck_link_boot_safety();
+  assert(!epuck_link_flash_safe());
+  assert(strstr(epuck_link_flash_error(),"grace"));
+  /* Original SAVE failure despite stopped UWB: any received byte excluded the
+   * standalone branch, while no STOP ACK made motor_known false. */
+  tick=2000;rx_bytes=1;assert(!motor_known && !epuck_link_flash_safe());
+  assert(strstr(epuck_link_flash_error(),"STOP unconfirmed"));
+  rx_bytes=0;motor_state=MOTOR_ARMED;
+  assert(!epuck_link_flash_safe() && strstr(epuck_link_flash_error(),"motors armed"));
+  motor_state=MOTOR_DISARMED;motor_arm_pending=1;
+  assert(!epuck_link_flash_safe());motor_arm_pending=0;
+  tick=0;epuck_link_boot_safety();
   assert(mock_tx_busy && strcmp(mock_tx_copy,"STOP\n")==0);
   assert(motor_state==MOTOR_STOPPING && !motor_count && !motor_arm_pending);
   stop_ack();
+  tick=2000;assert(!epuck_link_flash_safe());
+  assert(strstr(epuck_link_flash_error(),"STREAM 0 unconfirmed"));tick=1;
   unsigned starts=tx_calls;
   console("ARM\nM 200 200\nSTREAM 1000\n"); step(2);
   assert(tx_calls==starts && !motor_count && !motor_arm_pending && motor_state==MOTOR_DISARMED);

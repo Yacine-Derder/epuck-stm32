@@ -58,6 +58,11 @@ static void abortExchange(mulAdsAbortReason_t cause) {
   if(state.aborted!=before) logAbort();
 }
 #if MUL_UNIVERSAL
+int32_t mul_ads_radio_resume(void) {
+  if(!configured) return DWT_ERROR;
+  lastPoll=lastStart=lastReport=lastTelemetry=HAL_GetTick();
+  rearm();return retryRx?DWT_ERROR:DWT_SUCCESS;
+}
 void mul_ads_radio_stop(void) {
   if(!configured) return;
   if(state.stage!=adsIdle) {mulAdsAbort(&state);logAbort();}
@@ -92,7 +97,11 @@ int32_t mul_ads_radio_init(void) {
     state.local,state.peer,(unsigned long)config.identity,(unsigned long)config.tx_ant_dtu,(unsigned long)config.rx_ant_dtu,(unsigned long)config.interval_ms,(unsigned long)config.calibration,(long)config.correction_mm);
   usb_console_write(line);
 #endif
-  mul_timing_init(); rearm(); return DWT_SUCCESS;
+  mul_timing_init(); rearm();
+#if MUL_UNIVERSAL
+  if(retryRx) return DWT_ERROR;
+#endif
+  return DWT_SUCCESS;
 }
 void mul_ads_radio_process(void) {
   uint32_t now=HAL_GetTick();

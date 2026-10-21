@@ -14,12 +14,50 @@
 #include <string.h>
 static uwb_config_t current,saved,active;
 static uint32_t generation;
-static bool savedValid,started,initialized,radioTouched,applied;
+static bool savedValid,started,initialized,radioTouched,applied,loadedAtBoot,durabilityKnown;
 #define TLM_CAPACITY 4u
 #define TLM_LENGTH 192u
 static char telemetry[TLM_CAPACITY][TLM_LENGTH];
 static unsigned head,tail,count,highWater;
 static uint32_t dropped,accepted;
+static unsigned display,displayIndex;
+static uwb_config_t displayConfig;
+static const char *displayState;
+static bool displayBoot;
+static uint32_t displayGeneration;
+static const char *const help[]={
+  "CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
+  "CFG SET <field> <value>; all fields persistent; every changed field restarts UWB",
+  "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
+  "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
+  "identity: standalone (factory), alr, rlr; metadata, never motor authorization",
+  "mode: off (factory), twr; TDMA/TDoA unsupported",
+  "role: responder (factory), initiator; independent of robot identity",
+  "interval_ms: 250..60000 ms; factory 1000; initiator transaction interval",
+  "phy: mixed (factory/only): channel5, 6.8Mbps, code9, preamble128",
+  "tx_ant_dtu / rx_ant_dtu: 0..65535 DW DTU; factory 16380 each; hardware once",
+  "calibration: off (factory), on; raw stays available; negatives remain invalid",
+  "correction_mm: -10000..10000 mm; factory 0; calibrated = raw + correction/1000",
+  "Antenna delay changes disable calibration; refit before explicitly enabling",
+  "verbosity: quiet, summary, full (factory); full retains six raw timestamps",
+  "telemetry: off (factory), on; bounded local queue; no UART/Wi-Fi forwarding",
+  "telemetry_ms: 1000..60000 ms; factory 1000; samples: off (factory), on",
+  "CFG SHOW [ACTIVE|SAVED|DEFAULTS]; includes schema and saved-settings boot status",
+  "CFG DEFAULTS: activate and persist factory settings (UWB off, calibration off)",
+  "CFG LOAD (REVERT alias): activate last valid saved settings; read failure preserves state",
+  "CFG APPLY / CFG SAVE: compatibility aliases; normal SET already activates/saves",
+  "Safety: wait startup grace 2s; attached robot needs STOP and STREAM 0 confirmed",
+  "If rejected: STOP; wait OK STOP; inspect MOTOR_STATUS, STREAM_STATUS, LINK_STATUS",
+  "ALR example: CFG SET address 0x10; CFG SET peer 0x11; CFG SET identity alr",
+  "Then CFG SET role initiator; CFG SET calibration off; CFG SET mode twr",
+  "RLR example: CFG SET address 0x11; CFG SET peer 0x10; CFG SET identity rlr",
+  "Set a different peer first if the desired address equals the current peer",
+  "Then CFG SET role responder; CFG SET calibration off; CFG SET mode twr",
+  "Calibration example: CFG SET correction_mm -100; CFG SET calibration on (review first)",
+  "Telemetry: CFG SET telemetry on; TLM STATUS; TLM NEXT; CFG SET telemetry off",
+  "Unchanged settings do not write flash. Power-cycle, CFG SHOW to verify durability",
+  "STOP / MOTOR_STATUS / STREAM_STATUS / LINK_STATUS remain available; ARM prohibited"
+};
 const uwb_config_t *uwb_runtime_active(void) {return &active;}
 void uwb_runtime_telemetry(const char *line) {
   if(!active.telemetry) return;
@@ -34,88 +72,160 @@ static void stop(void) {
   if(radioTouched) mul_ads_radio_stop();
   started=false;
 }
-static bool apply(void) {
-  const char *error=uwb_config_validate(&current);if(error) {reply(error);return false;}
-  stop();applied=false;
-  /* Failed apply leaves radio stopped and the previous active snapshot intact. */
-  if(current.mode) {
-    uint64_t session;if(!uwb_runtime_session(&session)) {reply("ERR RNG session unavailable; radio off");return false;}
-    mul_ads_radio_configure(&current,session);radioTouched=true;
-    if(mul_ads_radio_init()!=DWT_SUCCESS) {mul_ads_radio_stop();reply("ERR radio init/readback; radio off");return false;}
-    started=true;
+/* Preflight initialization can fail BEFORE committing any new settings. No main
+ * loop radio service/TX occurs here. Stop RX again before all flash operations. */
+static bool prepare(const uwb_config_t *c) {
+  stop();
+  if(!c->mode) return true;
+  uint64_t session;if(!uwb_runtime_session(&session)) return false;
+  mul_ads_radio_configure(c,session);radioTouched=true;
+  int32_t status=mul_ads_radio_init();mul_ads_radio_stop();
+  return status==DWT_SUCCESS;
+}
+static bool resume(const uwb_config_t *c) {
+  if(c->mode && mul_ads_radio_resume()!=DWT_SUCCESS) {stop();return false;}
+  active=current=*c;started=c->mode!=0;applied=true;return true;
+}
+static void restore(const uwb_config_t *old) {
+  if(!prepare(old)||!resume(old)) {
+    stop();applied=false;reply("ERR previous radio could not resume; saved settings retained; check hardware then CFG LOAD");
   }
-  active=current;applied=true;
-  /* Queued samples retain their encoded IDs, but old calibration data must not
-   * be mistaken for the new active configuration. Account for discarded items. */
+}
+static bool update(const uwb_config_t *candidate) {
+  const char *error=uwb_config_validate(candidate);
+  if(error) {reply("ERR configuration rejected");reply(error);return false;}
+  if(applied&&durabilityKnown&&savedValid&&uwb_config_equal(candidate,&active)&&uwb_config_equal(candidate,&saved)) {
+    reply("CFG SAVED / ACTIVE (unchanged; no flash write)");return true;
+  }
+  if(usb_console_write_slots()<8) {
+    reply("ERR console busy; let output drain and retry; configuration unchanged");return false;
+  }
+  error=epuck_link_flash_error();
+  if(error) {reply(error);return false;} /* No active/saved mutation or radio stop. */
+  uwb_config_t old=active;
+  if(!prepare(candidate)) {reply("ERR radio preflight failed; settings not changed");restore(&old);return false;}
+  uint32_t newGeneration;
+  if(!uwb_config_save(uwb_runtime_store(),candidate,&newGeneration)) {
+    /* A backend may report failure after a complete commit (e.g. verify read
+     * failed). Resolve from CRC-validated flash, never from a RAM assumption. */
+    uwb_config_t found;uint32_t foundGeneration;
+    if(uwb_config_load(uwb_runtime_store(),&found,&foundGeneration)) {
+      saved=found;generation=foundGeneration;savedValid=durabilityKnown=true;
+      if(uwb_config_equal(&found,candidate)) {newGeneration=foundGeneration;goto committed;}
+    } else durabilityKnown=false;
+    reply("ERR flash update failed; new setting not accepted; restoring previous radio");
+    if(!durabilityKnown) reply("ERR storage durability unconfirmed; inspect CFG SHOW/LOAD; no records erased for recovery");
+    restore(&old);return false;
+  }
+committed:
+  saved=*candidate;generation=newGeneration;savedValid=durabilityKnown=true;
+  /* A post-commit hardware fault is reported honestly: durable but radio off.
+   * Retrying LOAD uses the same saved settings without another flash write. */
+  current=*candidate;
+  if(!resume(candidate)) {applied=false;reply("ERR configuration SAVED but radio OFF; check hardware, retry CFG LOAD");return false;}
   dropped+=count;head=tail=count=0;
-  reply("CFG APPLIED");return true;
+  reply("CFG SAVED / ACTIVE");return true;
 }
 void uwb_runtime_init(void) {
-  stop();uwb_config_defaults(&current);generation=0;
-  savedValid=uwb_config_load(uwb_runtime_store(),&saved,&generation);
+  stop();uwb_config_defaults(&current);active=current;generation=0;applied=false;
+  loadedAtBoot=savedValid=uwb_config_load(uwb_runtime_store(),&saved,&generation);
+  durabilityKnown=true;
   if(savedValid) current=saved;
-  initialized=true;apply();
+  initialized=true;
+  if(!prepare(&current)||!resume(&current)) {stop();applied=false;reply("ERR startup radio failed; inspect CFG SHOW, retry CFG LOAD");}
+  reply(applied?"STM32/DWM3000 UWB ready; Type HELP or CFG HELP for commands":
+    "STM32/DWM3000 console ready; radio OFF (startup error); Type CFG HELP");
 }
-void uwb_runtime_task(void) {if(initialized&&started) mul_ads_radio_process();}
-static void show(const char *which,const uwb_config_t *c) {
-  char line[192];
-  snprintf(line,sizeof(line),"CFG %s node=0x%02lX peer=0x%02lX identity=%lu mode=%lu role=%lu interval_ms=%lu phy=%lu",
-    which,(unsigned long)c->node,(unsigned long)c->peer,(unsigned long)c->identity,(unsigned long)c->mode,(unsigned long)c->role,(unsigned long)c->interval_ms,(unsigned long)c->phy);reply(line);
-  snprintf(line,sizeof(line),"CFG %s tx_ant_dtu=%lu rx_ant_dtu=%lu calibration=%lu correction_mm=%ld verbosity=%lu",
-    which,(unsigned long)c->tx_ant_dtu,(unsigned long)c->rx_ant_dtu,(unsigned long)c->calibration,(long)c->correction_mm,(unsigned long)c->verbosity);reply(line);
-  snprintf(line,sizeof(line),"CFG %s telemetry=%lu telemetry_ms=%lu samples=%lu reserved=0,0,0 version=1",
-    which,(unsigned long)c->telemetry,(unsigned long)c->telemetry_ms,(unsigned long)c->samples);reply(line);
+static const char *identity(uint32_t n) {return n==1?"ALR":n==2?"RLR":"Standalone";}
+static const char *onoff(uint32_t n) {return n?"ON":"OFF";}
+static const char *configVerbosity(uint32_t n) {return n==0?"Quiet":n==1?"Summary":"Full";}
+static void show(const uwb_config_t *c,const char *state) {
+  displayConfig=*c;displayState=state;displayBoot=loadedAtBoot;
+  displayGeneration=generation;display=2;displayIndex=0;
+}
+static void display_output(void) {
+  if(!display) return;
+  if(display==1) {
+    if(displayIndex>=sizeof(help)/sizeof(*help)) {display=0;return;}
+    if(usb_console_try_write(help[displayIndex])) displayIndex++;
+    return;
+  }
+  const uwb_config_t *c=&displayConfig;char text[192];
+  switch(displayIndex) {
+  case 0:snprintf(text,sizeof(text),"Node address:       0x%02lX",(unsigned long)c->node);break;
+  case 1:snprintf(text,sizeof(text),"Peer address:       0x%02lX",(unsigned long)c->peer);break;
+  case 2:snprintf(text,sizeof(text),"Robot identity:     %s",identity(c->identity));break;
+  case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode?"TWR":"OFF");break;
+  case 4:snprintf(text,sizeof(text),"TWR role:           %s",c->role==1?"Initiator":"Responder");break;
+  case 5:snprintf(text,sizeof(text),"Interval:           %lu ms",(unsigned long)c->interval_ms);break;
+  case 6:snprintf(text,sizeof(text),"PHY:                Mixed channel5 / 6.8Mbps / code9 / preamble128");break;
+  case 7:snprintf(text,sizeof(text),"TX antenna delay:   %lu DTU",(unsigned long)c->tx_ant_dtu);break;
+  case 8:snprintf(text,sizeof(text),"RX antenna delay:   %lu DTU",(unsigned long)c->rx_ant_dtu);break;
+  case 9:snprintf(text,sizeof(text),"Calibration:        %s",onoff(c->calibration));break;
+  case 10:snprintf(text,sizeof(text),"Correction:         %ld mm",(long)c->correction_mm);break;
+  case 11:snprintf(text,sizeof(text),"Diagnostics:        %s",configVerbosity(c->verbosity));break;
+  case 12:snprintf(text,sizeof(text),"Telemetry:          %s",onoff(c->telemetry));break;
+  case 13:snprintf(text,sizeof(text),"Telemetry interval: %lu ms",(unsigned long)c->telemetry_ms);break;
+  case 14:snprintf(text,sizeof(text),"Ranging samples:    %s",onoff(c->samples));break;
+  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
+  case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
+  case 17:snprintf(text,sizeof(text),"Saved generation:   %lu; UWB-only safety policy",(unsigned long)displayGeneration);break;
+  default:display=0;return;
+  }
+  if(usb_console_try_write(text)) displayIndex++;
+}
+void uwb_runtime_task(void) {
+  display_output();
+  if(initialized&&started) mul_ads_radio_process();
 }
 bool uwb_runtime_command(const char *line) {
-  if(strncmp(line,"CFG",3)&&strncmp(line,"TLM",3)) return false;
   char copy[64];size_t n=0;while(n<sizeof(copy)&&line[n]) n++;
-  if(n>=sizeof(copy)) {reply("ERR oversized configuration command");return true;}
-  memcpy(copy,line,n+1);char *token[5]={0};unsigned nt=0;char *p=copy;
+  if(n>=sizeof(copy)) {reply("ERR oversized command");return true;}
+  for(size_t i=0;i<n;i++) {
+    if(line[i]<32||line[i]>126) {reply("ERR malformed command");return true;}
+    copy[i]=line[i]>='A'&&line[i]<='Z'?line[i]+('a'-'A'):line[i];
+  }
+  copy[n]=0;char *token[5]={0};unsigned nt=0;char *p=copy;
   while(*p) {
     if(*p==' ') {p++;continue;}
     if(nt==5) {reply("ERR too many command arguments");return true;}
-    token[nt++]=p;while(*p && *p!=' ')p++;
+    token[nt++]=p;while(*p&&*p!=' ')p++;
     if(*p)*p++=0;
   }
-  if(nt<2) {reply("CFG SHOW [CURRENT|ACTIVE|SAVED|DEFAULTS] | SET field value | APPLY | SAVE | LOAD | REVERT | DEFAULTS");return true;}
-  if(!strcmp(token[0],"TLM")) {
-    if(nt==2&&!strcmp(token[1],"NEXT")) {
+  if(!nt) return false;
+  if(nt==1&&!strcmp(token[0],"help")) {display=1;displayIndex=0;return true;}
+  if(strcmp(token[0],"cfg")&&strcmp(token[0],"tlm")) return false;
+  if(!strcmp(token[0],"tlm")) {
+    if(nt==2&&!strcmp(token[1],"next")) {
       if(!count) reply("TLM EMPTY");
       else if(usb_console_try_write(telemetry[tail])) {tail=(tail+1)%TLM_CAPACITY;count--;}
-    } else if(nt==2&&!strcmp(token[1],"STATUS")) {
+    } else if(nt==2&&!strcmp(token[1],"status")) {
       char text[192];snprintf(text,sizeof(text),"TLM STATUS occupancy=%u capacity=%u high_water=%u dropped=%lu accepted=%lu sink=USB_PULL uart_forwarding=0",
         count,TLM_CAPACITY,highWater,(unsigned long)dropped,(unsigned long)accepted);reply(text);
     } else reply("ERR TLM NEXT | STATUS");
-  } else if(strcmp(token[0],"CFG")) reply("ERR unknown command");
-  else if(!strcmp(token[1],"SHOW")&&(nt==2||nt==3)) {
-    if(nt==2||!strcmp(token[2],"CURRENT")) {
-      char text[192];snprintf(text,sizeof(text),"CFG STATUS saved=%u generation=%lu pending=%u radio_running=%u applied=%u uwb_only=1",
-        savedValid,(unsigned long)generation,!applied||!uwb_config_equal(&current,&active),started,applied);reply(text);show("CURRENT",&current);
-    } else if(!strcmp(token[2],"ACTIVE")) {show("ACTIVE",&active);if(!applied)reply("CFG ACTIVE snapshot not applied; radio off");}
-    else if(!strcmp(token[2],"SAVED")) {if(savedValid)show("SAVED",&saved);else reply("CFG no valid saved configuration");}
-    else if(!strcmp(token[2],"DEFAULTS")) {uwb_config_t defaults;uwb_config_defaults(&defaults);show("DEFAULTS",&defaults);}
-    else reply("ERR unknown SHOW target");
-  } else if(nt==4&&!strcmp(token[1],"SET")) {
-    const char *field=!strcmp(token[2],"address")?"node":token[2];
-    uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;
-    const char *error=uwb_config_set(&current,field,token[3]);
-    if(error) {reply("ERR invalid configuration");reply(error);}else {
-      reply("CFG updated; APPLY required; not saved");
-      if(oldTx!=current.tx_ant_dtu||oldRx!=current.rx_ant_dtu) reply("CFG antenna change disables calibration; refit before enabling");
-    }
-  } else if(nt==2&&!strcmp(token[1],"APPLY")) apply();
-  else if(nt==2&&(!strcmp(token[1],"LOAD")||!strcmp(token[1],"REVERT"))) {
+    return true;
+  }
+  if(nt==1||(nt==2&&!strcmp(token[1],"help"))) {display=1;displayIndex=0;}
+  else if((nt==2||nt==3)&&!strcmp(token[1],"show")) {
+    if(nt==3&&!strcmp(token[2],"defaults")) {uwb_config_t factory;uwb_config_defaults(&factory);show(&factory,"FACTORY DEFAULTS (not changed)");}
+    else if(nt==3&&!strcmp(token[2],"saved")) {
+      if(savedValid) show(&saved,durabilityKnown?"SAVED (last verified record)":"LAST VERIFIED SNAPSHOT; storage now UNCONFIRMED");
+      else reply("CFG no valid saved configuration; factory defaults are separate");
+    } else if(nt==2||!strcmp(token[2],"current")||!strcmp(token[2],"active"))
+      show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / activation failed":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
+    else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
+  } else if(nt==4&&!strcmp(token[1],"set")) {
+    uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
+    if(error) {reply("ERR configuration rejected");reply(error);}
+    else if(update(&candidate) && (candidate.tx_ant_dtu!=oldTx||candidate.rx_ant_dtu!=oldRx))
+      reply("CFG antenna delay changed; calibration disabled; refit before enabling");
+  } else if(nt==2&&!strcmp(token[1],"defaults")) {uwb_config_t factory;uwb_config_defaults(&factory);update(&factory);}
+  else if(nt==2&&(!strcmp(token[1],"load")||!strcmp(token[1],"revert"))) {
     uwb_config_t loaded;uint32_t gen;
-    if(uwb_config_load(uwb_runtime_store(),&loaded,&gen)) {saved=current=loaded;generation=gen;savedValid=true;reply("CFG loaded; APPLY required");}
-    else reply("ERR no valid saved configuration");
-  } else if(nt==2&&!strcmp(token[1],"DEFAULTS")) {uwb_config_defaults(&current);reply("CFG defaults selected; APPLY required; not saved");}
-  else if(nt==2&&!strcmp(token[1],"SAVE")) {
-    /* FLASH stalls single-bank instruction fetch. Never attempt while ranging
-     * or before confirmed STOP/STREAM0 on an attached e-puck. */
-    if(started||!epuck_link_flash_safe()) reply("ERR SAVE requires radio off and safe robot maintenance state");
-    else if(uwb_config_save(uwb_runtime_store(),&current,&generation)) {saved=current;savedValid=true;reply("CFG SAVED verified");}
-    else reply("ERR SAVE failed; previous committed record retained if valid");
-  } else reply("ERR malformed CFG command; use CFG for help");
+    if(uwb_config_load(uwb_runtime_store(),&loaded,&gen)) update(&loaded);
+    else {durabilityKnown=false;reply("ERR no readable valid saved record; active configuration unchanged; flash not modified");}
+  } else if(nt==2&&(!strcmp(token[1],"apply")||!strcmp(token[1],"save"))) update(&current);
+  else reply("ERR malformed CFG command; use CFG HELP");
   return true;
 }
 #endif

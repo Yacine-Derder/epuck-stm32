@@ -13,21 +13,25 @@ static uint16_t txAnt,rxAnt;
 static bool badAnt;
 static unsigned starts,rearms;
 static int32_t startResult=DWT_SUCCESS,rxResult=DWT_SUCCESS,writeResult=DWT_SUCCESS;
-static char captured[16384];
+#ifndef ADS_TEST_LOG_CAPACITY
+#define ADS_TEST_LOG_CAPACITY 16384
+#endif
+static char captured[ADS_TEST_LOG_CAPACITY];
+static bool mockRadioActive;
 uint32_t HAL_GetTick(void) { return tick; }
 int32_t uwb_diag_configure(void) { return DWT_SUCCESS; }
 void dwt_settxantennadelay(uint16_t v) { txAnt=v; }
 void dwt_setrxantennadelay(uint16_t v) { rxAnt=v; }
 uint16_t dwt_gettxantennadelay(void) { return txAnt^(badAnt ? 1u : 0u); }
 uint16_t dwt_getrxantennadelay(void) { return rxAnt; }
-void dwt_forcetrxoff(void) {}
+void dwt_forcetrxoff(void) {mockRadioActive=false;}
 void dwt_writesysstatuslo(uint32_t bits) { status&=~bits; }
 uint32_t dwt_readsysstatuslo(void) { return status; }
-int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rearms++; return rxResult; }
+int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rearms++; mockRadioActive=rxResult==DWT_SUCCESS; return rxResult; }
 int32_t dwt_starttx(uint8_t mode) {
  mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p));
  assert(mode==(DWT_START_TX_IMMEDIATE|(p.type==mulAdsReport?0:DWT_RESPONSE_EXPECTED)));
- starts++; return startResult;
+ starts++; mockRadioActive=startResult==DWT_SUCCESS; return startResult;
 }
 int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at); memcpy(output,p,n); return writeResult; }
 void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert(n==58 && !at && ranging==1); }

@@ -304,6 +304,14 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* USER CODE BEGIN USART1_MspInit 1 */
+#if MUL_UWB_ONLY
+    /* UART idle is high. Bias an absent controller's RX input instead of
+     * allowing a floating pin to produce spurious bytes. Any actual received
+     * bytes still require confirmed STOP/STREAM0 before persistence. */
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+#endif
 
     /* USER CODE END USART1_MspInit 1 */
   }

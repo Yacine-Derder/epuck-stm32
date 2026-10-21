@@ -1,293 +1,235 @@
-# Runtime UWB configuration
+# Universal STM32/DWM3000 configuration
 
-The universal image is a UWB-only experimental profile. Robot identity is metadata,
-independent of ADS initiator/responder role. Factory defaults disable UWB and
-calibration. The existing compile-time normal, PHY and MUL diagnostic profiles
-remain available. No TDMA/TDoA mode is implemented.
+One UWB-only image supports both ADS-TWR roles and any distinct local/peer byte
+addresses. Each accepted SET validates the entire configuration, safely restarts
+UWB, saves and verifies it, then confirms `CFG SAVED / ACTIVE`. No normal APPLY,
+SAVE, radio-off command or maintenance mode is needed. A rejected command leaves
+settings unchanged. Wait for the confirmation before sending another change.
 
-## Storage design
+Robot identity is metadata, independent of radio role. Motor-enabled normal
+operation remains a separate legacy build: the universal image cannot ARM or
+move motors, keeps startup STOP/retries/watchdogs/emergency stops, disables ESP
+and sensor streaming, and needs no ESP32, robot controller or host for UWB.
+There is no TDMA/TDoA implementation or UART/Wi-Fi telemetry forwarding.
 
-The target is STM32F405RG (1 MiB), with the application vector at 0x08000000;
-there is no relocated application bootloader in the linker/startup configuration.
-No existing persistent data or flash writes were found. Reserve sectors 10 and
-11, 0x080C0000..0x080FFFFF (128 KiB each), and reduce application FLASH to 768 KiB.
-The linker must reject any application load section crossing this boundary.
-The backend must also verify the actual device flash-size register before access.
+## Build
 
-References: ST [RM0090, Flash memory interface](https://www.st.com/resource/en/reference_manual/dm00031020-stm32f405-and-stm32f407-advanced-armbased-32bit-microcontrollers-stmicroelectronics.pdf)
-and [DS8626, flash characteristics/endurance](https://www.st.com/resource/en/datasheet/stm32f405rg.pdf).
-Flash access stalls during programming/erase on this single-bank part. SAVE is
-maintenance, not a realtime operation; radio and robot control must be quiescent.
-Use a stable supply in the specified programming voltage range. The specified
-endurance is 10 kcycles; saves append 128-byte records (1024 per sector) and
-identical saves do not write. This is not an unlimited-write settings service.
-
-Records explicitly encode little-endian magic, schema version, length, modular
-32-bit generation, 18 configuration words, zeroed extension space, CRC32/IEEE,
-and a commit word programmed last. Scan both sectors and accept only completely
-validated records. Skip torn records. At rollover erase the other sector,
-preserving the newest committed record. Interrupted save recovers the previous
-record or the fully committed new one. Invalid/incompatible records fall back
-to safe defaults; no silent schema migration. SAVE is explicit, never per SET.
-Mass erase, old images with unrestricted link maps, external writes to sectors
-10/11, or interrupted firmware programming can destroy settings; redundancy is
-not protection against those actions. Back up SHOW output before programming.
-
-## Schema and calibration conventions
-
-Node/peer are different 0x84..0x86 IDs in the pinned shared-core extended address
-namespace (ID,00,00,00,00,00,CF,BC). Local validation cannot detect another robot
-using the same ID; provision unique IDs before putting boards on air. Identity
-0=standalone,1=ALR,2=RLR; mode 0=off,1=ADS; role 1=initiator,2=responder.
-Only PHY 0 is supported: existing channel5/6.8Mbps/code9 profile. Unsupported
-addresses, modes and PHYs fail rather than silently selecting another behavior.
-interval_ms is 250..60000; telemetry_ms is 1000..60000; antenna delays are unsigned
-16-bit hardware DTU. Three reserved words must remain zero in schema v1.
-
-TX/RX antenna delays enter hardware once; actual adjusted 40-bit timestamps feed
-the unchanged ADS formula. Raw range is nominal metres calculated from those
-six timestamps with the configured hardware delays. It is not a second range
-computed with antenna delay removed. Software calibration is independently
-opt-in: calibrated_m = raw_m + correction_mm / 1000. Positive correction increases
-range; a positive measured bias normally proposes a negative correction. No
-scale factor is supported. Default correction=0, calibration=0. Raw invalid or
-negative input remains invalid even if the offset makes its output positive;
-a negative calibrated result also remains invalid. Neither value is clamped.
-Changing either hardware antenna delay disables calibration in the current desired
-configuration. The offset is retained for inspection; collect new calibration data
-before explicitly enabling it again.
-
-## Build and console
-
-From epuck-stm32 (no hardware is flashed by these commands):
+From epuck-stm32:
 
 ```sh
 cmake -S . -B build/Universal -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
   -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
   -DMUL_TWR_ROLE=0 -DMUL_DIAG_ROLE=0 -DPHY_INTEROP_ROLE=0 \
-  -DMUL_TIMING_TRACE=ON
+  -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON
 cmake --build build/Universal
 ```
 
-ELF: `build/Universal/EPuck_STM32.elf`. One image contains both ADS roles.
-Internally CMake supplies MUL_TWR_ROLE=2 as the pinned core's inclusion/timing
-profile guard; the universal adapter selects roles exclusively from configuration.
-Legacy selector cache values must be zero for this build. The universal image
-requires the existing UWB-only policy; ESP/Wi-Fi and automatic sensors are off,
-ARM/movement are rejected, and UART1 startup STOP/retries/watchdogs remain active.
-An absent e-puck/ESP/host does not block UWB. Normal motor-enabled operation still
-requires a legacy normal build; runtime configuration cannot weaken safety policy.
+STM32CubeProgrammer ELF:
+`/home/derder/Documents/epuck-stm32/build/Universal/EPuck_STM32.elf`.
+No build command flashes hardware. CMake internally uses MUL_TWR_ROLE=2 only as
+the pinned core's inclusion/timing guard; actual initiator/responder selection is
+runtime. Leave legacy role selectors zero for this profile.
 
-Commands are newline-terminated over existing USB CDC. Input is bounded to 63
-printable characters with CRLF accepted; malformed/overlong lines are discarded.
+## Console
+
+USB CDC accepts one newline-terminated command per line, up to 63 printable
+characters (CRLF accepted). Command/field names and enum values are case-insensitive.
+Startup and USB connection display a short HELP reminder. `HELP` and `CFG HELP`
+list all settings, defaults, units, persistence/restart behavior and examples.
+HELP and SHOW send bounded incremental output that waits for console capacity;
+a new HELP/SHOW replaces an unfinished display. Configuration reserves reply
+capacity before changing anything; a busy console returns a retry error.
+
+`CFG SHOW` displays readable current settings, schema version, generation,
+SAVED/ACTIVE or error state, and whether a valid saved record was loaded at boot.
+`CFG SHOW ACTIVE`, `CFG SHOW SAVED`, `CFG SHOW DEFAULTS` inspect the corresponding
+snapshots. Normal commands have no pending-application state. SAVED-but-radio-OFF
+is an explicit hardware activation failure, not a successful update confirmation.
+
+| Field | Values / units | Factory default |
+|---|---|---|
+| address (node alias) | Hex 0x00..0xFF or decimal 0..255 | 0x00 |
+| peer | Same range; must differ from local address | 0x01 |
+| identity | standalone, alr, rlr | standalone |
+| mode | off, twr | off |
+| role | initiator, responder | responder |
+| interval_ms | 250..60000 ms | 1000 |
+| phy | mixed: channel5, 6.8Mbps, code9, preamble128 | mixed |
+| tx_ant_dtu / rx_ant_dtu | 0..65535 DW timestamp units | 16380 each |
+| calibration | on, off | off |
+| correction_mm | Signed -10000..10000 mm | 0 |
+| verbosity | quiet, summary, full | full |
+| telemetry | on, off | off |
+| telemetry_ms | 1000..60000 ms | 1000 |
+| samples | on, off; optional compact range samples | off |
+
+Every field persists automatically and restarts the radio when changed, using a
+fresh hardware-RNG session and reset per-session counters. Identical values do
+not write flash or restart a healthy, already saved active radio. Numeric enums
+remain compatibility aliases, but SHOW uses words. No byte address is reserved:
+0xFF is an ID in `ID:00:00:00:00:00:CF:BC`, not an all-FF broadcast MAC. Provision
+unique IDs; local validation cannot discover network duplicates. Legacy diagnostic
+address policies are unchanged. The legacy DW1000 ADS adapter still uses its
+existing fixed 0x84/0x86 pairing; widening the codec does not change that roster.
+
+Two-board example, one command at a time after the 2 s startup grace and safety
+confirmation. On previously configured boards, start with `CFG DEFAULTS` if needed.
+
+Board A:
 
 ```text
+CFG SET address 0x10
+CFG SET peer 0x11
+CFG SET identity alr
+CFG SET role initiator
+CFG SET calibration off
+CFG SET mode twr
 CFG SHOW
-CFG SHOW ACTIVE
-CFG SHOW SAVED
-CFG SHOW DEFAULTS
-CFG SET address 0x86
-CFG SET peer 0x84
-CFG SET identity 2
-CFG SET mode 1
-CFG SET role 2
-CFG SET interval_ms 1000
-CFG APPLY
 ```
 
-This configures an e-puck RLR responder. For a standalone board use identity 0.
-For a WaveRover ALR, select identity 1, e.g. address 0x84 and peer 0x86. Set peer
-first when replacing the default node with 0x84 to avoid a transient duplicate:
-`CFG SET peer 0x85`, `CFG SET address 0x84`, `CFG SET peer 0x86`.
-To switch either identity to initiator: `CFG SET role 1`, `CFG APPLY`.
-Use role 2 to switch back. APPLY stops any exchange (recording cancellation),
-reinitializes the radio with the selected hardware antenna delays, resets run
-counters and obtains a fresh nonzero hardware-RNG session. No compiled session or
-flash write is needed per boot. Entropy/driver/readback failure leaves radio off;
-SHOW reports unapplied/pending state. Fresh sessions are probabilistic unique
-64-bit nonces, not cryptographic replay protection. The peer must be configured
-with opposite role and matching reciprocal IDs. Existing DW1000 role profiles
-remain wire compatible; do not change their PHY or shared core.
-
-SET/LOAD/REVERT/DEFAULTS update only current desired settings. ACTIVE describes
-what was last successfully applied (with explicit applied/radio_running flags),
-SAVED the latest valid nonvolatile record, DEFAULTS the immutable factory values.
-APPLY makes current settings active; SAVE persists current settings, independently
-of APPLY. LOAD and REVERT are synonyms; neither writes flash or starts a radio.
-Defaults can only replace saved settings with an explicit SAVE.
-
-Inspecting Bitcraze `src/main.c` revealed a single-character menu (`i` decimal
-node ID, `m` mode, `r` radio, `d` reset) with immediate EEPROM persistence/reset,
-not a line-based SAVE interface. STM32 already uses newline commands for safety.
-The CFG namespace therefore reuses address/node, mode, radio and default concepts,
-with the project's familiar 0x84 representation, but deliberately avoids a modal
-menu and implicit flash writes. `address` aliases `node`; numeric enum values and
-units are explicit. This is an intentional interface difference.
-
-Saving a working ADS profile:
+Board B:
 
 ```text
-CFG SET mode 0
-CFG APPLY
-CFG SET mode 1
-CFG SAVE
-CFG SHOW SAVED
+CFG SET address 0x11
+CFG SET peer 0x10
+CFG SET identity rlr
+CFG SET role responder
+CFG SET calibration off
+CFG SET mode twr
 CFG SHOW
-CFG APPLY
 ```
 
-SAVE requires active radio off, startup watchdog grace >=2 s, and confirmed
-STOP plus STREAM0 on an attached e-puck. A peer with no received UART bytes after
-the grace period is treated as absent, allowing standalone provisioning. This
-cannot establish physical motor status on disconnected hardware; isolate wheels
-and never provision a robot whose independent motor controller lacks a working
-watchdog. A present but unconfirmed peer refuses SAVE. Single-bank flash stalls
-are intentionally confined to this maintenance operation. No IRQ/watchdog/control
-loop is disabled. A reset during SAVE recovers the previous/new complete record.
-Mass erase loses configuration. Sector-only programming of the ELF should leave
-reserved sectors untouched; verify programmer erase options yourself.
+Use `CFG SET role responder` / `CFG SET role initiator` to switch roles without
+rebuilding; change the other board correspondingly. Full six-timestamp ADS
+messages and raw nominal range remain compatible. When provisioning other pairs,
+change peer first if the desired local address equals its current peer.
 
-Calibration and diagnostics, each followed by APPLY:
+`CFG DEFAULTS` activates and saves factory settings, including radio OFF and
+calibration OFF. `CFG LOAD` activates the last valid saved record; `REVERT` is an
+alias. A failed LOAD never erases records or changes live settings. `CFG SAVE` and
+`CFG APPLY` remain compatibility aliases for the same automatic transaction;
+they are unnecessary in normal use. Power-cycle and request SHOW: the settings
+must match and `saved settings loaded at boot: YES` should appear.
+
+## Why the old SAVE sequence failed
+
+Bitcraze `src/main.c` writes settings immediately through cfgWriteU8 (EEPROM),
+reads them back for status, and prints **restart for it to take effect**. It does
+not immediately reinitialize the radio. Its `i` menu accepts decimal 0..255;
+`m`, `r`, `d`, `h` control mode/radio/defaults/help. STM32 keeps its existing
+line-based console, but follows the immediate-persistence convention and adds
+immediate radio activation as requested.
+
+Previously SET/DEFAULTS changed only RAM; APPLY activated it; SAVE alone persisted.
+After the reported successful mode-off APPLY, started was false. The subsequent
+mode-on SET changed desired mode only, so it did not restart the radio. Thus the
+remaining SAVE blocker was the independent epuck_link_flash_safe predicate:
+startup tick >=2000, then either no UART1 bytes at all, or confirmed disarmed STOP,
+no motor command waiting, and confirmed STREAM 0. The supplied output does not
+identify which of those safety conditions failed; no flash write was attempted.
+The old instructions made an awkward RAM/active workaround look sufficient without
+explaining how an unconfirmed robot state could still block it.
+
+Tests reproduce the complete supplied command sequence, plus the stopped-radio /
+received-byte / missing-STOP-ACK failure and the missing-STREAM0-ACK condition.
+Errors now distinguish grace, armed/pending movement, STOP unconfirmed and STREAM0
+unconfirmed, and name the commands/wiring checks needed. The predicate remains
+mandatory. An armed/pending-movement state is rejected even on a silent UART.
+Normal SET handles the radio stop itself; it never treats desired mode as proof
+that hardware is quiescent.
+
+USART1 RX PA10 was also configured with GPIO_NOPULL, so an absent controller left
+an unbiased input. A weak idle-high pull-up is now applied only in UWB-only builds.
+This hardens standalone operation; it is not proof that floating-pin noise caused
+the observed failure. Any actual received bytes still require acknowledged STOP
+and STREAM0. Check MOTOR_STATUS, STREAM_STATUS and LINK_STATUS on rejection;
+connect/power the robot controller and wait for acknowledgments before retrying.
+The original silent-peer grace policy is preserved; software cannot establish
+physical motor status on disconnected hardware. Isolate wheels for provisioning.
+
+## Transaction, flash recovery and endurance
+
+The STM32F405RGT6 application remains at 0x08000000 with a 768 KiB linker limit.
+Sectors 10/11 (128 KiB each, 0x080C0000..0x080FFFFF) are exclusively reserved;
+the backend checks the actual 1 MiB device geometry and linker symbols. See ST
+[RM0090](https://www.st.com/resource/en/reference_manual/dm00031020-stm32f405-and-stm32f407-advanced-armbased-32bit-microcontrollers-stmicroelectronics.pdf)
+and [DS8626 flash characteristics](https://www.st.com/resource/en/datasheet/stm32f405rg.pdf).
+Single-bank program/erase stalls instruction fetch; this is a deliberate bounded
+configuration interruption, never a continuous-ranging operation.
+
+1. Validate the complete proposal, console capacity and robot safety, before any change.
+2. Cancel an active ADS exchange and force TX/RX off (polling owns the radio; no ISR worker).
+3. Preflight the candidate radio settings, including entropy and antenna readback,
+   then stop RX again. This catches initialization failures before a durable change.
+4. Append and verify the CRC-protected record with radio stopped; commit word last.
+5. Resume the prepared radio and confirm SAVED / ACTIVE only after both succeed.
+
+Flash/preflight failure restores the old configuration/radio where hardware allows.
+A complete committed record is resolved by CRC readback even if the backend reported
+an error after writing it. Unreadable storage is reported as durability UNCONFIRMED;
+no false durability acknowledgment is sent. A post-commit hardware failure reports
+SAVED but radio OFF; repair hardware and retry LOAD, without a redundant save.
+Radio recovery itself can fail; such errors explicitly leave service stopped.
+
+The existing 128-byte little-endian schema v1, CRC32/IEEE, modular generation and
+commit-last journal are unchanged. Existing valid records (including old 0x84..86
+addresses/numeric stored enums) load without migration writes. New names are parser
+aliases; factory defaults change only for blank/corrupt storage or explicit DEFAULTS.
+Skip incomplete/invalid/incompatible records, use an older valid record when present,
+and otherwise boot radio-OFF defaults without erasing or writing recovery data.
+
+Each sector holds 1024 records. Normal changes append, **not erase per command**;
+only a full-sector rotation erases the other sector, retaining the latest committed
+sector. Equal settings write nothing. Power loss recovers old/new complete records.
+The specified erase endurance is 10 kcycles, not infinite; configuration is for
+operator settings, not high-rate parameter streaming. No auto-save loop runs at boot.
+Mass erase or old unrestricted images can destroy settings: back up SHOW and use
+programmer sector erase settings that preserve sectors 10/11. Use stable supply
+within the specified programming voltage range.
+
+## Calibration and telemetry
+
+`calibrated_m = raw_m + correction_mm/1000` only when calibration is ON. Positive
+correction increases range. Hardware TX/RX antenna delays enter timestamps once;
+software offset operates only on derived range. Changing an antenna delay disables
+software calibration; refit before explicitly enabling it. Raw negative/nonfinite
+or otherwise invalid results stay invalid even if an offset makes them positive;
+negative corrected ranges are also invalid. Neither value is clamped. Raw RESULT
+and six TIMES remain; CAL exposes raw/calibrated values and validity.
 
 ```text
-CFG SET tx_ant_dtu 16380
-CFG SET rx_ant_dtu 16380
-CFG SET correction_mm -450
-CFG SET calibration 1
-CFG APPLY
-CFG SET calibration 0
-CFG APPLY
-```
-
-The example offset is syntax only, not a fitted or recommended calibration.
-`MULH RESULT`/`TIMES` preserve raw six-timestamp audit output. `MULH CAL` adds
-raw_m, calibrated_m, calibration and derived range_valid. verbosity 0 suppresses
-routine results/statistics, 1 keeps results/summaries, 2 includes six timestamps.
-Important errors/init/config output remains. SHOW gives active hardware delays.
-
-## Telemetry infrastructure and limitations
-
-```text
-CFG SET telemetry 1
+CFG SET correction_mm -100
+CFG SET calibration on
+CFG SET calibration off
+CFG SET telemetry on
 CFG SET telemetry_ms 1000
-CFG SET samples 0
-CFG APPLY
 TLM STATUS
 TLM NEXT
-CFG SET telemetry 0
-CFG APPLY
+CFG SET telemetry off
 ```
 
-The separate machine queue holds four complete records of <=189 payload bytes (plus CRLF/NUL). Producers
-run only in the main loop, never transmit or format in interrupts, never allocate
-memory, and drop newest on saturation. STATUS exposes occupancy/capacity/high
-water/cumulative dropped and accepted. APPLY accounts for discarded old records.
-NEXT copies one record only if the USB output queue can accept it; USB backpressure
-retains the item. Machine records start `TLM STAT` or `TLM RANGE`; ordinary debug
-starts MULH. Optional samples=1 emits raw/calibrated valid flags per completion,
-up to the configured transaction rate. Summaries are 1 Hz by default and include
-node/peer/session/role, attempt/done/abort/reject/bad_range counters. Queue counters
-are not RF loss counters. No host attached simply saturates the bounded queue.
+The example correction is syntax, not a recommendation. No -469 mm value is built
+into firmware. Existing offline calibration proposals are pair-specific; no scale
+fit is supported. The bounded four-record queue retains raw/calibrated samples
+and low-rate counters, IDs and sessions. STATUS exposes occupancy/high-water/drops;
+NEXT respects USB backpressure. UART3/Wi-Fi forwarding remains deferred. Compare
+MULH TIME maxima and UART errors with telemetry OFF/ON and a stalled reader;
+low rate is not evidence of safe timing. Flash/configuration pauses are maintenance
+interruptions and must be marked in captures.
 
-No UART3/Wi-Fi forwarding is enabled: that path currently carries a safety/session
-protocol and previously exhibited overruns. This phase delivers STM32-side
-infrastructure only; an acknowledged/backpressure-aware integration remains.
-ESP firmware is unchanged. Compare MULH TIME maxima (SPI interrupt-off cycles,
-service cycles, service gaps, calls, clock Hz) with telemetry disabled/enabled and
-with a stalled USB reader. Instrumentation covers formatting/enqueue work; it is
-not a worst-case execution-time proof. Saves and APPLY initialization are excluded
-from steady-state timing and must be marked as maintenance in captures.
+## Verification and first hardware test
 
+Run `sh tests/runtime_config/run.sh` for ASan/UBSan configuration, real runtime /
+radio-adapter same-binary role tests, flash mocks and USB parser/backpressure tests.
+It covers all 65536 address combinations, strict decimal/hex/enum parsing, old v1
+records, automatic activation/save, identical no-write updates, exact old SAVE
+sequence, per-word failed-write rollback, post-commit failure reporting, reboot,
+HELP coverage, corrupted records and factory restoration. Journal tests cover
+power-cut/rollover recovery, generation wrap, CRC corruption, and 1024th append /
+1025th rotation erase counts. Safety tests check real STOP/STREAM0 predicates.
 
-## Host calibration analysis
-
-From lps-node-firmware; references below are nominal metres, and 0.10 m is an
-illustrative uncertainty assumption to replace with a justified measurement bound:
-
-```sh
-python3 tools/test/calibrate_ads.py \
-  --run 0.5=../ADS-050cm-ALR.log --run 1=../ADS-100cm-ALR.log \
-  --run 2=../ADS-200cm-ALR.log --run 3=../ADS-300cm-ALR.log \
-  --run 5=../ADS-500cm-ALR.log --reference-uncertainty-m 0.10 \
-  --report /tmp/ads-calibration.md --proposal /tmp/ads-calibration.json \
-  --samples /tmp/ads-calibration.csv
-```
-
-The standard-library utility reuses the independently tested six-stamp audit,
-retains raw/candidate rows and explicit exclusions, and equally weights the five
-run medians. It exports an opt-in proposal with calibration=0 and review-only
-commands. No settings are flashed, saved or applied. Current data propose -469 mm;
-this is specific to the captured pair and delay settings. Only the 5 m run has
->=500 audited valid samples. See the LPS `docs/ads_additive_calibration.md` report
-for the per-distance bias/residuals; calibration accuracy remains unvalidated.
-
-## Software verification and hardware handoff
-
-Host tests (ASan/UBSan) in `tests/runtime_config/run.sh` exercise the actual runtime
-manager and radio adapter in one executable: both roles, changed IDs/identities,
-rate, antenna readback, opt-in calibration, telemetry saturation/backpressure,
-off mode, saved reboot, corrupt storage and failed entropy/radio initialization.
-Schema tests cover CRC32's standard vector, every record-byte corruption,
-unsupported version, strict fields, identity/role independence, duplicate IDs,
-raw negative/invalid results, antenna-change invalidation, and sign/units.
-The journal simulator cuts saves after each word and at sector rollover, checks
-generation wrap, and verifies identical SAVE performs no writes. Actual backend
-mocks check 1 MiB geometry, both reserved sectors, address/size/alignment bounds,
-cache invalidation, relocking on failure and RNG failure paths. USB tests cover
-fragmented commands, CRLF, control characters, overlong input, disconnect and
-output backpressure; existing robot safety tests verify the SAVE safety predicate.
-
-Builds: Universal, legacy AdsInitiator/AdsResponder, NormalBaseline and UwbOffSafe.
-Portable core/vendor verification, ADS adapter, MUL diagnostics, PHY interoperability,
-USB/e-puck, ESP bridge, UWB-only policy and nine coexistence scenarios are regression
-checks. `python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf`
-checks actual file-backed load segments below 0x080C0000 and reserved linker symbols.
-Existing vendor unused-function/chan_ctrl and motor-message truncation warnings
-remain; they were not introduced by this configuration work.
-
-Next user-operated hardware checks (not performed by software tests):
-
-1. Back up each board's settings/working ELF. Use STM32CubeProgrammer with
-   `/home/derder/Documents/epuck-stm32/build/Universal/EPuck_STM32.elf` and a
-   sector-only erase/program policy preserving sectors 10/11; do not mass erase
-   unless intentionally testing defaults. The installed CLI is
-   `/home/derder/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI`.
-2. With wheels isolated, verify startup STOP, rejected ARM/movement, STREAM0 and
-   LINK_STATUS/MOTOR_STATUS. Test absent e-puck/ESP/USB; UWB must run independently.
-3. Configure matching opposite roles on two nodes (existing DW1000 image or second
-   universal STM32), verify source/peer IDs and all six timestamps. Switch role
-   with SET/APPLY, using exactly the same ELF; repeat across identities/addresses.
-4. Stop radio, SAVE desired ADS settings, inspect SAVED, reboot/power-cycle and
-   verify applied fields. Repeatedly interrupt SAVE on a nonmoving test board;
-   recover old/new complete settings or safe defaults if no valid record exists.
-   Also test deliberately corrupt/incompatible records using a backed-up test unit.
-5. Repeat sustained stationary ranging uncalibrated, then opt in to a reviewed
-   offset without changing hardware delays. Check raw output unchanged by the
-   software correction, exact signed millimetre offset, negative/invalid retention,
-   and disable/revert. Change antenna delay and verify calibration auto-disables.
-6. Compare telemetry off/on, samples off/on, USB reader stalled/disconnected and
-   queue saturation. Record TIME maxima, UART faults, counts and safety endpoints;
-   do not infer safety from the configured 1 Hz rate. Repeat a true UWB-off baseline.
-
-No flash, motion, radio experiment, hardware power-loss test or accuracy validation
-was performed here. Stage3G hardware gates remain open. Rollback: the prior STM32
-baseline is 34e8c73595410ed46e9770e19986847fa475161d. Older unrestricted images may
-use the reserved region; back up configuration before rolling back.
-
-Validation performed for this milestone:
-
-- All new runtime/config/flash/USB ASan+UBSan executables passed; one executable
-  switches initiator/responder and saves/reloads changed settings.
-- STM32 ADS, diagnostic and PHY adapter/profile tests passed; 15 USB/e-puck,
-  9 ESP bridge and 9 coexistence scenarios passed; UWB-only safety passed.
-- LPS 195 Unity tests, 178 MUL sanitizer tests, real-driver ADS, codec/profile
-  and vendor-contract checks passed. All 20 Python log/calibration tests passed.
-- Universal, AdsInitiator, AdsResponder, NormalBaseline, UwbOffSafe and clean LPS
-  default builds passed. Universal: text 87052, data 764, BSS 17392 bytes; actual
-  FLASH load is below the reserved boundary. Runtime stack high-water is unmeasured.
-
-Reproduce the STM32 host checks:
+Regression commands:
 
 ```sh
 sh ThirdParty/mul_core/tests/run.sh
@@ -295,12 +237,27 @@ for suite in runtime_config ads_radio mul_diag phy_interop epuck_console esp_lin
   sh tests/$suite/run.sh || exit 1
 done
 python3 tests/mul_diag/run_coexist.py
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
 ```
 
-LPS checks: `rake unit summary`, `sh portable/mul_core/tests/run.sh`,
-`python3 tools/test/ads.py`, `python3 tools/test/mul_core.py`,
-`python3 tools/test/phy_interop.py`,
-`python3 tools/test/mul_slots.py --slot 10 --prop-age 6000 --speed 0 --sanitize`,
-and `python3 -m unittest discover -s tools/test -p 'test_*ads*.py' -v`.
-This host used a temporary Python3 `python` path shim for the legacy Rake runner;
-no repository dependency was changed.
+Before claiming hardware validation, the user should:
+
+1. Back up settings/ELFs; program the same Universal ELF on both nonmoving boards,
+   preserving sectors10/11. No assistant flashing or motion is authorized.
+2. Verify startup STOP/safety and configure A/B above; each accepted command must
+   say SAVED / ACTIVE. Record SHOW on both and check reciprocal IDs/opposite roles.
+3. Power-cycle each board without a host/ESP, reconnect and compare SHOW; boot-loaded
+   must be YES. Do not infer durability merely from an unchanged RAM display.
+4. Capture both serial streams from startup. Run stationary, uncalibrated channel5
+   ADS-TWR for >=10 minutes / >=600 attempts, retain all six stamps and failures.
+   Check counters, session IDs, raw validity, UART faults and safety endpoints.
+5. Swap roles using SET only, repeat with the same ELFs, and compare telemetry OFF/ON
+   plus a genuine UWB-OFF baseline. Do not treat counter snapshots as matched PDR.
+6. On an isolated backed-up test unit, interrupt configuration saves and verify
+   old/new complete settings; test corruption and actual sector rotation separately.
+
+All host persistence/power-cut tests are simulations, not physical flash validation.
+Absolute ranging accuracy, UART fault attribution, radio timing and Stage3G hardware
+acceptance remain open. Rollback baseline: STM32 a1db617bce685731d16090e96652ee42ace0830c;
+old settings remain schema-compatible, but old firmware cannot use new addresses
+outside its former allowlist.

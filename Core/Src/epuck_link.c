@@ -422,19 +422,26 @@ static uint8_t accept_data(const char *record)
   return 1U;
 }
 
-uint8_t epuck_link_flash_safe(void)
+const char *epuck_link_flash_error(void)
 {
 #if MUL_UWB_ONLY
-  if (HAL_GetTick() < 2000U) return 0U;
-  if (rx_bytes == 0U) return 1U; /* Standalone board, no external controller. */
+  if (motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING || motor_arm_pending || motor_count)
+    return "ERR configuration rejected: motors armed/pending; issue STOP and wait for OK STOP";
+  if (HAL_GetTick() < 2000U)
+    return "ERR configuration rejected: startup safety grace; wait 2 seconds and retry";
+  if (rx_bytes == 0U) return NULL; /* Preserve silent standalone-board policy. */
+  if (!motor_known || motor_state != MOTOR_DISARMED || motor_stop_pending || motor_wait != TX_IDLE)
+    return "ERR configuration rejected: STOP unconfirmed; issue STOP, wait OK STOP; inspect MOTOR_STATUS/LINK_STATUS";
   epuck_stream_status_t status;
   epuck_link_get_stream_status(&status);
-  return motor_known && motor_state == MOTOR_DISARMED && !motor_stop_pending &&
-    motor_wait == TX_IDLE && status.confirmed && status.acknowledged_ms == 0U;
+  if (!status.confirmed || status.acknowledged_ms != 0U)
+    return "ERR configuration rejected: STREAM 0 unconfirmed; wait/check STREAM_STATUS and UART1 peer power/cabling";
+  return NULL;
 #else
-  return 0U;
+  return "ERR persistent configuration requires the UWB-only safety build";
 #endif
 }
+uint8_t epuck_link_flash_safe(void) { return epuck_link_flash_error() == NULL; }
 
 static void motor_stop(const char *reason, uint8_t lost)
 {
@@ -984,6 +991,7 @@ void epuck_link_init(void) {}
 void epuck_link_task(void) {}
 void epuck_link_boot_safety(void) {}
 uint8_t epuck_link_flash_safe(void) { return 1U; }
+const char *epuck_link_flash_error(void) { return NULL; }
 void epuck_link_get_stream_status(epuck_stream_status_t *status)
 {
   if (status) *status=(epuck_stream_status_t){.sample_age_ms=UINT32_MAX};

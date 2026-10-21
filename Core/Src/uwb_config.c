@@ -25,20 +25,20 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
   for(unsigned i=0;i<3;i++) c->reserved[i]=v[15+i];
 }
 void uwb_config_defaults(uwb_config_t *c) {
-  *c=(uwb_config_t){.node=0x86,.peer=0x84,.identity=0,.mode=0,.role=2,.interval_ms=1000,
+  *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
     .tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000};
 }
 const char *uwb_config_validate(const uwb_config_t *c) {
-  if(c->node<0x84||c->node>0x86||c->peer<0x84||c->peer>0x86) return "address: pinned ADS protocol supports 0x84..0x86";
+  if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
-  if(c->identity>2) return "identity: 0=standalone 1=ALR 2=RLR";
-  if(c->mode>1) return "mode: only 0=off and 1=ADS implemented";
-  if(c->role!=1&&c->role!=2) return "role: 1=initiator 2=responder";
+  if(c->identity>2) return "identity: standalone, alr, rlr";
+  if(c->mode>1) return "mode: supported values off, twr";
+  if(c->role!=1&&c->role!=2) return "role: initiator, responder";
   if(c->interval_ms<250||c->interval_ms>60000) return "interval_ms: 250..60000";
-  if(c->phy) return "phy: only 0=mixed channel5/6M8/code9 supported";
+  if(c->phy) return "phy: only mixed (channel5/6M8/code9) supported";
   if(c->tx_ant_dtu>65535||c->rx_ant_dtu>65535) return "antenna delay: 0..65535 DTU";
-  if(c->calibration>1||c->correction_mm < -10000||c->correction_mm>10000) return "calibration: 0/1; correction_mm: -10000..10000";
-  if(c->verbosity>2||c->telemetry>1||c->samples>1) return "verbosity: 0..2; telemetry/samples: 0/1";
+  if(c->calibration>1||c->correction_mm < -10000||c->correction_mm>10000) return "calibration: on/off; correction_mm: -10000..10000";
+  if(c->verbosity>2||c->telemetry>1||c->samples>1) return "verbosity: quiet/summary/full; telemetry/samples: on/off";
   if(c->telemetry_ms<1000||c->telemetry_ms>60000) return "telemetry_ms: 1000..60000";
   if(c->reserved[0]||c->reserved[1]||c->reserved[2]) return "reserved fields must be zero";
   return NULL;
@@ -47,10 +47,31 @@ bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
   uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return memcmp(av,bv,sizeof(av))==0;
 }
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) {
+  char fieldLower[24],valueLower[24];
+  size_t f=0,valueLength=0;
+  while(f<sizeof(fieldLower)-1&&field[f]) {fieldLower[f]=field[f]>='A'&&field[f]<='Z'?field[f]+('a'-'A'):field[f];f++;}
+  while(valueLength<sizeof(valueLower)-1&&value[valueLength]) {valueLower[valueLength]=value[valueLength]>='A'&&value[valueLength]<='Z'?value[valueLength]+('a'-'A'):value[valueLength];valueLength++;}
+  if(field[f]||value[valueLength]) return "field/value too long";
+  fieldLower[f]=valueLower[valueLength]=0;field=fieldLower;value=valueLower;
+  if(!strcmp(field,"address"))field="node";
   static const char *names[]={"node","peer","identity","mode","role","interval_ms","phy","tx_ant_dtu","rx_ant_dtu",
     "calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples"};
   unsigned index=15;for(unsigned i=0;i<15;i++) if(!strcmp(field,names[i])) {index=i;break;}
-  if(index==15) return "unknown field";
+  if(index==15) return "unknown field; use CFG HELP";
+  static const struct {unsigned field;const char *name;const char *number;} aliases[]={
+    {2,"standalone","0"},{2,"alr","1"},{2,"rlr","2"},
+    {3,"off","0"},{3,"twr","1"},{4,"initiator","1"},{4,"responder","2"},
+    {6,"mixed","0"},{9,"off","0"},{9,"on","1"},
+    {11,"quiet","0"},{11,"summary","1"},{11,"full","2"},
+    {12,"off","0"},{12,"on","1"},{14,"off","0"},{14,"on","1"}};
+  for(unsigned i=0;i<sizeof(aliases)/sizeof(*aliases);i++)
+    if(aliases[i].field==index && !strcmp(aliases[i].name,value)) {value=aliases[i].number;break;}
+  if((index==2||index==3||index==4||index==6||index==9||index==11||index==12||index==14) &&
+     (value[0]<'0'||value[0]>'9')) {
+    static const char *errors[]={"identity: standalone, alr, rlr","mode: supported values off, twr","role: initiator, responder"};
+    if(index>=2&&index<=4) return errors[index-2];
+    return index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
+  }
   const char *p=value;bool negative=false;unsigned base=10;
   if(index==10 && *p=='-') {negative=true;p++;}
   if(index<2 && p[0]=='0'&&p[1]=='x') {base=16;p+=2;}
