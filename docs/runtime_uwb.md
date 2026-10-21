@@ -261,3 +261,22 @@ Absolute ranging accuracy, UART fault attribution, radio timing and Stage3G hard
 acceptance remain open. Rollback baseline: STM32 a1db617bce685731d16090e96652ee42ace0830c;
 old settings remain schema-compatible, but old firmware cannot use new addresses
 outside its former allowlist.
+
+Software validation completed for this correction:
+
+- New runtime/config/flash/USB suites passed with ASan/UBSan, including both roles
+  in one executable, all byte-address pairs, automatic durability, exact old SAVE
+  sequence, rollback, power-cut simulations, old-v1 loading and wear boundaries.
+- STM32 ADS adapter, PHY, MUL diagnostic/timing and safety regressions passed;
+  15 USB/e-puck, 9 ESP bridge and 9 controlled coexistence scenarios passed.
+- LPS 195 Unity tests and 178 MUL sanitizer tests passed; actual DW1000 ADS driver,
+  pinned-vendor/codec/profile contracts and all 20 Python analysis tests passed.
+- Universal, legacy AdsInitiator/AdsResponder, NormalBaseline and UwbOffSafe STM32
+  builds passed. All five ELFs passed reserved-sector load-boundary checks.
+- Clean LPS default, ADS initiator and responder builds passed; default build was
+  restored afterward. Existing vendor/newlib and motor-message truncation warnings
+  remain; no new warnings were introduced by this correction.
+
+Universal resource sizes: text 92480, data 764, BSS 17480 bytes. Stack high-water,
+physical flash endurance/power cuts, actual radio/UART timing and accuracy remain
+unmeasured. No hardware was flashed or operated by the assistant.

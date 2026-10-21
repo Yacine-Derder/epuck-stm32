@@ -21,8 +21,9 @@ typedef struct {
 void uwb_config_defaults(uwb_config_t *c);
 const char *uwb_config_validate(const uwb_config_t *c);
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b);
-/* Strict single-field update; no mutation on rejection. Decimal numbers or
- * 0x-prefixed IDs; mm offset is signed decimal. No whitespace/trailing text. */
+/* Strict single-field candidate update; no mutation on rejection. Case-insensitive
+ * fields/enum words, numeric aliases, decimal/0x IDs and signed decimal mm.
+ * Persistence/activation is performed by the runtime transaction, not here. */
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value);
 uint32_t uwb_config_crc(const uint8_t *data,size_t size);
 void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c,uint32_t generation);
