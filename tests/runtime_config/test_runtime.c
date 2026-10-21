@@ -43,6 +43,8 @@ static void persisted(void) {
  assert(applied&&uwb_config_equal(&c,&current)&&uwb_config_equal(&current,&active)&&g==generation);
 }
 static const char *const oldSequence[]={"CFG DEFAULTS","CFG SET peer 0x85","CFG SET address 0x84","CFG SET peer 0x86","CFG SET identity 1","CFG SET role 1","CFG SET mode 1","CFG APPLY","CFG SET mode 0","CFG APPLY","CFG SET mode 1","CFG SAVE"};
+
+#ifndef MUL_RUNTIME_REUSE
 int main(void) {
  memset(nv,255,sizeof(nv));uwb_runtime_init();assert(applied&&!started&&!savedValid&&!loadedAtBoot&&active.mode==0&&active.node==0x00);
  unsigned old=starts;tick=2000;uwb_runtime_task();assert(starts==old);assert(!uwb_runtime_command("ARM"));
@@ -133,3 +135,5 @@ int main(void) {
  command("CFG SET telemetry_format compact");command("CFG SET wifi off");assert(!wifiEnabled);persisted();
  puts("same-binary immediate persistence/rollback/roles/8-bit IDs/help/old SAVE sequence/recovery tests passed");return 0;
 }
+
+#endif

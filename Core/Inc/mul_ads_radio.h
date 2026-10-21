@@ -8,6 +8,8 @@
 void mul_ads_radio_configure(const uwb_config_t *config,uint64_t session);
 void mul_ads_radio_stop(void);
 bool mul_ads_radio_reset_stats(void);
+bool mul_ads_radio_sync_status(unsigned index,char *line,size_t capacity);
+bool mul_ads_radio_peer_stats(unsigned index,mulTelemetry_t *record);
 int32_t mul_ads_radio_resume(void);
 #endif
 int32_t mul_ads_radio_init(void);

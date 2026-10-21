@@ -30,13 +30,14 @@ static uwb_config_t displayConfig;
 static const char *displayState;
 static bool displayBoot;
 static uint32_t displayGeneration;
+static bool displayStats;
 static const char *const help[]={
-  "CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
+  "SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
   "CFG SET <field> <value>; all fields persistent; every changed field restarts UWB",
   "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
   "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
   "identity: standalone (factory), alr, rlr; metadata, never motor authorization",
-  "mode: off (factory), twr; beacon/listen not enabled in this phase",
+  "mode: off (factory), twr, beacon, listen (experimental acquisition)",
   "role: responder (factory), initiator; independent of robot identity",
   "interval_ms: 250..60000 ms; factory 1000; initiator transaction interval",
   "phy: mixed (factory/only): channel5, 6.8Mbps, code9, preamble128",
@@ -69,7 +70,8 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
   r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)active.role;
-  r->uptimeMs=HAL_GetTick();r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
+  if(r->type!=mulTlmPeer)r->uptimeMs=HAL_GetTick();
+  r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
   if(count==TLM_CAPACITY)dropped++;
@@ -127,6 +129,7 @@ static bool update(const uwb_config_t *candidate) {
   }
   error=epuck_link_flash_error();
   if(error) {reply(error);return false;} /* No active/saved mutation or radio stop. */
+  display=0; /* Cancel a paged snapshot before replacing its live radio state. */
   uwb_config_t old=active;
   if(!prepare(candidate)) {reply("ERR radio preflight failed; settings not changed");restore(&old);return false;}
   uint32_t newGeneration;
@@ -167,8 +170,8 @@ void uwb_runtime_init(void) {
 static const char *identity(uint32_t n) {return n==1?"ALR":n==2?"RLR":"Standalone";}
 static const char *onoff(uint32_t n) {return n?"ON":"OFF";}
 static const char *configVerbosity(uint32_t n) {return n==0?"Quiet":n==1?"Summary":"Full";}
-static void show(const uwb_config_t *c,const char *state) {
-  displayConfig=*c;displayState=state;displayBoot=loadedAtBoot;
+static void show(const uwb_config_t *c,const char *label) {
+  displayConfig=*c;displayState=label;displayBoot=loadedAtBoot;
   displayGeneration=generation;display=2;displayIndex=0;
 }
 static void display_output(void) {
@@ -178,7 +181,26 @@ static void display_output(void) {
     if(usb_console_try_write(help[displayIndex])) displayIndex++;
     return;
   }
-  const uwb_config_t *c=&displayConfig;char text[192];
+  const uwb_config_t *c=&displayConfig;char text[320];
+  if(display==4) {
+    if(!mul_ads_radio_sync_status(displayIndex,text,sizeof(text))){display=0;return;}
+    if(usb_console_try_write(text))displayIndex++;
+    return;
+  }
+  if(display==3) {
+    if(displayIndex>=c->peer_count){display=0;return;}
+    const uwb_peer_t *p=&c->peers[displayIndex];mulTelemetry_t r={0};
+    if(displayStats)mul_ads_radio_peer_stats(displayIndex,&r);
+    if(!displayStats) {
+      snprintf(text,sizeof(text),"PEER 0x%02X %s interval=%u primary=%u",p->address,p->enabled?"ON":"OFF",p->interval_ms,displayIndex==0);
+      if(usb_console_try_write(text))displayIndex++;
+      return;
+    }
+    snprintf(text,sizeof(text),"PEER 0x%02X %s interval=%u attempts=%lu done=%lu abort=%lu timeout=%lu invalid=%lu reject=%lu raw_mm=%ld cal_mm=%ld flags=%u last_ok_ms=%lu",
+      p->address,p->enabled?"ON":"OFF",p->interval_ms,(unsigned long)r.attempts,(unsigned long)r.completed,(unsigned long)r.aborted,(unsigned long)r.timeouts,(unsigned long)r.invalid,(unsigned long)r.rejected,(long)r.rawMm,(long)r.calMm,r.flags,(unsigned long)r.uptimeMs);
+    if(usb_console_try_write(text))displayIndex++;
+    return;
+  }
   switch(displayIndex) {
   case 0:snprintf(text,sizeof(text),"Node address:       0x%02lX",(unsigned long)c->node);break;
   case 1:snprintf(text,sizeof(text),"Peer address:       0x%02lX",(unsigned long)c->peer);break;
@@ -208,6 +230,43 @@ void uwb_runtime_task(void) {
   display_output();telemetry_task();
   if(initialized&&started) mul_ads_radio_process();
 }
+static bool number(const char *s,unsigned maximum,unsigned *out) {
+  if(!s||!*s)return false;
+  unsigned base=10,v=0,n=0;
+  if(s[0]=='0'&&s[1]=='x'){s+=2;base=16;}
+  while(*s){unsigned d=*s>='0'&&*s<='9'?(unsigned)(*s-'0'):*s>='a'&&*s<='f'?(unsigned)(*s-'a'+10):99;
+    if(d>=base||d>maximum||v>(maximum-d)/base)return false;
+    v=v*base+d;s++;n++;}
+  if(!n)return false;
+  *out=v;return true;
+}
+static void peer_command(unsigned nt,char **t) {
+  if(nt==1||(nt==2&&!strcmp(t[1],"help"))) {
+    reply("PEER LIST | STATS | ADD <id> | REMOVE <id> | ENABLE <id> | DISABLE <id> | INTERVAL <id> <250..60000>");return;
+  }
+  if(nt==2&&(!strcmp(t[1],"list")||!strcmp(t[1],"stats"))) {
+    displayStats=!strcmp(t[1],"stats");
+    if(displayStats&&(!started||active.mode!=1)){reply("ERR peer statistics require active TWR; PEER LIST remains available");return;}
+    displayConfig=active;display=3;displayIndex=0;return;
+  }
+  unsigned id;if((nt!=3&&nt!=4)||!number(t[2],255,&id)){reply("ERR PEER HELP; address 0x00..0xFF");return;}
+  uwb_config_t c=current;unsigned i=0;while(i<c.peer_count&&c.peers[i].address!=id)i++;
+  if(nt==3&&!strcmp(t[1],"add")) {
+    if(i<c.peer_count||id==c.node||c.peer_count==UWB_MAX_PEERS){reply("ERR peer duplicate/self/table full");return;}
+    c.peers[c.peer_count++]=(uwb_peer_t){(uint8_t)id,1,(uint16_t)c.interval_ms};
+  } else if(i==c.peer_count){reply("ERR peer not configured");return;}
+  else if(nt==3&&!strcmp(t[1],"remove")) {
+    if(c.peer_count==1){reply("ERR keep one peer; DISABLE instead");return;}
+    if(i==0)c.calibration=0; /* Pair correction never transfers to a new primary. */
+    for(unsigned j=i+1;j<c.peer_count;j++)c.peers[j-1]=c.peers[j];
+    c.peers[--c.peer_count]=(uwb_peer_t){0};
+  } else if(nt==3&&!strcmp(t[1],"enable"))c.peers[i].enabled=1;
+  else if(nt==3&&!strcmp(t[1],"disable"))c.peers[i].enabled=0;
+  else if(nt==4&&!strcmp(t[1],"interval")) {
+    unsigned ms;if(!number(t[3],60000,&ms)||ms<250){reply("ERR interval 250..60000");return;}c.peers[i].interval_ms=(uint16_t)ms;
+  } else {reply("ERR PEER HELP");return;}
+  c.peer=c.peers[0].address;c.interval_ms=c.peers[0].interval_ms;update(&c);
+}
 bool uwb_runtime_command(const char *line) {
   char copy[64];size_t n=0;while(n<sizeof(copy)&&line[n]) n++;
   if(n>=sizeof(copy)) {reply("ERR oversized command");return true;}
@@ -223,8 +282,13 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
+  if(nt==2&&!strcmp(token[0],"sync")&&!strcmp(token[1],"status")) {
+    if(!started||active.mode!=3)reply("SYNC UNKNOWN; select mode listen for apparent arrival models");
+    else {display=4;displayIndex=0;}return true;
+  }
+  if(!strcmp(token[0],"peer")){peer_command(nt,token);return true;}
   if(nt==2&&!strcmp(token[0],"diag")&&!strcmp(token[1],"reset")) {
-    if(active.mode==1&&!mul_ads_radio_reset_stats())reply("ERR transaction active; retry DIAG RESET when idle");
+    if(active.mode&&!mul_ads_radio_reset_stats())reply("ERR transaction active; retry DIAG RESET when idle");
     else {dropped=wifiDrops=accepted=0;highWater=count;wifiHigh=wifiCount;esp_link_reset_diagnostics();reply("DIAG counters reset; safety/session/transaction IDs unchanged");}
     return true;
   }

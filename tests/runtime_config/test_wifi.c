@@ -13,6 +13,6 @@ int main(void){
  esp_link_reply_to(id,"STOP first");unsigned before=(unsigned)strlen(uart3_output);esp_link_task();assert(strstr(uart3_output+before,"STOP first")&&!strstr(uart3_output+before,"UWB2"));
  esp_link_task();assert(strstr(uart3_output+before,"UWB2 ")&&!esp_telemetry_pending);
  assert(esp_link_telemetry(encoded));tick+=1001;esp_link_task();assert(!esp_telemetry_pending&&esp_link_telemetry_dropped()>0);
- esp_link_set_enabled(0);assert(!esp_active&&!esp_link_telemetry(encoded));
+ esp_length=10;esp_discard=esp_fault=1;esp_link_set_enabled(0);assert(!esp_length&&!esp_discard&&!esp_fault);assert(!esp_active&&!esp_link_telemetry(encoded));
  assert(!motor_arm_pending&&!motor_count);puts("Wi-Fi-enabled UWB-only policy: ARM rejected, reserved control priority, bounded optional UART/TTL and disable passed");return 0;
 }

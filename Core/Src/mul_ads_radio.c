@@ -22,10 +22,24 @@
 #error "DWM antenna delay must fit the hardware register"
 #endif
 #define RX_EVENTS (SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | DWT_INT_RXOVRR_BIT_MASK)
+#if MUL_UNIVERSAL
+static mulAds_t peerStates[UWB_MAX_PEERS];
+static unsigned activePeer, nextPeer, telemetryPeer;
+#define state (peerStates[activePeer])
+static uint32_t peerStarted[UWB_MAX_PEERS],peerTimeouts[UWB_MAX_PEERS],peerSuccess[UWB_MAX_PEERS];
+static int32_t peerRaw[UWB_MAX_PEERS],peerCal[UWB_MAX_PEERS];
+static uint8_t peerFlags[UWB_MAX_PEERS];
+static uint64_t peerRx[UWB_MAX_PEERS];
+#else
 static mulAds_t state;
+#endif
 static uint32_t lastPoll,lastStart,lastReport,errors,invalid,timeouts;
 static bool retryRx;
 #if MUL_UNIVERSAL
+#include "mul_beacon.h"
+static void beacon_reset(void);
+static bool beacon_reset_stats(void);
+static void beacon_process(uint32_t now);
 static uwb_config_t config;
 static uint64_t runtimeSession;
 static bool configured;
@@ -41,10 +55,34 @@ static mulTelemetry_t telemetry_record(uint8_t type) {
    .attempts=state.attempts,.completed=state.completed,.aborted=state.aborted,.rejected=state.rejected,.invalid=state.invalidRanges,
    .radioErrors=errors,.timeouts=timeouts,.spiCycles=timing[0],.serviceCycles=timing[1],.gapCycles=timing[2],.clockHz=timing[3]};return r;
 }
+bool mul_ads_radio_peer_stats(unsigned i,mulTelemetry_t *r) {
+  if(i>=config.peer_count)return false;
+  mulAds_t *p=&peerStates[i];
+  *r=(mulTelemetry_t){.type=mulTlmPeer,.peer=p->peer,.exchange=p->session,.transaction=p->transaction,
+    .attempts=p->attempts,.completed=p->completed,.aborted=p->aborted,.rejected=p->rejected,.invalid=p->invalidRanges,
+    .timeouts=peerTimeouts[i],.rawMm=peerRaw[i],.calMm=peerCal[i],.flags=peerFlags[i],.uptimeMs=peerSuccess[i]};
+  r->stamps[0]=peerRx[i];return true;
+}
 bool mul_ads_radio_reset_stats(void) {
-  if(state.stage!=adsIdle)return false;
-  state.attempts=state.completed=state.aborted=state.rejected=state.invalidRanges=0;
-  memset(state.failedStages,0,sizeof(state.failedStages));errors=invalid=timeouts=0;mul_timing_reset_stats();return true;
+  if(config.mode>=2)return beacon_reset_stats();
+  for(unsigned i=0;i<config.peer_count;i++)if(peerStates[i].stage!=adsIdle)return false;
+  for(unsigned i=0;i<config.peer_count;i++) {
+    mulAds_t *p=&peerStates[i];p->attempts=p->completed=p->aborted=p->rejected=p->invalidRanges=0;
+    memset(p->failedStages,0,sizeof(p->failedStages));peerTimeouts[i]=0;
+  }
+  errors=invalid=timeouts=0;mul_timing_reset_stats();return true;
+}
+/* One coordinated initiator: >=100ms start guard, one exchange at a time,
+ * 100ms per-stage deadlines. Unavailable peers consume one bounded attempt.
+ * Due peers are visited cyclically, never restarted in a tight retry loop. */
+static void schedule(uint32_t now) {
+  if(config.role!=1||state.stage!=adsIdle||(uint32_t)(now-lastStart)<100U)return;
+  for(unsigned n=0;n<config.peer_count;n++) {
+    unsigned i=(nextPeer+n)%config.peer_count;
+    if(!config.peers[i].enabled||(uint32_t)(now-peerStarted[i])<config.peers[i].interval_ms||peerStates[i].transaction==UINT32_MAX)continue;
+    activePeer=i;nextPeer=(i+1)%config.peer_count;peerStarted[i]=lastStart=now;
+    mulAdsBegin(&state,now);break;
+  }
 }
 void mul_ads_radio_configure(const uwb_config_t *c,uint64_t session) {config=*c;runtimeSession=session;}
 static bool initiator(void) {return config.role==1;}
@@ -93,8 +131,14 @@ int32_t mul_ads_radio_init(void) {
   configured=true;
   dwt_settxantennadelay((uint16_t)config.tx_ant_dtu);dwt_setrxantennadelay((uint16_t)config.rx_ant_dtu);
   if(dwt_gettxantennadelay()!=config.tx_ant_dtu||dwt_getrxantennadelay()!=config.rx_ant_dtu) return DWT_ERROR;
-  if(!mulAdsInit(&state,(uint8_t)config.node,(uint8_t)config.peer,initiator(),runtimeSession)) return DWT_ERROR;
-  lastTelemetry=HAL_GetTick();
+  activePeer=nextPeer=telemetryPeer=0;
+  memset(peerTimeouts,0,sizeof(peerTimeouts));memset(peerSuccess,0,sizeof(peerSuccess));
+  memset(peerFlags,0,sizeof(peerFlags));memset(peerRx,0,sizeof(peerRx));
+  for(unsigned i=0;i<config.peer_count;i++) {
+    peerStarted[i]=HAL_GetTick();peerRaw[i]=peerCal[i]=INT32_MIN;
+    if(!mulAdsInit(&peerStates[i],(uint8_t)config.node,config.peers[i].address,initiator(),runtimeSession))return DWT_ERROR;
+  }
+  lastTelemetry=HAL_GetTick();beacon_reset();
 #else
   dwt_settxantennadelay(MUL_ADS_DWM_ANT_DTU); dwt_setrxantennadelay(MUL_ADS_DWM_ANT_DTU);
   if(dwt_gettxantennadelay()!=MUL_ADS_DWM_ANT_DTU || dwt_getrxantennadelay()!=MUL_ADS_DWM_ANT_DTU) return DWT_ERROR;
@@ -123,9 +167,21 @@ int32_t mul_ads_radio_init(void) {
 }
 void mul_ads_radio_process(void) {
   uint32_t now=HAL_GetTick();
+#if MUL_UNIVERSAL
+  if(config.mode>=2){beacon_process(now);return;}
+#endif
   if(now==lastPoll) return;
-  lastPoll=now; uint32_t started=mul_timing_now(); uint32_t completed=state.completed;
-  if(mulAdsTick(&state,now)) { rearm(); logAbort(); }
+  lastPoll=now;
+#if MUL_UNIVERSAL
+  schedule(now);
+#endif
+  uint32_t started=mul_timing_now(); uint32_t completed=state.completed;
+  if(mulAdsTick(&state,now)) {
+#if MUL_UNIVERSAL
+    peerTimeouts[activePeer]++;
+#endif
+    rearm();logAbort();
+  }
   uint32_t status=dwt_readsysstatuslo();
   if(status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {
     errors++; dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK); abortExchange(adsAbortRadio);
@@ -143,6 +199,12 @@ void mul_ads_radio_process(void) {
         dwt_readrxdata(frame,sizeof(frame),0); dwt_readrxtimestamp(t,DWT_COMPAT_NONE);
         if(!mulAdsDecode(frame,sizeof(frame),&p)) invalid++;
         else {
+#if MUL_UNIVERSAL
+          if(!initiator()&&state.stage==adsIdle&&p.type==mulAdsPoll&&p.destination==config.node) {
+            for(unsigned i=0;i<config.peer_count;i++)if(config.peers[i].enabled&&config.peers[i].address==p.source){activePeer=i;break;}
+          }
+          if(!config.peers[activePeer].enabled){state.rejected++;rearm();mul_timing_service(started);return;}
+#endif
           log=initiator() && state.stage==adsReportRx && !state.pending && p.type==mulAdsReport &&
             p.session==state.session && p.transaction==state.transaction && p.source==state.peer && p.destination==state.local;
 #if MUL_UNIVERSAL
@@ -154,17 +216,20 @@ void mul_ads_radio_process(void) {
       rearm();
       if(state.aborted!=before) logAbort();
       if(MUL_ADS_TRACE_TIMES && verbosity()>=2 && log) logTimes(&p);
-    } else if(status&SYS_STATUS_ALL_RX_TO) { timeouts++; abortExchange(adsAbortRxTimeout); }
+    } else if(status&SYS_STATUS_ALL_RX_TO) {
+      timeouts++;
+#if MUL_UNIVERSAL
+      if(state.stage!=adsIdle)peerTimeouts[activePeer]++;
+#endif
+      abortExchange(adsAbortRxTimeout);
+    }
     else if(retryRx && now%50U==0) rearm();
   }
-#if MUL_UNIVERSAL
-  uint32_t interval=config.interval_ms;
-#else
-  uint32_t interval=1000U;
-#endif
-  if(initiator() && state.stage==adsIdle && (uint32_t)(now-lastStart)>=interval) {
+#if !MUL_UNIVERSAL
+  if(initiator() && state.stage==adsIdle && (uint32_t)(now-lastStart)>=1000U) {
     lastStart=now; mulAdsBegin(&state,now);
   }
+#endif
   mulAdsPacket_t p;
   if(mulAdsTakeTx(&state,now,&p)) {
     uint8_t frame[MUL_ADS_LENGTH]; dwt_forcetrxoff();
@@ -187,14 +252,20 @@ void mul_ads_radio_process(void) {
     if(verbosity()) usb_console_write(line);
 #if MUL_UNIVERSAL
     double raw=state.tof*(299792458.0/63897600000.0),calibrated;
-    bool valid=uwb_config_range(&config,raw,state.rangeValid,&calibrated);
+    uwb_config_t pairConfig=config;if(activePeer)pairConfig.calibration=0;
+    bool valid=uwb_config_range(&pairConfig,raw,state.rangeValid,&calibrated);
+    int32_t rawMm,calMm;bool rawFits=mm(raw,&rawMm),calFits=mm(calibrated,&calMm);
+    uint8_t flags=(state.rangeValid&&rawFits?mulTlmRawValid:0)|(pairConfig.calibration?mulTlmCalibration:0)|(valid&&calFits?mulTlmCalValid:0)|mulTlmStampValid;
+    if(state.rangeValid&&rawFits) {
+      peerRaw[activePeer]=rawMm;peerCal[activePeer]=calMm;peerFlags[activePeer]=flags;
+      peerSuccess[activePeer]=now;peerRx[activePeer]=state.stamps[1];
+    }
     snprintf(line,sizeof(line),"MULH CAL session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu range_valid=%u",
-      (uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)config.calibration,(unsigned)valid);
+      (uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)pairConfig.calibration,(unsigned)valid);
     if(verbosity())usb_console_write(line);
     if(config.samples) {
       mulTelemetry_t r=telemetry_record(mulTlmRange);
-      bool rawFits=mm(raw,&r.rawMm),calFits=mm(calibrated,&r.calMm);
-      r.flags=(state.rangeValid&&rawFits?mulTlmRawValid:0)|(config.calibration?mulTlmCalibration:0)|(valid&&calFits?mulTlmCalValid:0)|mulTlmStampValid;
+      r.rawMm=rawMm;r.calMm=calMm;r.flags=flags;
       r.quality=(!rawFits||!calFits)?1:0;
       r.stamps[0]=state.stamps[0];r.stamps[1]=lastRemoteStamps[0];r.stamps[2]=lastRemoteStamps[1];
       r.stamps[3]=state.stamps[1];r.stamps[4]=state.stamps[2];r.stamps[5]=lastRemoteStamps[2];
@@ -210,9 +281,123 @@ void mul_ads_radio_process(void) {
 #if MUL_UNIVERSAL
   if(config.telemetry && (uint32_t)(now-lastTelemetry)>=config.telemetry_ms) {
     lastTelemetry=now;
-    mulTelemetry_t r=telemetry_record(mulTlmSummary);uwb_runtime_publish(&r);
+    mulTelemetry_t r;mul_ads_radio_peer_stats(telemetryPeer,&r);uwb_runtime_publish(&r);
+    telemetryPeer=(telemetryPeer+1)%config.peer_count;
   }
 #endif
   mul_timing_service(started);
 }
+#if MUL_UNIVERSAL
+/* Same radio/profile, mutually exclusive modes. These are arrival-clock models,
+ * whose offset includes unknown propagation; no global-time claim is made. */
+typedef struct {
+  mulArrivalModel_t model;
+  uint64_t epoch,rx;uint32_t sequence,lastMs,modelMs,gaps;
+  uint8_t source,radio;bool occupied,cached;
+} beacon_peer_t;
+static beacon_peer_t beacons[UWB_MAX_PEERS];
+static uint32_t beaconSequence,previousSequence,pendingSequence,beaconTxAt,beaconDone,beaconRx,beaconAttempts;
+static uint64_t previousTx;static bool beaconPending,previousValid;
+static void beacon_reset(void) {
+  memset(beacons,0,sizeof(beacons));beaconSequence=1;previousSequence=pendingSequence=0;
+  beaconTxAt=HAL_GetTick();beaconDone=beaconRx=beaconAttempts=0;previousTx=0;beaconPending=previousValid=false;
+}
+static bool beacon_reset_stats(void) {
+  if(beaconPending)return false;
+  beaconDone=beaconRx=beaconAttempts=errors=invalid=timeouts=0;mul_timing_reset_stats();return true;
+}
+bool mul_ads_radio_sync_status(unsigned i,char *line,size_t capacity) {
+  if(i>=UWB_MAX_PEERS)return false;
+  beacon_peer_t *p=&beacons[i];
+  if(!p->occupied){snprintf(line,capacity,"SYNC slot=%u empty",i);return true;}
+  bool fresh=(uint32_t)(HAL_GetTick()-p->modelMs)<=5000U;
+  snprintf(line,capacity,"SYNC peer=0x%02X radio=%u epoch=%08" PRIX32 "%08" PRIX32 " apparent=%s samples=%lu reject=%lu version=%lu ppm=%.4f residual_dtu=%.3f gaps=%lu offset_includes_propagation=1",
+    p->source,p->radio,(uint32_t)(p->epoch>>32),(uint32_t)p->epoch,p->model.valid&&fresh?"VALID":"UNKNOWN",(unsigned long)p->model.samples,(unsigned long)p->model.rejected,
+    (unsigned long)p->model.version,(p->model.rate-1)*1e6,p->model.residualDtu,(unsigned long)p->gaps);return true;
+}
+static mulTelemetry_t beacon_record(uint8_t type,uint8_t peer,uint32_t sequence) {
+  uint32_t t[4];mul_timing_snapshot(t);
+  mulTelemetry_t r={.type=type,.peer=peer,.transaction=sequence,.exchange=runtimeSession,
+    .attempts=beaconAttempts,.completed=config.mode==3?beaconRx:beaconDone,.rejected=invalid,.radioErrors=errors,.timeouts=timeouts,
+    .spiCycles=t[0],.serviceCycles=t[1],.gapCycles=t[2],.clockHz=t[3]};return r;
+}
+static void beacon_receive(const mulBeacon_t *packet,uint64_t rx,uint32_t now) {
+  if(packet->source==config.node){invalid++;return;}
+  beacon_peer_t *p=NULL;
+  for(unsigned i=0;i<UWB_MAX_PEERS;i++)if(beacons[i].occupied&&beacons[i].source==packet->source&&beacons[i].radio==packet->radio){p=&beacons[i];break;}
+  if(!p)for(unsigned i=0;i<UWB_MAX_PEERS;i++)if(!beacons[i].occupied){p=&beacons[i];break;}
+  if(!p){invalid++;return;}
+  if(!p->occupied||p->epoch!=packet->epoch) {
+    uint32_t version=p->model.version+1;memset(p,0,sizeof(*p));p->model.version=version;p->model.rate=1;
+    p->source=packet->source;p->radio=packet->radio;p->epoch=packet->epoch;p->occupied=true;
+  } else if(p->cached) {
+    uint32_t advance=packet->sequence-p->sequence;
+    if(!advance||advance>=UINT32_C(0x80000000)){invalid++;return;}
+    p->gaps+=advance-1;
+    if((uint32_t)(now-p->lastMs)>5000U){p->cached=false;p->model.seen=p->model.valid=false;p->model.version++;}
+  }
+  if(p->model.seen&&(uint32_t)(now-p->modelMs)>5000U) {
+    p->model.seen=p->model.valid=false;p->model.version++;
+  }
+  beaconRx++;
+  if(config.samples) {
+    mulTelemetry_t r=beacon_record(mulTlmEvent,p->source,packet->sequence);
+    r.remoteRadio=p->radio;r.remoteEpoch=p->epoch;r.stamps[0]=rx;r.flags=mulTlmStampValid;uwb_runtime_publish(&r);
+  }
+  if(packet->markerValid&&p->cached&&packet->previousSequence==p->sequence) {
+    mulTimeEvent_t tx={{p->source,p->radio,p->epoch},packet->previousTx,true};
+    mulTimeEvent_t received={{(uint8_t)config.node,2,runtimeSession},p->rx,true};
+    bool accepted=mulArrivalUpdate(&p->model,tx,received);
+    if(accepted)p->modelMs=now;
+    mulTelemetry_t r=beacon_record(mulTlmObservation,p->source,packet->previousSequence);
+    r.remoteRadio=p->radio;r.remoteEpoch=p->epoch;r.stamps[0]=p->rx;r.stamps[1]=packet->previousTx;
+    r.flags=mulTlmStampValid;r.modelVersion=p->model.version;r.quality=(accepted?0:1)|(p->model.valid?2:0);
+    uwb_runtime_publish(&r);
+  }
+  p->rx=rx;p->sequence=packet->sequence;p->lastMs=now;p->cached=true;
+}
+static void beacon_process(uint32_t now) {
+  if(now==lastPoll)return;
+  lastPoll=now;uint32_t started=mul_timing_now(),status=dwt_readsysstatuslo();
+  if(status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {
+    errors++;dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);beaconPending=false;rearm();
+  } else {
+    if(status&DWT_INT_TXFRS_BIT_MASK) {
+      uint8_t t[5];dwt_readtxtimestamp(t);dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+      if(beaconPending) {
+        previousTx=mulDecodeTimestamp(t);previousSequence=pendingSequence;previousValid=true;beaconPending=false;beaconDone++;
+        if(config.samples){mulTelemetry_t r=beacon_record(mulTlmEvent,0xff,previousSequence);r.flags=mulTlmStampValid|mulTlmTx;r.stamps[0]=previousTx;uwb_runtime_publish(&r);}
+      }
+      if(!(status&DWT_INT_RXFCG_BIT_MASK))rearm();
+    }
+    if(status&DWT_INT_RXFCG_BIT_MASK) {
+      uint8_t frame[MUL_BEACON_LENGTH],t[5];mulBeacon_t p;bool valid=false;
+      if((dwt_read_reg(RX_FINFO_ID)&RX_FINFO_RXFLEN_BIT_MASK)==MUL_BEACON_LENGTH+2) {
+        dwt_readrxdata(frame,sizeof(frame),0);dwt_readrxtimestamp(t,DWT_COMPAT_NONE);
+        valid=mulBeaconDecode(frame,sizeof(frame),&p);
+      }
+      rearm(); /* Restore RX before model math or telemetry formatting. */
+      if(valid&&config.mode==3)beacon_receive(&p,mulDecodeTimestamp(t),now);else if(!valid)invalid++;
+    } else if(status&SYS_STATUS_ALL_RX_TO){timeouts++;rearm();}
+    else if(retryRx&&now%50U==0)rearm();
+  }
+  if(beaconPending&&(uint32_t)(now-beaconTxAt)>=100U){timeouts++;beaconPending=false;rearm();}
+  if(config.mode==2&&!beaconPending&&beaconSequence&&(uint32_t)(now-beaconTxAt)>=config.interval_ms) {
+    beaconTxAt=now;beaconAttempts++;pendingSequence=beaconSequence++; /* Never reuse an uncertain TX sequence in this epoch. */
+    mulBeacon_t p={.source=(uint8_t)config.node,.radio=2,.epoch=runtimeSession,.sequence=pendingSequence,
+      .previousSequence=previousSequence,.previousTx=previousTx,.markerValid=previousValid};
+    uint8_t frame[MUL_BEACON_LENGTH];dwt_forcetrxoff();dwt_writesysstatuslo(RX_EVENTS|DWT_INT_TXFRS_BIT_MASK);
+    if(!mulBeaconEncode(frame,sizeof(frame),&p)||dwt_writetxdata(sizeof(frame),frame,0)!=DWT_SUCCESS){errors++;rearm();}
+    else {
+      dwt_writetxfctrl(sizeof(frame)+2,0,1);
+      if(dwt_starttx(DWT_START_TX_IMMEDIATE)!=DWT_SUCCESS){errors++;rearm();}else{beaconPending=true;retryRx=false;}
+    }
+  }
+  if((uint32_t)(now-lastTelemetry)>=config.telemetry_ms) {
+    lastTelemetry=now;mulTelemetry_t r=beacon_record(mulTlmSummary,0xff,previousSequence);uwb_runtime_publish(&r);
+    if(verbosity()){char line[192];snprintf(line,sizeof(line),"MULN STAT mode=%s tx=%lu rx=%lu err=%lu invalid=%lu timeout=%lu",config.mode==2?"BEACON":"LISTEN",(unsigned long)beaconDone,(unsigned long)beaconRx,(unsigned long)errors,(unsigned long)invalid,(unsigned long)timeouts);usb_console_write(line);}
+  }
+  mul_timing_service(started);
+}
+#endif
 #endif

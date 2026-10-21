@@ -26,7 +26,7 @@ int main(void) {
  for(unsigned i=0;i<sizeof(record);i++) {record[i]^=1;assert(!uwb_config_decode(record,&b,&gen));record[i]^=1;}
  const char *bad[]={"","-1","+132","0x","0x100","0x86junk","4294967296"," 132","132 ","1e2"};
  for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){b=a;assert(uwb_config_set(&b,"node",bad[i]));assert(uwb_config_equal(&b,&a));}
- b=a;assert(uwb_config_set(&b,"peer","0x00"));assert(uwb_config_set(&b,"mode","3"));assert(uwb_config_set(&b,"phy","1"));
+ b=a;assert(uwb_config_set(&b,"peer","0x00"));assert(uwb_config_set(&b,"mode","4"));assert(uwb_config_set(&b,"phy","1"));
  assert(uwb_config_set(&b,"tdma","1"));assert(!uwb_config_set(&b,"node","0x85"));assert(!uwb_config_set(&b,"identity","1"));assert(!uwb_config_set(&b,"role","1"));
  for(unsigned node=0;node<256;node++) for(unsigned peer=0;peer<256;peer++) {
    uwb_config_t full=a;full.node=node;full.peer=peer;full.peers[0].address=(uint8_t)peer;

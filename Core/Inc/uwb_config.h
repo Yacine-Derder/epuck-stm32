@@ -19,7 +19,7 @@ typedef struct {
   uint32_t verbosity, telemetry, telemetry_ms, samples, wifi,telemetry_format,peer_count;
   uwb_peer_t peers[UWB_MAX_PEERS];
 } uwb_config_t;
-/* identity: 0 standalone / 1 ALR / 2 RLR; mode: 0 off / 1 ADS;
+/* identity: 0 standalone / 1 ALR / 2 RLR; mode: 0 off / 1 ADS / 2 beacon / 3 listen;
  * role: 1 initiator / 2 responder; phy: 0 proven mixed-radio channel-5 profile. */
 void uwb_config_defaults(uwb_config_t *c);
 const char *uwb_config_validate(const uwb_config_t *c);

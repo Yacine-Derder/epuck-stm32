@@ -8,9 +8,11 @@ settings unchanged. Wait for the confirmation before sending another change.
 
 Robot identity is metadata, independent of radio role. Motor-enabled normal
 operation remains a separate legacy build: the universal image cannot ARM or
-move motors, keeps startup STOP/retries/watchdogs/emergency stops, disables ESP
-and sensor streaming, and needs no ESP32, robot controller or host for UWB.
-There is no TDMA/TDoA implementation or UART/Wi-Fi telemetry forwarding.
+move motors, keeps startup STOP/retries/watchdogs/emergency stops and disables
+sensor streaming. ESP32 transport is optional (`wifi off` by default); UWB needs
+no ESP32, robot controller or host. Multi-peer ADS and experimental beacon/listen
+acquisition are described in [the network guide](uwb_network.md). A position
+estimator and distributed collision-free multi-initiator scheduler are not implemented.
 
 ## Build
 
@@ -52,7 +54,7 @@ is an explicit hardware activation failure, not a successful update confirmation
 | address (node alias) | Hex 0x00..0xFF or decimal 0..255 | 0x00 |
 | peer | Same range; must differ from local address | 0x01 |
 | identity | standalone, alr, rlr | standalone |
-| mode | off, twr | off |
+| mode | off, twr, beacon, listen | off |
 | role | initiator, responder | responder |
 | interval_ms | 250..60000 ms | 1000 |
 | phy | mixed: channel5, 6.8Mbps, code9, preamble128 | mixed |
@@ -62,7 +64,9 @@ is an explicit hardware activation failure, not a successful update confirmation
 | verbosity | quiet, summary, full | full |
 | telemetry | on, off | off |
 | telemetry_ms | 1000..60000 ms | 1000 |
-| samples | on, off; optional compact range samples | off |
+| samples | on, off; optional range/event samples | off |
+| wifi | on, off; existing ESP32 UART3 bridge | off |
+| telemetry_format | compact (wire v2; reads v1 too) | compact |
 
 Every field persists automatically and restarts the radio when changed, using a
 fresh hardware-RNG session and reset per-session counters. Identical values do
@@ -172,10 +176,13 @@ no false durability acknowledgment is sent. A post-commit hardware failure repor
 SAVED but radio OFF; repair hardware and retry LOAD, without a redundant save.
 Radio recovery itself can fail; such errors explicitly leave service stopped.
 
-The existing 128-byte little-endian schema v1, CRC32/IEEE, modular generation and
-commit-last journal are unchanged. Existing valid records (including old 0x84..86
-addresses/numeric stored enums) load without migration writes. New names are parser
-aliases; factory defaults change only for blank/corrupt storage or explicit DEFAULTS.
+The 128-byte little-endian journal retains CRC32/IEEE, modular generation and
+commit-last semantics. Schema v2 uses the old reserved words/extension for Wi-Fi
+and eight peers. Existing valid v1 records migrate in RAM with calibration and
+antenna settings preserved, one enabled primary peer and Wi-Fi off. No boot
+migration write occurs. Factory defaults apply only to blank/corrupt storage or
+explicit DEFAULTS. Old firmware cannot read v2 records: downgrading may load an
+older v1 record; inspect settings before enabling RF after any downgrade.
 Skip incomplete/invalid/incompatible records, use an older valid record when present,
 and otherwise boot radio-OFF defaults without erasing or writing recovery data.
 
@@ -213,7 +220,8 @@ The example correction is syntax, not a recommendation. No -469 mm value is buil
 into firmware. Existing offline calibration proposals are pair-specific; no scale
 fit is supported. The bounded four-record queue retains raw/calibrated samples
 and low-rate counters, IDs and sessions. STATUS exposes occupancy/high-water/drops;
-NEXT respects USB backpressure. UART3/Wi-Fi forwarding remains deferred. Compare
+NEXT respects USB backpressure. Optional UART3/Wi-Fi forwarding uses separate
+bounded queues, described below and in the network guide. Compare
 MULH TIME maxima and UART errors with telemetry OFF/ON and a stalled reader;
 low rate is not evidence of safe timing. Flash/configuration pauses are maintenance
 interruptions and must be marked in captures.
@@ -258,29 +266,9 @@ Before claiming hardware validation, the user should:
 
 All host persistence/power-cut tests are simulations, not physical flash validation.
 Absolute ranging accuracy, UART fault attribution, radio timing and Stage3G hardware
-acceptance remain open. Rollback baseline: STM32 a1db617bce685731d16090e96652ee42ace0830c;
-old settings remain schema-compatible, but old firmware cannot use new addresses
-outside its former allowlist.
-
-Software validation completed for this correction:
-
-- New runtime/config/flash/USB suites passed with ASan/UBSan, including both roles
-  in one executable, all byte-address pairs, automatic durability, exact old SAVE
-  sequence, rollback, power-cut simulations, old-v1 loading and wear boundaries.
-- STM32 ADS adapter, PHY, MUL diagnostic/timing and safety regressions passed;
-  15 USB/e-puck, 9 ESP bridge and 9 controlled coexistence scenarios passed.
-- LPS 195 Unity tests and 178 MUL sanitizer tests passed; actual DW1000 ADS driver,
-  pinned-vendor/codec/profile contracts and all 20 Python analysis tests passed.
-- Universal, legacy AdsInitiator/AdsResponder, NormalBaseline and UwbOffSafe STM32
-  builds passed. All five ELFs passed reserved-sector load-boundary checks.
-- Clean LPS default, ADS initiator and responder builds passed; default build was
-  restored afterward. Existing vendor/newlib and motor-message truncation warnings
-  remain; no new warnings were introduced by this correction.
-
-Universal resource sizes: text 92480, data 764, BSS 17480 bytes. Stack high-water,
-physical flash endurance/power cuts, actual radio/UART timing and accuracy remain
-unmeasured. No hardware was flashed or operated by the assistant.
-
+acceptance remain open. Downgrades need explicit settings review because older
+images cannot read schema v2. Current operating instructions, feature tests and
+the ordered hardware campaign are in [uwb_network.md](uwb_network.md).
 
 ## Untethered telemetry extension (software-tested)
 

@@ -29,6 +29,9 @@ void dwt_writesysstatuslo(uint32_t bits) { status&=~bits; }
 uint32_t dwt_readsysstatuslo(void) { return status; }
 int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rearms++; mockRadioActive=rxResult==DWT_SUCCESS; return rxResult; }
 int32_t dwt_starttx(uint8_t mode) {
+#if MUL_UNIVERSAL
+ if(config.mode>=2){mulBeacon_t beacon;assert(mulBeaconDecode(output,56,&beacon));assert(mode==DWT_START_TX_IMMEDIATE);starts++;mockRadioActive=startResult==DWT_SUCCESS;return startResult;}
+#endif
  mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p));
  assert(mode==(DWT_START_TX_IMMEDIATE|(p.type==mulAdsReport?0:DWT_RESPONSE_EXPECTED)));
  starts++; mockRadioActive=startResult==DWT_SUCCESS; return startResult;
@@ -42,7 +45,7 @@ void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(seg
 void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
 void usb_console_write(const char *text) { assert(strlen(text)<(MUL_UNIVERSAL?320:192)); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }
 static void step(void) { tick++; mul_ads_radio_process(); }
-static mulAdsPacket_t sentPacket(void) { mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p)); return p; }
+static mulAdsPacket_t sentPacket(void) {mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p));return p;}
 static void receive(mulAdsPacket_t *p,uint64_t t) {
  assert(mulAdsEncode(input,sizeof(input),p)); length=58; rxMarker=t; status|=DWT_INT_RXFCG_BIT_MASK; step();
 }

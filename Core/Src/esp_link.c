@@ -74,6 +74,7 @@ void esp_link_set_enabled(uint8_t enabled) {
     esp_invalidate("telemetry_disabled");HAL_NVIC_DisableIRQ(USART3_IRQn);
     (void)HAL_UART_Abort(&huart3);esp_active=esp_busy=esp_valid=esp_hb_seen=0;
     esp_qhead=esp_qtail=esp_count=0;esp_tail=esp_head;esp_telemetry_pending=0;
+    esp_length=0;esp_cr=esp_discard=esp_fault=esp_tx_fault=0;
   }
   esp_requested=enabled;if(enabled)esp_link_init();
 #else

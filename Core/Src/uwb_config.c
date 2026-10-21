@@ -32,7 +32,7 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
   if(c->identity>2) return "identity: standalone, alr, rlr";
-  if(c->mode>1) return "mode: off, twr";
+  if(c->mode>3) return "mode: off, twr, beacon, listen";
   if(c->role!=1&&c->role!=2) return "role: initiator, responder";
   if(c->interval_ms<250||c->interval_ms>60000) return "interval_ms: 250..60000";
   if(c->phy) return "phy: only mixed (channel5/6M8/code9) supported";
@@ -76,7 +76,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
     if(aliases[i].field==index && !strcmp(aliases[i].name,value)) {value=aliases[i].number;break;}
   if((index==2||index==3||index==4||index==6||index==9||index==11||index==12||index==14||index==15||index==16) &&
      (value[0]<'0'||value[0]>'9')) {
-    static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr","role: initiator, responder"};
+    static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr, beacon, listen","role: initiator, responder"};
     if(index>=2&&index<=4) return errors[index-2];
     return index==16?"telemetry_format: compact":index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
   }
@@ -93,7 +93,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   uint32_t v[FIELDS];fields(c,v);v[index]=negative?0u-n:n;
   uwb_config_t candidate=*c;assign(&candidate,v);
   if((index==7||index==8)&&v[index]!=(index==7?c->tx_ant_dtu:c->rx_ant_dtu)) candidate.calibration=0;
-  if(index==1) candidate.peers[0].address=(uint8_t)candidate.peer;
+  if(index==1) {if(candidate.peer!=c->peer)candidate.calibration=0;candidate.peers[0].address=(uint8_t)candidate.peer;}
   if(index==5) for(unsigned i=0;i<candidate.peer_count;i++)candidate.peers[i].interval_ms=(uint16_t)candidate.interval_ms;
   const char *error=uwb_config_validate(&candidate);
   if(!error) *c=candidate;
