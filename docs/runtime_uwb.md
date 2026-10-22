@@ -55,7 +55,8 @@ is an explicit hardware activation failure, not a successful update confirmation
 | peer | Same range; must differ from local address | 0x01 |
 | identity | standalone, alr, rlr | standalone |
 | mode | off, twr, beacon, listen, hybrid, hybrid_static | off |
-| role | initiator, responder | responder |
+| role | initiator, responder (ADS role) | responder |
+| reference / follower | Distinct legacy TDMA IDs0..254; enable both as peers for hybrid | 0x84 / 0x85 |
 | interval_ms | 250..60000 ms | 1000 |
 | phy | mixed: channel5, 6.8Mbps, code9, preamble128 | mixed |
 | tx_ant_dtu / rx_ant_dtu | 0..65535 DW timestamp units | 16380 each |
@@ -177,12 +178,15 @@ SAVED but radio OFF; repair hardware and retry LOAD, without a redundant save.
 Radio recovery itself can fail; such errors explicitly leave service stopped.
 
 The 128-byte little-endian journal retains CRC32/IEEE, modular generation and
-commit-last semantics. Schema v2 uses the old reserved words/extension for Wi-Fi
-and eight peers. Existing valid v1 records migrate in RAM with calibration and
-antenna settings preserved, one enabled primary peer and Wi-Fi off. No boot
-migration write occurs. Factory defaults apply only to blank/corrupt storage or
-explicit DEFAULTS. Old firmware cannot read v2 records: downgrading may load an
-older v1 record; inspect settings before enabling RF after any downgrade.
+commit-last semantics. Schema v2 introduced Wi-Fi and eight peers. Schema v3
+packs reference/follower ID bytes into the previously-zero upper bytes of the
+node word (offset16); its top byte must remain zero. Peer fields/offsets, CRC and
+commit position are unchanged. Existing v1/v2 records load without a migration
+write, with calibration/antenna/peer settings preserved and roster84/85. V1 retains
+its single enabled primary peer and Wi-Fi off. New edits use v3. Factory defaults
+apply only to blank/corrupt storage or explicit DEFAULTS. Old firmware cannot read
+newer records: a downgrade may load older settings. Inspect configuration before
+enabling RF after any downgrade; do not mix old/custom-roster firmware blindly.
 Skip incomplete/invalid/incompatible records, use an older valid record when present,
 and otherwise boot radio-OFF defaults without erasing or writing recovery data.
 
@@ -355,3 +359,11 @@ line endings sent for that one command plus its immediate response, not more RF 
 requires Universal built with `MUL_HYBRID_FREQ_DIAG=ON` (default OFF). It does not
 set receiver rate or enable metric TDoA. See docs/hybrid_uwb.md for exact optional
 build/ELF, pre-rearm semantics, sign uncertainty and physical validation limits.
+
+
+Checkpoint C uses `cfg set reference 0x42` and `cfg set follower 0x23` independently
+of the RLR address and legacy ADS initiator/responder role. Both configured ALRs
+must be distinct, enabled peers before activating hybrid; the RLR ID must differ.
+Change the roster while mode is off when replacing participants. `cfg show` now
+includes the saved/active snapshot's explicit roster. It does not infer roles from
+84/85 when a custom roster is configured. Calibration and peer lists are retained.

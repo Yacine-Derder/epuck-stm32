@@ -76,6 +76,7 @@ static const char *const help_config[]={
   "  - role: responder | initiator (ADS setting, not an ALR TDMA role)",
   "  - interval_ms: 250..60000; primary-peer transaction interval",
   "  - phy: mixed only; channel5, 6.8Mbps, code9, preamble128",
+  "  - reference, follower: distinct legacy TDMA IDs 0..254",
   "  - tx_ant_dtu, rx_ant_dtu: 0..65535; hardware antenna delays",
   "  - calibration: off | on; correction_mm: -10000..10000",
   "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
@@ -354,6 +355,7 @@ static void display_output(void) {
   case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
+  case 20:snprintf(text,sizeof(text),"Legacy TDMA roster: reference=0x%02lX follower=0x%02lX",(unsigned long)c->reference,(unsigned long)c->follower);break;
   case 19:snprintf(text,sizeof(text),"Configured peers: %lu (maximum 8)",(unsigned long)c->peer_count);break;
   case 17:snprintf(text,sizeof(text),"Saved generation:   %lu; UWB-only safety policy",(unsigned long)displayGeneration);break;
   default:display=0;return;

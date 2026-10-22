@@ -1,64 +1,43 @@
-# Current checkpoint B — moving receiver-rate feasibility
+# Current checkpoint C — independent persistent roles/addresses
 
-Checkpoint A original age/relation failure is physically accepted from the user's
-retest of STM f1047b3/8c5fdc5, ALRs unchanged: last_status0→1/stays1, clock1,
-pairs0→27, passive TWR0→5. After26 pairs, rejects0→3 with one timeout and PHY
-errors: residual delivery failures remain open. Rate UNKNOWN and metric TDoA NA
-are expected; neither metric TDoA nor accuracy/position is physically validated.
+The user authorized proceeding with C/D while preserving ordinary hybrid NO_RATE.
+A's original age/relation defect is physically accepted from the user's STM
+f1047b3/8c5fdc5 retest (last_status1, clock1, pairs27, passive TWR5). Later3 rejects,
+one timeout and PHY errors remain open. Metric TDoA/accuracy are unvalidated.
 
-B feasibility and conditional offline prototype complete/software tested:
-- True oscillator rate and radial motion are not identifiable from these two-ALR
-  timestamps alone; deterministic identical-history examples prove it. Even
-  smooth between-packet clock curvature can hide different geometries.
-- A bracketing reference-ARRIVAL mapping can provide a conditional simultaneous
-  range-difference interval without calling its apparent slope oscillator rate.
-  The first implementation is offline; no mobile firmware validity flag changes.
-- Explicit speed/acceleration/minimum reference distance, oscillator scale/rate
-  slew, physical baseline and metrology bounds are all mandatory. No defaults or
-  ADS correction substitute for an error bound. Missing bracket/invalid relation
-  stays unavailable; conditional outputs never feed the point-based2D solver.
-- ESP mainbb6fd59 records feasibility before implementation; cdf069c implements
-  tools/uwb_mobile.py and actual shared C replay extraction. 93fd7e4 hardens native-context recreation. All53 Python tests,
-  host C transport/replay builds and12 focused physics/mobile tests pass.
-- STM maina867702 records A physical acceptance; this documentation follow-up
-  links that host-only B result. At that checkpoint no firmware or build files
-  changed. Canonical/vendor pin3bbd324 remains unchanged in this follow-up.
+B feasibility and validated components are complete in software: CFO and timestamp
+cadence still mix clock with Doppler. No independent motion/frequency or justified
+bounds exist, so no general live moving estimator is admitted. hybrid_static stays
+stationary-only; conditional host output has measurement=null. ESP docs/uwb_mobile.md
+contains the model, alternatives, raw diagnostics and explicit bounds contract.
 
-B follow-up: user confirms no independent motion/frequency input, integrated
-encoder model or verified bounds. DW3000 carrier/CIA APIs support ordinary mixed
-Ipatov PHY diagnostics, but CFO still mixes clock with radial Doppler; noiseless
-CFO plus cadence is structurally ambiguous. No defensible general live moving
-metric estimator is admitted. hybrid_static remains the stationary baseline.
-- New Universal-only MUL_HYBRID_FREQ_DIAG option is OFF by default. Optional
-  hybrid frequency captures raw CI/COE/status before rearm; no true-rate/metric
-  admission, on-air changes, TX, persistence or arbitrary correction.
-- Bundled COE sign comments contradict the vendor guide. Raw values and API
-  algebra stay labelled; hardware sign/bias/noise remain unvalidated.
-- ESP df5dfc5 tools/uwb_frequency.py decodes snapshots and compares explicit synthetic
-  Doppler/frequency/holdover scenarios at500/50/10ms. No numerical hardware prior.
-- Actual vendor decoder/all8192 COE codes, passive adapter guards, runtime/help,
-  safety/ADS/PHY/SPI/ESP-link suites and all60 host tests pass. Universal and optional
-  HybridFrequency build and respect reserved flash sectors. No devices flashed.
+C implementation/software validation:
+- Canonical core pin0cb81e3 adds explicit per-context rosters through all relevant
+  codecs/clock/delay/relation/association/TWR/math boundaries; defaults remain84/85.
+- LPSd63a29d integrates persistent independent roles/addresses and bounded :mul
+  configuration commands, with unchanged modes0..6, timing and packet layout.
+  The follow-up bounds TLV traversal before migration. Existing invalid EEPROM
+  is retained with normal RF idle, without silently resetting calibration/settings.
+  Legacy EEPROM is not a power-cut journal.204 Unity tests pass; default channel2
+  and channel5 at500/50/10ms build. Same ELF serves both DW1000 ALR roles.
+- STM32 schema3 adds reference/follower IDs within the existing128-byte journal.
+  V1/v2 load without migration writes; calibration/peers/antenna values persist.
+  Power-cut migration/rotation tests and real adapter tests cover arbitrary42/23,
+  swapped85/84, full passive TWR,40/32-bit wrap, NO_RATE, no TX and self-ID rejection
+  at500/50/10ms. Runtime/help/USB, safety, ADS, PHY, SPI and ESP-link suites pass.
+- ESP replay/mobile CLIs accept explicit --reference/--follower IDs; native C uses
+  that same roster. UWB1/2/3 wire remains unchanged. All62 host tests and the ESP
+  firmware build pass; conditional outputs retain real IDs and no point validity.
+- Both consumers vendor verified core0cb81e3. Universal, Hybrid50/10 and optional
+  HybridFrequency builds pass reserved-sector ELF checks. No devices flashed.
 
-- ESP 7acd93f closes a full-wire coverage gap:36 synthetic stationary geometry /
-  unknown-rate scenarios at500/50/10ms, signed/zero range difference, independent
-  receiver/follower skew and native receiver40-bit wrap. All60 host tests pass;
-  stationary results match truth within3 DTU, ordinary hybrid stays NO_RATE.
-  This does not admit an unbounded moving estimator or validate hardware accuracy.
-
-Next: choose and justify an independent path-rate constraint, an observable
-encoder/relative-mapping model, or explicit motion/clock/metrology bounds before
-admitting mobile metric output. Stationary calibration needs finite holdover/error
-bounds; raw CFO alone is not an independent frequency reference. No more UWB-only
-logs can remove that ambiguity. Optional stationary raw-frequency/reference
-comparison would validate sign/scale/bias, not mobile observability. See expanded
-ESP docs/uwb_mobile.md and STM docs/hybrid_uwb.md for alternatives/build/ELF details.
-The previous UWB3 offline interpolation still works with STM f1047b3; the diagnostic
-build is optional and physically untested.
-Full analysis/use/tests/limitations: epuck-esp32/docs/uwb_mobile.md; A acceptance:
-docs/hybrid_uwb.md. hybrid remains NO_RATE and hybrid_static stationary-only.
-Residual intermittent TWR/PHY faults stay open. C/D remain deferred by user request.
-No new physical test was performed by the assistant.
+Next: finish C pushes, then D's compatibility matrix and unified lowercase command
+aliases. Preserve immediate legacy menus, persistence/calibration, passive RLR,
+NO_RATE and UWB-only safety. Do not claim moving metric or custom-roster hardware
+validation. Operator retest/build/ELF and exact configuration examples are in
+STM docs/hybrid_uwb.md and LPS docs/mul_heterogeneous.md. Any residual PHY/TWR/UART
+fault requires fresh evidence; more UWB-only logs cannot resolve clock/motion
+observability. Existing LPS docs/mul_core.md formatting edit remains untouched.
 
 ---
 

@@ -684,3 +684,79 @@ produces six observations within3 DTU of truth, and ordinary hybrid produces no
 metric measurement. All60 host tests pass. This closes test coverage, not the
 moving-rate physical/observability gate. Only host fixtures/tests/documentation
 changed; STM/DW firmware and shared-core pins are unchanged in this follow-up.
+
+
+## Checkpoint C: persistent reference/follower roster
+
+The user authorized C/D while preserving ordinary hybrid NO_RATE. Canonical core
+LPS0cb81e3 provides explicit roster variants across clock/delay validation, codecs,
+TWR endpoints, observation association, relation inversion and localization.
+LPSd63a29d integrates independent persistent ALR role/address configuration; its
+[board instructions](https://github.com/Yacine-Derder/lps-node-firmware/blob/master/docs/mul_heterogeneous.md#checkpoint-c-independent-dw1000-roles-and-ids)
+retain legacy menus and describe EEPROM/restart semantics. Configuring roles on
+one board does not automatically reconfigure other participants.
+
+STM32 schema3 retains the128-byte journal layout and commit-last power-cut behavior.
+Reference/follower IDs occupy unused bytes17/18 of the node word; upper byte19
+must be zero. Existing v1/v2 records load with default84/85 without boot writes;
+all old calibration, antennas, peers and Wi-Fi/telemetry fields remain intact.
+New writes use schema3; unsupported versions/reserved bits fail validation. Do not
+downgrade a board without inspecting configuration, since older firmware may load
+an older journal record. This is storage encoding, not a new UWB packet version.
+
+Use distinct ALR IDs0..254 and an independent RLR ID. Before changing a network,
+record all current settings and keep motors safely stopped under the existing
+UWB-only policy. For a later operator-run custom42/23 experiment, on STM32:
+
+```text
+cfg set mode off
+cfg set address 0x8d
+cfg set role responder
+cfg set reference 0x42
+cfg set follower 0x23
+peer add 0x42
+peer add 0x23
+cfg set mode hybrid
+cfg show
+hybrid status
+hybrid diag
+```
+
+These commands autosave/apply through the existing safe transaction. Existing ADS
+peer/calibration values are retained; do not run DEFAULTS or alter antenna delays.
+The two DW1000 boards must have matching reference42/follower23 rosters and their
+own explicit roles, then restart to apply. They use the same channel5 ELF and
+matching slot. Configuring/swapping the local node ID alone never changes its
+selected protocol role. A mismatched/unknown identity or directed endpoint is
+rejected, not guessed. Duplicate physical chips sharing one full identity or an
+unseen remote configuration cannot be globally detected without discovery.
+
+The STM32 adapter initializes each shared receiver with its own roster, keeping
+native40-bit RX/SYS_TIME age and the15ms gate intact. No RLR TX, scheduler, on-air
+byte, power correction, ADS additive-correction admission, robot safety or UART
+policy changes. Unknown receiver rate remains NO_RATE. Stationary opt-in and the
+conditional host prototype do not become general moving estimators.
+
+UWB3 captures still use the same wire schema. Save the two configured IDs with
+experiment notes and pass `--reference 0x42 --follower 0x23` to ESP
+`tools/uwb_hybrid.py` or `tools/uwb_mobile.py`; defaults remain84/85. Replay uses the
+same native C roster for source roles and relation conversion. Do not combine
+networks or slot profiles in one replay invocation. Conditional outputs label
+both actual identities and never become point-valid metric measurements.
+
+Software validation: full configuration/runtime/help/USB/safety/multi-peer suites
+pass; v2→v3 migration is tested at every append/sector-rotation write interruption,
+including custom IDs and unchanged calibration. Actual STM32 RX/SYS_TIME handling,
+clock association and complete passive directed TWR pass for arbitrary42/23 and
+swapped85/84 rosters at500/50/10ms, across native40-bit and uptime32-bit wrap, with
+zero RLR TX and ordinary NO_RATE. Vendor snapshot verification, raw-frequency,
+ADS, PHY, SPI and ESP-link tests pass. All62 ESP host tests and the ESP firmware
+build pass. Universal, Hybrid50/10 and optional HybridFrequency STM32 builds pass
+reserved-sector checks. Source pins are0cb81e3 in both consumers.
+
+No hardware was flashed and no custom-roster physical acceptance is claimed.
+Use the existing exact Universal/Hybrid50/Hybrid10 ELF paths and build flags in
+this document; only persistent settings choose the new roster. The original
+checkpoint A physical acceptance and intermittent PHY/TWR errors remain unchanged.
+Checkpoint D's command compatibility matrix/aliases are next; C does not claim
+that full interface is already implemented.

@@ -27,11 +27,13 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
 }
 void uwb_config_defaults(uwb_config_t *c) {
   *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
-    .tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
+    .reference=0x84,.follower=0x85,.tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
 }
 const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
+  mulNetwork_t network;
+  if(c->reference>254||c->follower>254||!mulNetworkInit(&network,(uint8_t)c->reference,(uint8_t)c->follower))return "reference/follower: distinct IDs 0..254";
   if(c->identity>2) return "identity: standalone, alr, rlr";
   if(c->mode>5) return "mode: off, twr, beacon, listen, hybrid, hybrid_static";
   if(c->role!=1&&c->role!=2) return "role: initiator, responder";
@@ -52,14 +54,14 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   }
   if(c->mode>=4) {
     uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[MUL_ALR_COUNT]={false};
-    if(c->role!=2||mulAlrRoleForAddress(local)!=mulAlrUnsupported)return "hybrid requires passive responder role and an RLR address distinct from ALRs";
-    for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulAlrRoleForAddress(id);if(r>=0&&(unsigned)r<MUL_ALR_COUNT)roles[r]=true;}
-    for(unsigned i=0;i<MUL_ALR_COUNT;i++)if(!roles[i])return "hybrid requires enabled legacy ALR peers; PEER ADD 0x84 and 0x85";
+    if(c->role!=2||mulNetworkRole(&network,local)!=mulAlrUnsupported)return "hybrid requires passive responder role and an RLR address distinct from ALRs";
+    for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulNetworkRole(&network,id);if(r>=0&&(unsigned)r<MUL_ALR_COUNT)roles[r]=true;}
+    for(unsigned i=0;i<MUL_ALR_COUNT;i++)if(!roles[i])return "hybrid requires both configured reference/follower IDs as enabled peers";
   }
   return NULL;
 }
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
-  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
+  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
 }
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) {
   char fieldLower[24],valueLower[24];
@@ -69,6 +71,16 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(field[f]||value[valueLength]) return "field/value too long";
   fieldLower[f]=valueLower[valueLength]=0;field=fieldLower;value=valueLower;
   if(!strcmp(field,"address"))field="node";
+  if(!strcmp(field,"reference")||!strcmp(field,"follower")) {
+    const char *p=value;unsigned base=10;uint32_t n=0;
+    if(p[0]=='0'&&p[1]=='x'){base=16;p+=2;}if(!*p)return "invalid roster ID";
+    for(;*p;p++){unsigned d=*p>='0'&&*p<='9'?*p-'0':*p>='a'&&*p<='f'?*p-'a'+10:99;
+      if(d>=base||n>(254-d)/base)return "roster ID: 0..254";
+      n=n*base+d;}
+    uwb_config_t candidate=*c;
+    if(!strcmp(field,"reference"))candidate.reference=n;else candidate.follower=n;
+    const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+  }
   static const char *names[]={"node","peer","identity","mode","role","interval_ms","phy","tx_ant_dtu","rx_ant_dtu",
     "calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples","wifi","telemetry_format"};
   unsigned index=17;for(unsigned i=0;i<17;i++) if(!strcmp(field,names[i])) {index=i;break;}
@@ -114,14 +126,22 @@ uint32_t uwb_config_crc(const uint8_t *data,size_t size) {
 void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c,uint32_t generation) {
   memset(out,0,UWB_CONFIG_RECORD_SIZE);put(out,MAGIC);put(out+4,UWB_CONFIG_VERSION);put(out+8,UWB_CONFIG_RECORD_SIZE);put(out+12,generation);
   uint32_t v[FIELDS];fields(c,v);for(unsigned i=0;i<FIELDS;i++) put(out+16+4*i,v[i]);
+  /* v3 packs roster bytes into formerly-zero upper bytes of the node word.
+   * Record size, peer offsets, CRC and commit-last journal geometry stay fixed. */
+  put(out+16,c->node|(c->reference<<8)|(c->follower<<16));
   for(unsigned i=0;i<UWB_MAX_PEERS;i++) {out[88+4*i]=c->peers[i].address;out[89+4*i]=c->peers[i].enabled;out[90+4*i]=(uint8_t)c->peers[i].interval_ms;out[91+4*i]=(uint8_t)(c->peers[i].interval_ms>>8);}
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
 bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
-  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
+  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
 
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
   uwb_config_t candidate={0};assign(&candidate,v);
+  candidate.reference=0x84;candidate.follower=0x85;
+  if(get(in+4)==3) {
+    if(v[0]&UINT32_C(0xFF000000))return false;
+    candidate.node=v[0]&255;candidate.reference=(v[0]>>8)&255;candidate.follower=(v[0]>>16)&255;
+  }
   if(get(in+4)==1) {
     if(candidate.wifi||candidate.telemetry_format||candidate.peer_count)return false;
     for(unsigned i=88;i<120;i++)if(in[i])return false;

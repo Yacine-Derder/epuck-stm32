@@ -32,7 +32,8 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
  dwt_configciadiag(DW_CIA_DIAG_LOG_ALL);
 #endif
  hybridConfig=*c;uint8_t receiver[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};
- mulHybridInit(&hybridReceiver,receiver,c->mode==5);hybridErrors=hybridTimeouts=0;
+ mulNetwork_t network={0};(void)mulNetworkInit(&network,(uint8_t)c->reference,(uint8_t)c->follower);
+ (void)mulHybridInitNetwork(&hybridReceiver,&network,receiver,c->mode==5);hybridErrors=hybridTimeouts=0;
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
 }
 void mul_hybrid_radio_status(char *line,size_t capacity) {

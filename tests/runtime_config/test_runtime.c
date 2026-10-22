@@ -151,7 +151,7 @@ int main(void) {
  memset(nv,0,sizeof(nv));command("CFG LOAD");assert(applied&&active.mode==0);
  uwb_runtime_init();assert(!loadedAtBoot&&!savedValid&&!started&&applied);
  uwb_config_t legacy;uwb_config_defaults(&legacy);legacy.node=0x86;legacy.peer=0x84;legacy.identity=2;legacy.calibration=1;legacy.correction_mm=-1234;
- memset(nv,255,sizeof(nv));uwb_config_encode(nv,&legacy,77);nv[4]=1;memset(nv+76,0,44);
+ memset(nv,255,sizeof(nv));uwb_config_encode(nv,&legacy,77);nv[4]=1;nv[17]=nv[18]=0;memset(nv+76,0,44);
  uint32_t legacyCrc=uwb_config_crc(nv,120);for(unsigned i=0;i<4;i++)nv[120+i]=(uint8_t)(legacyCrc>>(8*i));
  beforeWrites=nvWrites;uwb_runtime_init();
  assert(loadedAtBoot&&active.node==0x86&&active.peer==0x84&&generation==77&&nvWrites==beforeWrites&&active.calibration&&active.correction_mm==-1234);
