@@ -18,8 +18,8 @@ B feasibility and conditional offline prototype complete/software tested:
   ADS correction substitute for an error bound. Missing bracket/invalid relation
   stays unavailable; conditional outputs never feed the point-based2D solver.
 - ESP mainbb6fd59 records feasibility before implementation; cdf069c implements
-  tools/uwb_mobile.py and actual shared C replay extraction. All52 Python tests,
-  host C transport/replay builds and11 focused physics/mobile tests pass.
+  tools/uwb_mobile.py and actual shared C replay extraction. 93fd7e4 hardens native-context recreation. All53 Python tests,
+  host C transport/replay builds and12 focused physics/mobile tests pass.
 - STM maina867702 records A physical acceptance; this documentation follow-up
   links the B result. Canonical/vendor pin3bbd324 remains unchanged. No firmware,
   protocol, scheduler, configuration, safety, calibration or build files changed.

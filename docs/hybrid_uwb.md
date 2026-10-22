@@ -568,8 +568,8 @@ and cannot become a position from the existing point-measurement solver.
 
 This is a host research prototype using existing UWB3 and exact shared C codec /
 association / relation inversion. No on-air bytes or firmware source/build settings
-changed; no reflashing is needed for this analysis. All52 Python and host transport
-regressions pass, including11 feasibility/mobile tests with2D acceleration, clock
+changed; no reflashing is needed for this analysis. All53 Python and host transport
+regressions pass, including12 feasibility/mobile tests with2D acceleration, clock
 slew, signed geometry,500/50/10ms,40/32-bit wrap, duplicates/loss/reordering and
 strict invalid-input handling. Synthetic containment is not hardware validation.
 
@@ -581,3 +581,7 @@ from a small fit residual. For true hardware oscillator rate, independent path-
 rate or frequency-reference information is fundamentally required. C/D role /
 address / broader command refactors remain deferred. A's accepted original-fault
 fix and its residual intermittent PHY/TWR failures are recorded above.
+
+Follow-up ESP93fd7e4 discards pending mobile interpolation if the shared native
+replay context is recreated/evicted; this is separate from physical epoch changes.
+The added lifecycle regression passes alongside the complete53-test host suite.
