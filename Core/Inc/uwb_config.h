@@ -5,8 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 /* Explicit little-endian wire schema; never persist a C structure. */
-#define UWB_CONFIG_VERSION 3u
+#define UWB_CONFIG_VERSION 4u
 #define UWB_MAX_PEERS 8u
+#define UWB_PROTOCOL_STANDALONE 0u
+#define UWB_PROTOCOL_RLR 3u
 typedef struct {uint8_t address,enabled;uint16_t interval_ms;} uwb_peer_t;
 #define UWB_CONFIG_RECORD_SIZE 128u
 #define UWB_CONFIG_SECTOR_SIZE 0x20000u
@@ -18,6 +20,8 @@ typedef struct {
   int32_t correction_mm;
   uint32_t verbosity, telemetry, telemetry_ms, samples, wifi,telemetry_format,peer_count;
   uwb_peer_t peers[UWB_MAX_PEERS];
+  uint32_t protocol_role; // Separate from ADS initiator/responder and identity metadata.
+  uint32_t rf_enabled; // RF operation gate; mode selection is retained while off.
   uint32_t reference,follower; // Explicit legacy TDMA roster; separate from TWR role.
 } uwb_config_t;
 /* identity: 0 standalone / 1 ALR / 2 RLR; mode: 0 off / 1 ADS / 2 beacon / 3 listen;

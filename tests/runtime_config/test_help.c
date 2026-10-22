@@ -26,8 +26,8 @@ int main(void) {
  captured[0]=0;command("help unknown");assert(strstr(captured,"ERR help topic")&&strstr(captured,"config, hybrid, peers, telemetry, safety or all"));
  captured[0]=0;command("help bad extra");assert(strstr(captured,"ERR help [topic]"));
  command("cfg show");drain();assert(strstr(captured,"Node address:")&&!strstr(captured,"ERR UWB-only")&&nvWrites==writes);
- /* Unsupported command stays unsupported; no invented system status alias. */
- assert(!uwb_runtime_command("status"));
+ /* Checkpoint D now owns read-only UWB status even under mutation gating. */
+ captured[0]=0;command("status");assert(strstr(captured,"UWB STATUS")&&nvWrites==writes);
  flashSafe=true;command("cfg set address 0x8d");command("peer add 0x84");command("peer add 0x85");
  command("cfg set telemetry on");command("cfg set mode hybrid");
  writes=nvWrites;unsigned tx=starts;captured[0]=0;command("help all");

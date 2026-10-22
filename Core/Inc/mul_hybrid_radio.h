@@ -10,6 +10,7 @@
 #endif
 #if MUL_UNIVERSAL
 void mul_hybrid_radio_configure(const uwb_config_t *config);
+void mul_hybrid_radio_suspend(void);
 void mul_hybrid_radio_process(void);
 void mul_hybrid_radio_status(char *line,size_t capacity);
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity);

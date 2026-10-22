@@ -34,7 +34,7 @@ static void exercise(uint8_t reference,uint8_t follower) {
   assert(mulTwrEncodeNetwork(&network,frame,&p));tick=base+10650+stage*20;receive_network(frame,84,refRx+(650+stage*20)*INT64_C(63897600));
  }
  assert(hybridReceiver.twrCompleted==1&&hybridReceiver.twrRejected==0);
- unsigned writes=nvWrites;command("cfg set reference 0x8d");command("cfg set follower 255");command("cfg set role initiator");
+ unsigned writes=nvWrites;command("cfg set reference 0x8d");command("cfg set follower 255");command("role ref");command("role follower");
  assert(writes==nvWrites&&active.reference==reference&&active.follower==follower&&active.role==2);
  command("cfg show");drain();assert(strstr(captured,"Legacy TDMA roster:"));persisted();
 }
@@ -43,6 +43,6 @@ int main(void) {
  command("cfg set correction_mm -1234");command("cfg set calibration on");command("cfg set verbosity quiet");
  command("peer add 0x42");command("peer add 0x23");command("peer add 0x84");command("peer add 0x85");
  unsigned transmitted=starts;exercise(0x42,0x23);exercise(0x85,0x84);assert(starts==transmitted);
- puts("Persistent custom/swapped roster: v3 boot, calibration/peers retained, real RX/SYS_TIME/association/passive TWR, native40/uptime32 wrap, NO_RATE and no TX passed");
+ puts("Persistent custom/swapped roster: legacy/current boot, calibration/peers retained, real RX/SYS_TIME/association/passive TWR, native40/uptime32 wrap, NO_RATE and no TX passed");
  return 0;
 }

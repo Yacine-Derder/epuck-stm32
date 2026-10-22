@@ -6,8 +6,15 @@ static char commandCopy[64];
 bool uwb_runtime_command(const char *text) {
  char lower[64];size_t n=strlen(text);assert(n<sizeof(lower));
  for(size_t i=0;i<=n;i++)lower[i]=text[i]>='A'&&text[i]<='Z'?text[i]+('a'-'A'):text[i];
- /* Routing double: real help/parser semantics are covered by test_help.c. */
- if(strncmp(lower,"cfg",3)&&strncmp(lower,"tlm",3)&&strncmp(lower,"help",4)&&strncmp(lower,"hybrid",6))return false;
+ /* Routing double: real command semantics are covered by test_commands.c and
+  * test_help.c; this test checks the unchanged USB/safety line boundary. */
+ const char *owned[]={"cfg","tlm","help","hybrid","show","status","on","off","mode","role","addr","reference","follower","peer","cal","wifi","diag","save","sync"};
+ bool found=false;
+ for(unsigned i=0;i<sizeof(owned)/sizeof(*owned);i++) {
+   size_t length=strlen(owned[i]);
+   if(!strncmp(lower,owned[i],length)&&(!lower[length]||lower[length]==' '))found=true;
+ }
+ if(!found)return false;
  configCalls++;snprintf(commandCopy,sizeof(commandCopy),"%s",text);return true;
 }
 int main(void) {
@@ -23,9 +30,10 @@ int main(void) {
  console("cFg ");console("ShOw\r");console("\n");assert(configCalls==before+1&&!strcmp(commandCopy,"cFg ShOw"));
  console("help ");console("safety\r\n");assert(configCalls==before+2);
  assert(!strstr(mock_usb_log+at,"ERR UWB-only"));
- /* A true newline splits commands; USB packet fragmentation alone does not.
-  * This is a demonstrated way to get the same safety error, not proof that
-  * it caused the user's historical intermittent CFG SHOW symptom. */
- at=strlen(mock_usb_log);console("CFG\nSHOW\n");assert(strstr(mock_usb_log+at,"ERR UWB-only"));
+ /* Newlines still split commands; SHOW is now independently owned by UWB. */
+ at=strlen(mock_usb_log);before=configCalls;console("CFG\nSHOW\n");
+ assert(configCalls==before+2&&!strstr(mock_usb_log+at,"ERR UWB-only"));
+ before=configCalls;console("RoLe ");console("rLr\r\nOFF\nSTATUS\n");
+ assert(configCalls==before+3&&!strcmp(commandCopy,"STATUS"));
  assert(!motor_arm_pending&&!motor_count);puts("USB actual parser fragmented/oversized/control/disconnect and telemetry queue backpressure checks passed");return 0;
 }

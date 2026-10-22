@@ -40,6 +40,7 @@ static bool retryRx;
 #include "mul_hybrid_radio.h"
 static void beacon_reset(void);
 static bool beacon_reset_stats(void);
+static void beacon_suspend(void);
 static void beacon_process(uint32_t now);
 static uwb_config_t config;
 static uint64_t runtimeSession;
@@ -124,6 +125,8 @@ int32_t mul_ads_radio_resume(void) {
 void mul_ads_radio_stop(void) {
   if(!configured) return;
   if(state.stage!=adsIdle) {mulAdsAbort(&state);logAbort();}
+  if(config.mode>=4)mul_hybrid_radio_suspend();
+  else if(config.mode>=2)beacon_suspend();
   dwt_forcetrxoff();dwt_writesysstatuslo(RX_EVENTS|DWT_INT_TXFRS_BIT_MASK);
 }
 #endif
@@ -302,6 +305,7 @@ typedef struct {
 static beacon_peer_t beacons[UWB_MAX_PEERS];
 static uint32_t beaconSequence,previousSequence,pendingSequence,beaconTxAt,beaconDone,beaconRx,beaconAttempts;
 static uint64_t previousTx;static bool beaconPending,previousValid;
+static void beacon_suspend(void) {beaconPending=false;}
 static void beacon_reset(void) {
   memset(beacons,0,sizeof(beacons));beaconSequence=1;previousSequence=pendingSequence=0;
   beaconTxAt=HAL_GetTick();beaconDone=beaconRx=beaconAttempts=0;previousTx=0;beaconPending=previousValid=false;

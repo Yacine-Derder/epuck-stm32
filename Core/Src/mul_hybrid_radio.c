@@ -36,6 +36,11 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
  (void)mulHybridInitNetwork(&hybridReceiver,&network,receiver,c->mode==5);hybridErrors=hybridTimeouts=0;
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
 }
+void mul_hybrid_radio_suspend(void) {
+ hybridReceiver.twrActive=false;hybridReceiver.association.pending=false;
+ for(unsigned i=0;i<MUL_ALR_COUNT;i++)hybridReceiver.observations[i].valid=false;
+ mulClockReset(&hybridReceiver.rate);hybridLastStatus=mulDownlinkNoRelation;
+}
 void mul_hybrid_radio_status(char *line,size_t capacity) {
  snprintf(line,capacity,"HYBRID passive=1 slot_ms=%u rate=%s rx=%lu reject=%lu pairs=%lu last_status=%u ref_fresh=%u fol_fresh=%u twr_inter_alr=%lu twr_reject=%lu twr_timeout=%lu phy=%lu timeout=%lu",
  MUL_FOLLOWER_SLOT_MS,hybridConfig.mode==5?"STATIONARY_OPT_IN":"UNKNOWN",(unsigned long)hybridReceiver.received,(unsigned long)hybridReceiver.rejected,

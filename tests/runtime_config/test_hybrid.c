@@ -78,7 +78,8 @@ int main(void) {
  assert(starts==transmitted); /* No POLL, RESPONSE or delayed TX in either passive mode. */
  unsigned received=hybridReceiver.received;status=DWT_INT_RXFCG_BIT_MASK|DWT_INT_RXFCE_BIT_MASK;step();assert(hybridReceiver.received==received&&hybridErrors==1);
  tick+=3001;step();assert(!hybridReceiver.rate.hasBaseline&&!hybridReceiver.association.pending);
- writes=nvWrites;command("PEER DISABLE 0x84");assert(nvWrites==writes);command("CFG SET role initiator");assert(nvWrites==writes);
+ writes=nvWrites;command("PEER DISABLE 0x84");assert(nvWrites==writes);
+ command("CFG SET role initiator");assert(active.role==1&&active.protocol_role==UWB_PROTOCOL_RLR&&starts==transmitted);
  captured[0]=0;command("HYBRID STATUS");assert(strstr(captured,"passive=1")&&strstr(captured,"last_status=")&&strstr(captured,"ref_fresh=0")&&strstr(captured,"fol_fresh=0"));
  writes=nvWrites;
  char diagnostic[384];
@@ -96,7 +97,7 @@ int main(void) {
  for(unsigned page=0;page<3;page++){mul_hybrid_radio_diagnostics(page,diagnostic,sizeof(diagnostic));assert(strlen(diagnostic)<317);}
  hybridReceiver.diagnostics=before;
  captured[0]=0;command("hybrid diag");assert(strstr(captured,"MULH DIAG")&&strstr(captured,"MULH REJECT")&&strstr(captured,"MULH MODEL"));
- captured[0]=0;command("hybrid frames");assert(strstr(captured,"slot=0")&&strstr(captured,"slot=1")&&strstr(captured,"frame="));
+ captured[0]=0;command("hybrid frames");assert(strstr(captured,"slot=0")&&strstr(captured,"slot=1")&&strstr(captured,"absent"));
  assert(starts==transmitted&&nvWrites==writes);
  command("DIAG RESET");assert(!hybridErrors&&active.calibration==1);uwb_runtime_init();assert(active.mode==4&&active.correction_mm==-99&&active.calibration==1);persisted();
  command("CFG SET mode off");assert(!started&&!mockRadioActive);

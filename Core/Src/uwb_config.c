@@ -34,6 +34,10 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node==c->peer) return "address: node and peer must differ";
   mulNetwork_t network;
   if(c->reference>254||c->follower>254||!mulNetworkInit(&network,(uint8_t)c->reference,(uint8_t)c->follower))return "reference/follower: distinct IDs 0..254";
+  if(c->rf_enabled>1||(!c->mode&&c->rf_enabled))return "RF: on/off; select a mode before on";
+  if(c->protocol_role!=UWB_PROTOCOL_STANDALONE&&c->protocol_role!=UWB_PROTOCOL_RLR)return "protocol role: standalone or rlr; ref/follower unavailable";
+  if(c->protocol_role==UWB_PROTOCOL_RLR&&(c->mode==1||c->mode==2))return "role rlr is passive; choose role standalone before a transmitting mode";
+  if(c->mode>=4&&c->protocol_role!=UWB_PROTOCOL_RLR)return "hybrid requires protocol role rlr";
   if(c->identity>2) return "identity: standalone, alr, rlr";
   if(c->mode>5) return "mode: off, twr, beacon, listen, hybrid, hybrid_static";
   if(c->role!=1&&c->role!=2) return "role: initiator, responder";
@@ -54,14 +58,14 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   }
   if(c->mode>=4) {
     uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[MUL_ALR_COUNT]={false};
-    if(c->role!=2||mulNetworkRole(&network,local)!=mulAlrUnsupported)return "hybrid requires passive responder role and an RLR address distinct from ALRs";
+    if(mulNetworkRole(&network,local)!=mulAlrUnsupported)return "hybrid requires an RLR address distinct from configured ALRs";
     for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulNetworkRole(&network,id);if(r>=0&&(unsigned)r<MUL_ALR_COUNT)roles[r]=true;}
-    for(unsigned i=0;i<MUL_ALR_COUNT;i++)if(!roles[i])return "hybrid requires both configured reference/follower IDs as enabled peers";
+    for(unsigned i=0;i<MUL_ALR_COUNT;i++)if(c->rf_enabled&&!roles[i])return "hybrid requires both configured reference/follower IDs as enabled peers";
   }
   return NULL;
 }
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
-  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
+  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return a->protocol_role==b->protocol_role && a->rf_enabled==b->rf_enabled && a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
 }
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) {
   char fieldLower[24],valueLower[24];
@@ -71,6 +75,13 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(field[f]||value[valueLength]) return "field/value too long";
   fieldLower[f]=valueLower[valueLength]=0;field=fieldLower;value=valueLower;
   if(!strcmp(field,"address"))field="node";
+  if(!strcmp(field,"rf_enabled")) {
+    uwb_config_t candidate=*c;
+    if(!strcmp(value,"on")||!strcmp(value,"1"))candidate.rf_enabled=1;
+    else if(!strcmp(value,"off")||!strcmp(value,"0"))candidate.rf_enabled=0;
+    else return "rf_enabled: on/off";
+    const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+  }
   if(!strcmp(field,"reference")||!strcmp(field,"follower")) {
     const char *p=value;unsigned base=10;uint32_t n=0;
     if(p[0]=='0'&&p[1]=='x'){base=16;p+=2;}if(!*p)return "invalid roster ID";
@@ -111,6 +122,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(index==10 && n>INT32_MAX) return "correction_mm overflow";
   uint32_t v[FIELDS];fields(c,v);v[index]=negative?0u-n:n;
   uwb_config_t candidate=*c;assign(&candidate,v);
+  if(index==3){candidate.protocol_role=candidate.mode>=4?UWB_PROTOCOL_RLR:UWB_PROTOCOL_STANDALONE;if(!candidate.mode)candidate.rf_enabled=0;}
   if((index==7||index==8)&&v[index]!=(index==7?c->tx_ant_dtu:c->rx_ant_dtu)) candidate.calibration=0;
   if(index==1) {if(candidate.peer!=c->peer)candidate.calibration=0;candidate.peers[0].address=(uint8_t)candidate.peer;}
   if(index==5) for(unsigned i=0;i<candidate.peer_count;i++)candidate.peers[i].interval_ms=(uint16_t)candidate.interval_ms;
@@ -126,20 +138,21 @@ uint32_t uwb_config_crc(const uint8_t *data,size_t size) {
 void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c,uint32_t generation) {
   memset(out,0,UWB_CONFIG_RECORD_SIZE);put(out,MAGIC);put(out+4,UWB_CONFIG_VERSION);put(out+8,UWB_CONFIG_RECORD_SIZE);put(out+12,generation);
   uint32_t v[FIELDS];fields(c,v);for(unsigned i=0;i<FIELDS;i++) put(out+16+4*i,v[i]);
-  /* v3 packs roster bytes into formerly-zero upper bytes of the node word.
+  /* v3 packs roster bytes; v4 adds RF enable in bit24 and protocol role in bits25..26 of the node word.
    * Record size, peer offsets, CRC and commit-last journal geometry stay fixed. */
-  put(out+16,c->node|(c->reference<<8)|(c->follower<<16));
+  put(out+16,c->node|(c->reference<<8)|(c->follower<<16)|(c->rf_enabled<<24)|(c->protocol_role<<25));
   for(unsigned i=0;i<UWB_MAX_PEERS;i++) {out[88+4*i]=c->peers[i].address;out[89+4*i]=c->peers[i].enabled;out[90+4*i]=(uint8_t)c->peers[i].interval_ms;out[91+4*i]=(uint8_t)(c->peers[i].interval_ms>>8);}
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
 bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
-  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
+  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
 
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
   uwb_config_t candidate={0};assign(&candidate,v);
-  candidate.reference=0x84;candidate.follower=0x85;
-  if(get(in+4)==3) {
-    if(v[0]&UINT32_C(0xFF000000))return false;
+  candidate.reference=0x84;candidate.follower=0x85;candidate.rf_enabled=candidate.mode!=0;candidate.protocol_role=candidate.mode>=4?UWB_PROTOCOL_RLR:UWB_PROTOCOL_STANDALONE;
+  if(get(in+4)>=3) {
+    if((get(in+4)==3&&(v[0]&UINT32_C(0xFF000000)))||(v[0]&UINT32_C(0xF8000000)))return false;
+    if(get(in+4)==4){candidate.rf_enabled=(v[0]>>24)&1;candidate.protocol_role=(v[0]>>25)&3;}
     candidate.node=v[0]&255;candidate.reference=(v[0]>>8)&255;candidate.follower=(v[0]>>16)&255;
   }
   if(get(in+4)==1) {

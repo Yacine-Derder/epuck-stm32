@@ -1,4 +1,4 @@
-# Current checkpoint C — independent persistent roles/addresses
+# Current checkpoint D — unified UWB command interface
 
 The user authorized proceeding with C/D while preserving ordinary hybrid NO_RATE.
 A's original age/relation defect is physically accepted from the user's STM
@@ -31,13 +31,56 @@ C implementation/software validation:
 - Both consumers vendor verified core0cb81e3. Universal, Hybrid50/10 and optional
   HybridFrequency builds pass reserved-sector ELF checks. No devices flashed.
 
-Next: finish C pushes, then D's compatibility matrix and unified lowercase command
-aliases. Preserve immediate legacy menus, persistence/calibration, passive RLR,
-NO_RATE and UWB-only safety. Do not claim moving metric or custom-roster hardware
-validation. Operator retest/build/ELF and exact configuration examples are in
-STM docs/hybrid_uwb.md and LPS docs/mul_heterogeneous.md. Any residual PHY/TWR/UART
-fault requires fresh evidence; more UWB-only logs cannot resolve clock/motion
-observability. Existing LPS docs/mul_core.md formatting edit remains untouched.
+C is pushed: STM550b069, ESPd1e6b8f, LPS0cb81e3/d63a29d/962be5c. LPS4010ddc
+also fixes real USB packet truncation, with207 Unity and actual USB sanitized tests.
+D STM32 implementation is software verified; DW1000 D remains unimplemented.
+The cross-platform contract remains LPS docs/mul_commands.md (its global status
+still says planned). This STM32 checkpoint adds lowercase/case-insensitive
+show/status/on/off/mode/role/addr/reference/follower/cal/wifi/tlm/diag/save aliases
+and peer del, retaining legacy cfg/peer/help commands and bounded output paging.
+Schema4 packs RF enable and explicit protocol role into the existing128-byte
+journal; v1/v2/v3 load without migration writes. Older firmware cannot read new
+schema4 records; retain a settings backup before any downgrade. Role rlr is independent of ADS
+initiator/responder and identity metadata; ref/follower TDMA TX roles are rejected.
+Use role rlr, mode hybrid (or explicitly stationary hybrid_static), then on.
+Use role standalone before selecting twr/beacon. Canonical mode retains RF state;
+legacy cfg set mode retains its old role-selection/auto-start behavior.
+Off retains mode/calibration/peers, stops before persistence, and never rearms
+the former transmitter on a failed flash rollback. Such a failed save is reported
+as unconfirmed: a reboot can still load the previous saved RF-on setting.
+
+The failing telemetry test assumed the last queued record was RX, although a
+periodic summary can follow it. It now decodes every queued record, verifies the
+passive wire role2 and finds the RX type/sequence explicitly. Eleven synthetic
+cycles yield ten pairs after the first cadence sample, independently of rate
+warm-up. Tests prove no RLR TX even with the retained ADS initiator setting,
+fresh reconstruction after resume, ordinary hybrid NO_RATE, and stationary-only
+hybrid_static availability. Neither output establishes physical metric accuracy.
+
+D validation: tests/runtime_config/run.sh passes under ASan/UBSan, including
+configuration/journal/power-cut migration, flash backend, USB framing, Wi-Fi/safety,
+multi-peer, beacon/listen, hybrid, help, custom rosters and canonical commands at
+500/50/10ms. Additional ADS, UWB-only policy and raw-frequency regressions pass.
+Complete clean Universal firmware build and reserved-sector ELF check pass:
+cmake --build build/Universal --clean-first
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
+ELF: /home/derder/Documents/epuck-stm32/build/Universal/EPuck_STM32.elf;
+RAM36552B, FLASH127776B. Build retains warnings in unchanged epuck_link and Qorvo
+sources; no warnings originate in the changed STM32 files. No devices flashed.
+
+Stop after the STM32 commit/push, as requested. Fresh DW1000 D must implement
+the contract in docs/mul_commands.md: preserve immediate character commands and
+:mul, add bounded :command/:console framing/help, persisted RF gating in the
+radio owner, safe off/resume/late-event handling, and on rejection while a restart
+is pending. Preserve modes0..6, TDMA/inter-ALR TWR, native40 wrap, EEPROM/IDs,
+calibration and passive-only RLR/NO_RATE; reject unsupported capabilities without
+mutation. Keep model reacquisition and nonblocking output, with no queue/stack
+growth or motor-safety changes. Test/build before separate DW1000 commit/push;
+do not flash. ESP32 needs no new bridge vocabulary. Neither sibling repository
+was modified for this STM32 checkpoint; retain LPS docs/mul_core.md's unrelated edit.
+Residual PHY/TWR/UART faults and new command/RF behavior need operator hardware
+retests. Existing operator procedures are in STM docs/hybrid_uwb.md and LPS
+docs/mul_heterogeneous.md; moving metric TDoA still lacks independent constraints.
 
 ---
 

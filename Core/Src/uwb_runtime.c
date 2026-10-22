@@ -37,11 +37,14 @@ static const char *const help_commands[]={
   "",
   "General",
   "  - help [topic]              Show commands or topic details",
+  "  - show / status             Settings and RF operation state",
   "",
   "UWB configuration",
   "  - cfg show                  Show current configuration",
   "  - cfg set <field> <value>    Change and save a setting",
   "  - cfg help                  List configuration options",
+  "  - on / off                  Enable RF; retain selected mode",
+  "  - mode / role / addr        Selection, passive role and address",
   "",
   "UWB diagnostics",
   "  - hybrid status|diag|frames  Passive reception diagnostics",
@@ -62,6 +65,14 @@ static const char *const help_commands[]={
 };
 static const char *const help_config[]={
   "=== UWB CONFIGURATION ===",
+  "  - show / status / save      Canonical settings/state/autosave alias",
+  "  - on / off                  Persist RF enable, retain selected mode",
+  "  - mode <name>               Select mode without enabling RF",
+  "  - role rlr                  Passive hybrid; stops incompatible TX mode",
+  "  - addr <id>, reference <id>, follower <id>  Independent identities",
+  "  - cal show|on|off            ADS correction only; preserve raw values",
+  "  - role standalone leaves the passive protocol before twr/beacon",
+  "  - ref/follower TX roles are unsupported on this STM32 image",
   "  - cfg show [active|current|saved|defaults]  Read settings",
   "  - cfg set <field> <value>    Validate, activate and save one change",
   "  - cfg load                  Activate last valid saved settings",
@@ -73,6 +84,7 @@ static const char *const help_config[]={
   "  - address (alias node), peer: decimal or 0x00..0xff; distinct IDs",
   "  - identity: standalone | alr | rlr (metadata only)",
   "  - mode: off | twr | beacon | listen | hybrid | hybrid_static",
+  "  - rf_enabled: on | off; legacy cfg set mode also selects role/RF",
   "  - role: responder | initiator (ADS setting, not an ALR TDMA role)",
   "  - interval_ms: 250..60000; primary-peer transaction interval",
   "  - phy: mixed only; channel5, 6.8Mbps, code9, preamble128",
@@ -88,7 +100,7 @@ static const char *const help_config[]={
   "  - Unchanged values do not write flash; reboot and cfg show to verify.",
   "  - Antenna/primary-peer changes disable pair calibration; refit first.",
   "  - Calibrated range = raw + correction_mm/1000; raw stays available.",
-  "  - Hybrid needs responder, distinct RLR ID and both ALR peers enabled.",
+  "  - Active hybrid needs role rlr, distinct RLR ID and both ALR peers.",
   "  - Factory: mode off; address 0x00, peer 0x01; provision unique IDs.",
   "  - cfg show defaults lists factory settings without changing anything.",
   "",
@@ -197,7 +209,7 @@ const uwb_config_t *uwb_runtime_active(void) {return &active;}
 void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
-  r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)active.role;
+  r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)(active.mode>=4?2:active.role); // Preserve the existing passive UWB3 wire role.
   if(r->type!=mulTlmPeer)r->uptimeMs=HAL_GetTick();
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
@@ -218,7 +230,7 @@ static void telemetry_task(void) {
     if((uint32_t)(HAL_GetTick()-wifiQueuedAt[wifiTail])>=1000U) {wifiDrops++;wifiTail=(wifiTail+1)%TLM_CAPACITY;wifiCount--;}
     else if(esp_link_telemetry(wifiQueue[wifiTail])) {wifiTail=(wifiTail+1)%TLM_CAPACITY;wifiCount--;}
   }
-  if(active.telemetry&&!active.mode&&(uint32_t)(HAL_GetTick()-lastIdleReport)>=active.telemetry_ms) {
+  if(active.telemetry&&!started&&(uint32_t)(HAL_GetTick()-lastIdleReport)>=active.telemetry_ms) {
     lastIdleReport=HAL_GetTick();mulTelemetry_t r={.type=mulTlmSummary};uwb_runtime_publish(&r);
   }
 }
@@ -231,15 +243,15 @@ static void stop(void) {
  * loop radio service/TX occurs here. Stop RX again before all flash operations. */
 static bool prepare(const uwb_config_t *c) {
   stop();
-  if(!c->mode) return true;
+  if(!c->mode||!c->rf_enabled) return true;
   uint64_t session;if(!uwb_runtime_session(&session)) return false;
   telemetryEpoch=session;mul_ads_radio_configure(c,session);radioTouched=true;
   int32_t status=mul_ads_radio_init();mul_ads_radio_stop();
   return status==DWT_SUCCESS;
 }
 static bool resume(const uwb_config_t *c) {
-  if(c->mode && mul_ads_radio_resume()!=DWT_SUCCESS) {stop();return false;}
-  active=current=*c;started=c->mode!=0;applied=true;return true;
+  if(c->mode&&c->rf_enabled && mul_ads_radio_resume()!=DWT_SUCCESS) {stop();return false;}
+  active=current=*c;started=c->mode!=0&&c->rf_enabled;applied=true;return true;
 }
 static void restore(const uwb_config_t *old) {
   if(!prepare(old)||!resume(old)) {
@@ -355,6 +367,8 @@ static void display_output(void) {
   case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
+  case 22:snprintf(text,sizeof(text),"Protocol role:      %s",c->protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone");break;
+  case 21:snprintf(text,sizeof(text),"RF enabled:         %s; selected mode retained while off",onoff(c->rf_enabled));break;
   case 20:snprintf(text,sizeof(text),"Legacy TDMA roster: reference=0x%02lX follower=0x%02lX",(unsigned long)c->reference,(unsigned long)c->follower);break;
   case 19:snprintf(text,sizeof(text),"Configured peers: %lu (maximum 8)",(unsigned long)c->peer_count);break;
   case 17:snprintf(text,sizeof(text),"Saved generation:   %lu; UWB-only safety policy",(unsigned long)displayGeneration);break;
@@ -391,7 +405,7 @@ static void peer_command(unsigned nt,char **t) {
     if(i<c.peer_count||id==c.node||c.peer_count==UWB_MAX_PEERS){reply("ERR peer duplicate/self/table full");return;}
     c.peers[c.peer_count++]=(uwb_peer_t){(uint8_t)id,1,(uint16_t)c.interval_ms};
   } else if(i==c.peer_count){reply("ERR peer not configured");return;}
-  else if(nt==3&&!strcmp(t[1],"remove")) {
+  else if(nt==3&&(!strcmp(t[1],"remove")||!strcmp(t[1],"del"))) {
     if(c.peer_count==1){reply("ERR keep one peer; DISABLE instead");return;}
     if(i==0)c.calibration=0; /* Pair correction never transfers to a new primary. */
     for(unsigned j=i+1;j<c.peer_count;j++)c.peers[j-1]=c.peers[j];
@@ -402,6 +416,24 @@ static void peer_command(unsigned nt,char **t) {
     unsigned ms;if(!number(t[3],60000,&ms)||ms<250){reply("ERR interval 250..60000");return;}c.peers[i].interval_ms=(uint16_t)ms;
   } else {reply("ERR PEER HELP");return;}
   c.peer=c.peers[0].address;c.interval_ms=c.peers[0].interval_ms;update(&c);
+}
+static void rf_command(bool enable) {
+  uwb_config_t candidate=current;candidate.rf_enabled=enable;
+  if(enable&&!candidate.mode){reply("ERR select a mode before on; no transmitter is inferred");return;}
+  /* RF-off is operational even if the flash/safety/output gate refuses a save.
+   * Preserve selected mode and every calibration value; never restore TX on a
+   * failed off request. Durability is reported separately from runtime state. */
+  if(!enable&&(started||active.rf_enabled)){
+    stop();active.rf_enabled=current.rf_enabled=0;applied=false;
+    /* The update rollback snapshot must also be stopped. A failed flash write
+     * must never rearm the old transmitter before returning the off error. */
+  }
+  if(update(&candidate))reply(enable?"UWB RF ON":"UWB RF OFF; selected mode retained");
+  else if(!enable){stop();applied=false;reply("UWB RF OFF; persistence not confirmed; inspect saved settings before reboot");}
+}
+static const char *mode_name(unsigned mode) {
+ static const char *const names[]={"none","twr","beacon","listen","hybrid","hybrid_static"};
+ return mode<6?names[mode]:"invalid";
 }
 bool uwb_runtime_command(const char *line) {
   char copy[64];size_t n=0;while(n<sizeof(copy)&&line[n]) n++;
@@ -418,6 +450,63 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
+  /* Canonical UWB names are owned here, including syntax errors. They must not
+   * fall through into the robot safety dispatcher. Legacy cfg stays available. */
+  if(!strcmp(token[0],"status")) {
+    if(nt!=1){reply("ERR status takes no arguments");return true;}
+    char text[256];snprintf(text,sizeof(text),"UWB STATUS mode=%s addr=0x%02lX protocol_role=%s rf_enabled=%lu running=%u applied=%u durable=%u reference=0x%02lX follower=0x%02lX",
+      mode_name(current.mode),(unsigned long)current.node,current.protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone",(unsigned long)current.rf_enabled,started,applied,durabilityKnown,
+      (unsigned long)current.reference,(unsigned long)current.follower);reply(text);return true;
+  }
+  if(!strcmp(token[0],"on")||!strcmp(token[0],"off")) {
+    if(nt!=1){reply("ERR on/off takes no arguments");return true;}
+    rf_command(!strcmp(token[0],"on"));
+    return true;
+  }
+  if(!strcmp(token[0],"mode")) {
+    if(nt!=2){reply("ERR mode twr/beacon/listen/hybrid/hybrid_static; off controls RF");return true;}
+    uwb_config_t candidate=current;
+    if(!strcmp(token[1],"off")){rf_command(false);return true;}
+    else {
+      if(strcmp(token[1],"twr")&&strcmp(token[1],"beacon")&&strcmp(token[1],"listen")&&strcmp(token[1],"hybrid")&&strcmp(token[1],"hybrid_static")){reply("ERR unsupported mode; help config");return true;}
+      const char *error=uwb_config_set(&candidate,"mode",token[1]);candidate.protocol_role=current.protocol_role;if(error){reply("ERR configuration rejected");reply(error);return true;}
+    }
+    update(&candidate);return true;
+  }
+  if(!strcmp(token[0],"role")) {
+    if(nt!=2||(strcmp(token[1],"rlr")&&strcmp(token[1],"standalone"))){reply("ERR protocol role: rlr/standalone; ref/follower unavailable; cfg set role selects ADS role");return true;}
+    uwb_config_t candidate=current;
+    if(!strcmp(token[1],"rlr")) {
+      candidate.protocol_role=UWB_PROTOCOL_RLR; // ADS role/identity/calibration are retained.
+      if(candidate.mode<4){candidate.mode=4;candidate.rf_enabled=0;}
+    } else {
+      candidate.protocol_role=UWB_PROTOCOL_STANDALONE;
+      if(candidate.mode>=4){candidate.mode=0;candidate.rf_enabled=0;}
+    }
+    if(update(&candidate))reply(candidate.rf_enabled?"UWB protocol role active":"UWB protocol role selected; RF OFF");
+    return true;
+  }
+  if(!strcmp(token[0],"cal")&&(nt==1||(nt==2&&!strcmp(token[1],"show")))) {
+    char text[192];snprintf(text,sizeof(text),"CAL ADS_only=1 enabled=%lu correction_mm=%ld tx_ant_dtu=%lu rx_ant_dtu=%lu passive_tdoa_uses_additive=0 accuracy=UNKNOWN",
+      (unsigned long)current.calibration,(long)current.correction_mm,(unsigned long)current.tx_ant_dtu,(unsigned long)current.rx_ant_dtu);reply(text);return true;
+  }
+  if(!strcmp(token[0],"show")) {
+    if(nt>2){reply("ERR show [active|current|saved|defaults]");return true;}
+    if(nt==2)token[2]=token[1];
+    token[0]="cfg";token[1]="show";nt++;
+  } else if(!strcmp(token[0],"save")) {
+    if(nt!=1){reply("ERR save takes no arguments");return true;}token[0]="cfg";token[1]="save";nt=2;
+  } else if(!strcmp(token[0],"addr")||!strcmp(token[0],"reference")||!strcmp(token[0],"follower")||!strcmp(token[0],"wifi")||!strcmp(token[0],"cal")||
+     (!strcmp(token[0],"tlm")&&nt==2&&(!strcmp(token[1],"on")||!strcmp(token[1],"off")))) {
+    if(nt!=2){reply("ERR setting command requires one value");return true;}
+    char *field=!strcmp(token[0],"addr")?"address":!strcmp(token[0],"cal")?"calibration":!strcmp(token[0],"tlm")?"telemetry":token[0];
+    char *value=token[1];token[0]="cfg";token[1]="set";token[2]=field;token[3]=value;nt=4;
+  } else if(!strcmp(token[0],"diag")&&nt==1) {
+    if(started&&active.mode>=4){token[0]="hybrid";token[1]="diag";}
+    else if(started&&active.mode==1){token[0]="peer";token[1]="stats";}
+    else {token[0]="tlm";token[1]="status";}nt=2;
+  }
+
   if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency"))) {
     if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
     else {
@@ -431,13 +520,16 @@ bool uwb_runtime_command(const char *line) {
       }
     }return true;
   }
+  if(!strcmp(token[0],"hybrid")){reply("ERR hybrid status/diag/frames/frequency");return true;}
   if(nt==2&&!strcmp(token[0],"sync")&&!strcmp(token[1],"status")) {
     if(!started||active.mode!=3)reply("SYNC UNKNOWN; select mode listen for apparent arrival models");
     else {display=4;displayIndex=0;}return true;
   }
+  if(!strcmp(token[0],"sync")){reply("ERR sync status");return true;}
+  if(!strcmp(token[0],"diag")&&!(nt==2&&!strcmp(token[1],"reset"))){reply("ERR diag [reset]");return true;}
   if(!strcmp(token[0],"peer")){peer_command(nt,token);return true;}
   if(nt==2&&!strcmp(token[0],"diag")&&!strcmp(token[1],"reset")) {
-    if(active.mode&&!mul_ads_radio_reset_stats())reply("ERR transaction active; retry DIAG RESET when idle");
+    if(radioTouched&&!mul_ads_radio_reset_stats())reply("ERR transaction active; retry DIAG RESET when idle");
     else {dropped=wifiDrops=accepted=0;highWater=count;wifiHigh=wifiCount;esp_link_reset_diagnostics();reply("DIAG counters reset; safety/session/transaction IDs unchanged");}
     return true;
   }
@@ -464,10 +556,13 @@ bool uwb_runtime_command(const char *line) {
       if(savedValid) show(&saved,durabilityKnown?"SAVED (last verified record)":"LAST VERIFIED SNAPSHOT; storage now UNCONFIRMED");
       else reply("CFG no valid saved configuration; factory defaults are separate");
     } else if(nt==2||!strcmp(token[2],"current")||!strcmp(token[2],"active"))
-      show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / activation failed":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
+      show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
     uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
+    /* Preserve legacy cfg set mode auto-start semantics. Canonical mode above
+     * changes only selection; explicit on/off is independent. */
+    if(!error&&!strcmp(token[2],"mode"))candidate.rf_enabled=candidate.mode!=0;
     if(error) {reply("ERR configuration rejected");reply(error);}
     else if(update(&candidate) && (candidate.tx_ant_dtu!=oldTx||candidate.rx_ant_dtu!=oldRx))
       reply("CFG antenna delay changed; calibration disabled; refit before enabling");
