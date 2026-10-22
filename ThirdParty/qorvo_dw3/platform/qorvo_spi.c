@@ -1,4 +1,9 @@
 #include "qorvo_platform.h"
+#if MUL_UNIVERSAL
+#define QORVO_SPI_TIMEOUT 2U /* IRQs enabled: bounded HAL tick timeout for <=84-byte frames. */
+#else
+#define QORVO_SPI_TIMEOUT HAL_MAX_DELAY
+#endif
 
 extern SPI_HandleTypeDef hspi1;
 
@@ -35,19 +40,23 @@ int32_t writetospiwithcrc(uint16_t headerLength,
     HAL_StatusTypeDef st = HAL_OK;
     decaIrqStatus_t irq_state = decamutexon();
 
+#if MUL_UNIVERSAL
+    if(HAL_SPI_GetState(&hspi1)!=HAL_SPI_STATE_READY){decamutexoff(irq_state);return DWT_ERROR;}
+#else
     while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY) {
     }
+#endif
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_RESET);
 
-    st = HAL_SPI_Transmit(&hspi1, (uint8_t *)headerBuffer, headerLength, HAL_MAX_DELAY);
+    st = HAL_SPI_Transmit(&hspi1, (uint8_t *)headerBuffer, headerLength, QORVO_SPI_TIMEOUT);
 
     if ((st == HAL_OK) && (bodyLength > 0U)) {
-        st = HAL_SPI_Transmit(&hspi1, (uint8_t *)bodyBuffer, bodyLength, HAL_MAX_DELAY);
+        st = HAL_SPI_Transmit(&hspi1, (uint8_t *)bodyBuffer, bodyLength, QORVO_SPI_TIMEOUT);
     }
 
     if (st == HAL_OK) {
-        st = HAL_SPI_Transmit(&hspi1, &crc8, 1, HAL_MAX_DELAY);
+        st = HAL_SPI_Transmit(&hspi1, &crc8, 1, QORVO_SPI_TIMEOUT);
     }
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_SET);
@@ -64,15 +73,19 @@ int32_t writetospi(uint16_t headerLength,
     HAL_StatusTypeDef st = HAL_OK;
     decaIrqStatus_t irq_state = decamutexon();
 
+#if MUL_UNIVERSAL
+    if(HAL_SPI_GetState(&hspi1)!=HAL_SPI_STATE_READY){decamutexoff(irq_state);return DWT_ERROR;}
+#else
     while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY) {
     }
+#endif
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_RESET);
 
-    st = HAL_SPI_Transmit(&hspi1, (uint8_t *)headerBuffer, headerLength, HAL_MAX_DELAY);
+    st = HAL_SPI_Transmit(&hspi1, (uint8_t *)headerBuffer, headerLength, QORVO_SPI_TIMEOUT);
 
     if ((st == HAL_OK) && (bodyLength > 0U)) {
-        st = HAL_SPI_Transmit(&hspi1, (uint8_t *)bodyBuffer, bodyLength, HAL_MAX_DELAY);
+        st = HAL_SPI_Transmit(&hspi1, (uint8_t *)bodyBuffer, bodyLength, QORVO_SPI_TIMEOUT);
     }
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_SET);
@@ -89,16 +102,20 @@ int32_t readfromspi(uint16_t headerLength,
     HAL_StatusTypeDef st = HAL_OK;
     decaIrqStatus_t irq_state = decamutexon();
 
+#if MUL_UNIVERSAL
+    if(HAL_SPI_GetState(&hspi1)!=HAL_SPI_STATE_READY){decamutexoff(irq_state);return DWT_ERROR;}
+#else
     while (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY) {
     }
+#endif
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_RESET);
 
-    st = HAL_SPI_Transmit(&hspi1, headerBuffer, headerLength, HAL_MAX_DELAY);
+    st = HAL_SPI_Transmit(&hspi1, headerBuffer, headerLength, QORVO_SPI_TIMEOUT);
 
     if (st == HAL_OK) {
         /* Same pattern as the F429 reference: header first, then clock data out. */
-        st = HAL_SPI_Receive(&hspi1, readBuffer, readlength, HAL_MAX_DELAY);
+        st = HAL_SPI_Receive(&hspi1, readBuffer, readlength, QORVO_SPI_TIMEOUT);
     }
 
     HAL_GPIO_WritePin(SPI1_NCS_GPIO_Port, SPI1_NCS_Pin, GPIO_PIN_SET);
