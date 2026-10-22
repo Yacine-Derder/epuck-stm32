@@ -9,6 +9,8 @@
 #include "mul_telemetry.h"
 void uwb_runtime_init(void);
 void uwb_runtime_task(void);
+/* Optional text only; radio/telemetry/safety processing must continue. */
+bool uwb_runtime_help_active(void);
 bool uwb_runtime_command(const char *line);
 const uwb_config_t *uwb_runtime_active(void);
 /* Main-loop only; bounded local queue, not an interrupt/UART transmit call. */

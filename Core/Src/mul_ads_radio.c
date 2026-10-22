@@ -88,7 +88,7 @@ static void schedule(uint32_t now) {
 }
 void mul_ads_radio_configure(const uwb_config_t *c,uint64_t session) {config=*c;runtimeSession=session;}
 static bool initiator(void) {return config.role==1;}
-static unsigned verbosity(void) {return (unsigned)config.verbosity;}
+static unsigned verbosity(void) {return uwb_runtime_help_active()?0:(unsigned)config.verbosity;}
 #else
 static bool initiator(void) {return MUL_TWR_ROLE==1;}
 static unsigned verbosity(void) {return 2;}

@@ -44,7 +44,7 @@ const char *epuck_link_flash_error(void) {return flashSafe?NULL:"ERR configurati
 bool usb_console_try_write(const char *line) {if(!usbReady)return false;usb_console_write(line);return true;}
 uint8_t usb_console_write_slots(void) {return outputSlots;}
 static void command(const char *line) {assert(uwb_runtime_command(line));}
-static void drain(void) {for(unsigned i=0;i<60;i++)uwb_runtime_task();}
+static void drain(void) {for(unsigned i=0;i<240;i++)uwb_runtime_task();}
 static void persisted(void) {
  uwb_config_t c;uint32_t g;assert(uwb_config_load(uwb_runtime_store(),&c,&g));
  assert(applied&&uwb_config_equal(&c,&current)&&uwb_config_equal(&current,&active)&&g==generation);
@@ -116,8 +116,10 @@ int main(void) {
  uwb_runtime_init();assert(loadedAtBoot&&savedValid&&started);persisted();
  /* Help/SHOW use backpressure-aware incremental output; all fields/defaults. */
  size_t helpAt=strlen(captured);command("hElP");usbReady=false;unsigned outputIndex=displayIndex;drain();assert(displayIndex==outputIndex);usbReady=true;drain();
- for(unsigned i=0;i<sizeof(help)/sizeof(*help);i++)assert(strstr(captured+helpAt,help[i]));
- const char *helpFields[]={"address","peer","identity","mode","role","interval_ms","phy","tx_ant_dtu","rx_ant_dtu","calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples","factory","persistent","restarts","DEFAULTS","LOAD"};
+ assert(strstr(captured+helpAt,"=== E-PUCK STM32 COMMANDS ==="));
+ assert(!strstr(captured+helpAt,"Factory:")&&!strstr(captured+helpAt,"250..60000"));
+ command("help all");drain();
+ const char *helpFields[]={"address","peer","identity","mode","role","interval_ms","phy","tx_ant_dtu","rx_ant_dtu","calibration","correction_mm","verbosity","telemetry","telemetry_ms","samples","factory","persistent","restarts","cfg defaults","cfg load"};
  for(unsigned i=0;i<sizeof(helpFields)/sizeof(*helpFields);i++)assert(strstr(captured+helpAt,helpFields[i]));
  command("cFg ShOw");drain();assert(strstr(captured,"Configuration:      SAVED / ACTIVE")&&strstr(captured,"saved settings loaded at boot: YES"));
  command("CFG DEFAULTS");assert(!started&&!active.calibration&&active.node==0x00&&active.peer==0x01);persisted();

@@ -305,3 +305,47 @@ delays; Wi-Fi defaults off. No automatic boot write or configuration reset occur
 Experimental custom-network modes `hybrid` and `hybrid_static` are documented in
 [hybrid_uwb.md](hybrid_uwb.md). They reuse the existing DW1000 TDMA protocol as a
 passive DWM3000 RLR and preserve the normal configuration journal and safety policy.
+
+## USB help topics
+
+The Universal image now emits a26-line ASCII overview for `help`, grouped into
+General, UWB configuration, UWB diagnostics, Peers, Telemetry and Robot safety.
+No system-wide `status` command or new robot alias is invented. Details are paged:
+
+|Command|Contents|
+|---|---|
+|help config / cfg help|Actual fields/values, persistence, calibration, examples|
+|help hybrid|Passive modes, status/diag/frames, age/rate/rejection interpretation|
+|help peers / peer help|List/stats/add/remove/enable/disable/interval, ID constraints|
+|help telemetry|Enablement, queues, retrieval, output options and counter limits|
+|help safety|Existing stop/status commands and UWB-only restrictions|
+|help all|Overview followed by every topic in the same grouped order|
+
+Topic aliases `help cfg`, `help peer`, `help tlm` are accepted. UWB commands and
+help topics remain case-insensitive. Unknown topics list the valid topic names.
+Legacy robot commands remain case-sensitive: send `STOP`, `MOTOR_STATUS`,
+`STREAM_STATUS`, `LINK_STATUS` in uppercase. The safety topic says this explicitly
+before showing their lowercase reference names. No new lowercase motor/control
+aliases are introduced; arming/movement/stream changes stay prohibited.
+
+Help is a fixed flash table plus bounded pager state. At most one line is queued
+per main-loop service call; failed enqueue retries without advancing. Four of the
+existing16 USB message slots are reserved for other replies. Optional UWB summaries,
+raw-time traces and observation text pause while help is being paged; radio service,
+telemetry production/forwarding and critical errors/safety handling continue. No
+CDC wait, heap allocation, buffer-size increase, persisted verbosity change or RF
+reconfiguration occurs. Safety/errors may interleave deliberately. Issue commands
+one at a time and let a help page finish; another paged response replaces it.
+
+Routing investigation: usb_console.c accumulates fragmented bytes until newline,
+then calls uwb_runtime_command before epuck_link_console_command. A complete
+case-insensitive cfg show is always consumed by the runtime, including read-only
+commands under the UWB-only mutation gate. Tests exercise that path and USB CRLF/
+fragmentation separately. A real newline between CFG and SHOW makes two commands;
+SHOW alone falls through to the safety dispatcher and reproduces its generic
+prohibition error. This is a demonstrated framing example, not evidence explaining
+the earlier sporadic valid-command report. No valid cfg show misroute was reproduced.
+Unknown help topics previously fell through; they now return a topic error within
+the runtime. No safety checks are weakened or unknown command fragments joined.
+If the sporadic symptom recurs, the indispensable evidence is the exact bytes and
+line endings sent for that one command plus its immediate response, not more RF logs.

@@ -32,40 +32,164 @@ static const char *displayState;
 static bool displayBoot;
 static uint32_t displayGeneration;
 static bool displayStats;
-static const char *const help[]={
-  "HYBRID STATUS / DIAG / FRAMES; SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
-  "CFG SET <field> <value>; all fields persistent; every changed field restarts UWB",
-  "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
-  "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
-  "identity: standalone (factory), alr, rlr; metadata, never motor authorization",
-  "mode: off (factory), twr, beacon, listen, hybrid, hybrid_static (stationary opt-in)",
-  "role: responder (factory), initiator; independent of robot identity",
-  "interval_ms: 250..60000 ms; factory 1000; initiator transaction interval",
-  "phy: mixed (factory/only): channel5, 6.8Mbps, code9, preamble128",
-  "tx_ant_dtu / rx_ant_dtu: 0..65535 DW DTU; factory 16380 each; hardware once",
-  "calibration: off (factory), on; raw stays available; negatives remain invalid",
-  "correction_mm: -10000..10000 mm; factory 0; calibrated = raw + correction/1000",
-  "Antenna delay changes disable calibration; refit before explicitly enabling",
-  "verbosity: quiet, summary, full (factory); full retains six raw timestamps",
-  "telemetry: off (factory), on; bounded USB + Wi-Fi queues; CFG SET wifi on enables UART3",
-  "telemetry_ms: 1000..60000 ms; factory 1000; samples: off (factory), on",
-  "wifi: off (factory), on; telemetry_format: compact (only); no motor authorization",
-  "CFG SHOW [ACTIVE|SAVED|DEFAULTS]; includes schema and saved-settings boot status",
-  "CFG DEFAULTS: activate and persist factory settings (UWB off, calibration off)",
-  "CFG LOAD (REVERT alias): activate last valid saved settings; read failure preserves state",
-  "CFG APPLY / CFG SAVE: compatibility aliases; normal SET already activates/saves",
-  "Safety: wait startup grace 2s; attached robot needs STOP and STREAM 0 confirmed",
-  "If rejected: STOP; wait OK STOP; inspect MOTOR_STATUS, STREAM_STATUS, LINK_STATUS",
-  "ALR example: CFG SET address 0x10; CFG SET peer 0x11; CFG SET identity alr",
-  "Then CFG SET role initiator; CFG SET calibration off; CFG SET mode twr",
-  "RLR example: CFG SET address 0x11; CFG SET peer 0x10; CFG SET identity rlr",
-  "Set a different peer first if the desired address equals the current peer",
-  "Then CFG SET role responder; CFG SET calibration off; CFG SET mode twr",
-  "Calibration example: CFG SET correction_mm -100; CFG SET calibration on (review first)",
-  "Telemetry: CFG SET telemetry on; TLM STATUS; TLM NEXT; CFG SET telemetry off",
-  "Unchanged settings do not write flash. Power-cycle, CFG SHOW to verify durability",
-  "STOP / MOTOR_STATUS / STREAM_STATUS / LINK_STATUS remain available; ARM prohibited"
+static const char *const help_commands[]={
+  "=== E-PUCK STM32 COMMANDS ===",
+  "",
+  "General",
+  "  - help [topic]              Show commands or topic details",
+  "",
+  "UWB configuration",
+  "  - cfg show                  Show current configuration",
+  "  - cfg set <field> <value>    Change and save a setting",
+  "  - cfg help                  List configuration options",
+  "",
+  "UWB diagnostics",
+  "  - hybrid status|diag|frames  Passive reception diagnostics",
+  "  - sync status               Listen-mode synchronization state",
+  "  - diag reset                Reset idle diagnostic counters",
+  "",
+  "Peers",
+  "  - peer list|help             Show peers or management commands",
+  "",
+  "Telemetry",
+  "  - tlm status|next            Show queues or retrieve one sample",
+  "",
+  "Robot safety",
+  "  - help safety               Stop command and robot restrictions",
+  "",
+  "More information",
+  "  - help config|hybrid|peers|telemetry|safety|all",
 };
+static const char *const help_config[]={
+  "=== UWB CONFIGURATION ===",
+  "  - cfg show [active|current|saved|defaults]  Read settings",
+  "  - cfg set <field> <value>    Validate, activate and save one change",
+  "  - cfg load                  Activate last valid saved settings",
+  "  - cfg revert                Legacy alias for cfg load",
+  "  - cfg save / cfg apply      Legacy aliases; set already saves",
+  "  - cfg defaults              Replace settings with factory values",
+  "",
+  "Fields and valid values (names and enum values are case-insensitive)",
+  "  - address (alias node), peer: decimal or 0x00..0xff; distinct IDs",
+  "  - identity: standalone | alr | rlr (metadata only)",
+  "  - mode: off | twr | beacon | listen | hybrid | hybrid_static",
+  "  - role: responder | initiator (ADS setting, not an ALR TDMA role)",
+  "  - interval_ms: 250..60000; primary-peer transaction interval",
+  "  - phy: mixed only; channel5, 6.8Mbps, code9, preamble128",
+  "  - tx_ant_dtu, rx_ant_dtu: 0..65535; hardware antenna delays",
+  "  - calibration: off | on; correction_mm: -10000..10000",
+  "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
+  "  - telemetry, wifi, samples: off | on; see help telemetry",
+  "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
+  "",
+  "Persistence and calibration",
+  "  - Settings are persistent; each changed field restarts UWB.",
+  "  - Unchanged values do not write flash; reboot and cfg show to verify.",
+  "  - Antenna/primary-peer changes disable pair calibration; refit first.",
+  "  - Calibrated range = raw + correction_mm/1000; raw stays available.",
+  "  - Hybrid needs responder, distinct RLR ID and both ALR peers enabled.",
+  "  - Factory: mode off; address 0x00, peer 0x01; provision unique IDs.",
+  "  - cfg show defaults lists factory settings without changing anything.",
+  "",
+  "Examples (inspect current settings first; keep calibrated primary peer)",
+  "  - cfg set address 0x8d",
+  "  - cfg set mode hybrid",
+  "  - cfg set verbosity quiet",
+};
+static const char *const help_hybrid[]={
+  "=== PASSIVE HYBRID UWB ===",
+  "  - cfg set mode hybrid       Passive RLR; receiver rate stays unknown",
+  "  - cfg set mode hybrid_static  Stationary-only rate experiment",
+  "  - hybrid status             Counts, freshness and last observation",
+  "  - hybrid diag               Frame/rejection/model counters",
+  "  - hybrid frames             Last 34/74/84-byte RX snapshots",
+  "  - diag reset                Reset counters only when no TWR audit active",
+  "  - sync status               Separate listen-mode arrival models",
+  "",
+  "Interpretation",
+  "  - status 0=no_relation, 1=no_rate, 2=stale_rate, 3=inconsistent,",
+  "    4=available; last_status is historical, not current freshness.",
+  "  - capture_age: invalid or >15ms RX-to-service age; 65535=invalid.",
+  "  - available: decoded follower publication, not local TDoA validity.",
+  "  - missing_twr: no expected prior stage; loss/reorder/duplicates possible.",
+  "  - delay_ms: age of inter-ALR propagation measurement at follower TX.",
+  "  - Frame slots are independent captures, not one complete exchange.",
+  "  - RLR never transmits; inter-ALR TWR is not an RLR range.",
+  "  - Unknown receiver rate forbids metric TDoA in ordinary hybrid.",
+  "  - Two ALRs alone cannot give a unique unconstrained 2D position.",
+};
+static const char *const help_peers[]={
+  "=== UWB PEERS ===",
+  "  - peer list                 List saved peers, enable state and intervals",
+  "  - peer stats                Per-peer statistics in active twr mode",
+  "  - peer add <id>             Add a peer using current interval",
+  "  - peer remove <id>          Remove a peer; keep at least one",
+  "  - peer enable <id>          Include a configured peer",
+  "  - peer disable <id>         Retain settings but exclude that peer",
+  "  - peer interval <id> <ms>   Set interval, 250..60000ms",
+  "  - peer help                 Show this topic",
+  "",
+  "Constraints",
+  "  - IDs: decimal or 0x00..0xff; no self/duplicate; maximum eight peers.",
+  "  - Changes validate, activate and save automatically.",
+  "  - First peer is primary; replacing/removing it disables calibration.",
+  "  - For hybrid, add/enable 0x84 and 0x85; keep calibrated primary.",
+  "  - Extra peers do not extend the current two-ALR TDMA protocol.",
+};
+static const char *const help_telemetry[]={
+  "=== UWB TELEMETRY ===",
+  "  - cfg set telemetry on|off  Enable/disable bounded telemetry queues",
+  "  - cfg set wifi on|off       Enable/disable optional UART3 forwarding",
+  "  - cfg set telemetry_ms <ms> Set summary interval, 1000..60000ms",
+  "  - cfg set samples on|off    Include detailed ADS/beacon samples",
+  "  - cfg set telemetry_format compact  Existing wire-format setting",
+  "  - cfg set verbosity quiet|summary|full  Optional USB diagnostics",
+  "  - tlm status                Separate USB/Wi-Fi depths, drops and faults",
+  "  - tlm next                  Retrieve one queued USB record, or empty",
+  "",
+  "Output",
+  "  - UWB1/UWB2 compatibility retained; hybrid records use UWB3.",
+  "  - Hybrid raw records need telemetry on; samples does not gate them.",
+  "  - Each queue holds four records; slow/unconsumed readers cause drops.",
+  "  - Cumulative queue drops alone are not RF/Wi-Fi packet-loss rates.",
+  "  - Wi-Fi does not authorize motors; help does not stop UART forwarding.",
+};
+static const char *const help_safety[]={
+  "=== ROBOT SAFETY (UWB-ONLY IMAGE) ===",
+  "Robot commands below must be entered in UPPERCASE (legacy parser).",
+  "  - stop                      Stop/disarm; wait for acknowledgement",
+  "  - motor_status              Inspect motor/safety state",
+  "  - stream_status             Inspect robot sensor-stream state",
+  "  - link_status               Inspect e-puck communication state",
+  "",
+  "Restrictions",
+  "  - Arming, movement and sensor-stream changes are prohibited.",
+  "  - Read-only UWB help/configuration/diagnostics remain permitted.",
+  "  - Settings changes require startup grace and confirmed safe state.",
+  "  - Wait 2s; if rejected, stop and verify motor/stream/link status.",
+  "  - Heartbeat, watchdog, UART faults and safe shutdown remain active.",
+  "  - No UWB mode, identity or help command grants motor authorization.",
+  "  - Optional UWB text pauses during help; errors and safety still report.",
+};
+typedef struct {const char *name;const char *const *lines;unsigned count;} help_topic_t;
+#define HELP_TOPIC(name) {#name,help_##name,sizeof(help_##name)/sizeof(*help_##name)}
+static const help_topic_t helpTopics[]={HELP_TOPIC(commands),HELP_TOPIC(config),
+ HELP_TOPIC(hybrid),HELP_TOPIC(peers),HELP_TOPIC(telemetry),HELP_TOPIC(safety)};
+#undef HELP_TOPIC
+static unsigned helpPage;
+static bool helpAll;
+bool uwb_runtime_help_active(void) {return display==1;}
+static void help_start(const char *topic) {
+ if(!topic)topic="commands";
+ if(!strcmp(topic,"cfg"))topic="config";
+ if(!strcmp(topic,"peer"))topic="peers";
+ if(!strcmp(topic,"tlm"))topic="telemetry";
+ helpAll=!strcmp(topic,"all");
+ for(unsigned i=0;i<sizeof(helpTopics)/sizeof(*helpTopics);i++)
+   if(helpAll||!strcmp(topic,helpTopics[i].name)){helpPage=i;display=1;displayIndex=0;return;}
+ display=0;
+ usb_console_write("ERR help topic; use config, hybrid, peers, telemetry, safety or all");
+}
 const uwb_config_t *uwb_runtime_active(void) {return &active;}
 void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
@@ -178,8 +302,15 @@ static void show(const uwb_config_t *c,const char *label) {
 static void display_output(void) {
   if(!display) return;
   if(display==1) {
-    if(displayIndex>=sizeof(help)/sizeof(*help)) {display=0;return;}
-    if(usb_console_try_write(help[displayIndex])) displayIndex++;
+    const help_topic_t *topic=&helpTopics[helpPage];
+    if(displayIndex>=topic->count) {
+      if(helpAll&&helpPage+1<sizeof(helpTopics)/sizeof(*helpTopics)){helpPage++;displayIndex=0;}
+      else display=0;
+      return;
+    }
+    /* One bounded line per service call. Keep four queue slots available for
+     * errors/safety replies; never wait for CDC or change radio configuration. */
+    if(usb_console_write_slots()>4&&usb_console_try_write(topic->lines[displayIndex]))displayIndex++;
     return;
   }
   const uwb_config_t *c=&displayConfig;char text[320];
@@ -243,7 +374,7 @@ static bool number(const char *s,unsigned maximum,unsigned *out) {
 }
 static void peer_command(unsigned nt,char **t) {
   if(nt==1||(nt==2&&!strcmp(t[1],"help"))) {
-    reply("PEER LIST | STATS | ADD <id> | REMOVE <id> | ENABLE <id> | DISABLE <id> | INTERVAL <id> <250..60000>");return;
+    help_start("peers");return;
   }
   if(nt==2&&(!strcmp(t[1],"list")||!strcmp(t[1],"stats"))) {
     displayStats=!strcmp(t[1],"stats");
@@ -305,7 +436,11 @@ bool uwb_runtime_command(const char *line) {
     else {dropped=wifiDrops=accepted=0;highWater=count;wifiHigh=wifiCount;esp_link_reset_diagnostics();reply("DIAG counters reset; safety/session/transaction IDs unchanged");}
     return true;
   }
-  if(nt==1&&!strcmp(token[0],"help")) {display=1;displayIndex=0;return true;}
+  if(!strcmp(token[0],"help")) {
+    if(nt<=2)help_start(nt==2?token[1]:NULL);
+    else reply("ERR help [topic]; use config, hybrid, peers, telemetry, safety or all");
+    return true; /* Unknown topics must not fall through to robot safety dispatch. */
+  }
   if(strcmp(token[0],"cfg")&&strcmp(token[0],"tlm")) return false;
   if(!strcmp(token[0],"tlm")) {
     if(nt==2&&!strcmp(token[1],"next")) {
@@ -317,7 +452,7 @@ bool uwb_runtime_command(const char *line) {
     } else reply("ERR TLM NEXT | STATUS");
     return true;
   }
-  if(nt==1||(nt==2&&!strcmp(token[1],"help"))) {display=1;displayIndex=0;}
+  if(nt==1||(nt==2&&!strcmp(token[1],"help"))) {help_start("config");}
   else if((nt==2||nt==3)&&!strcmp(token[1],"show")) {
     if(nt==3&&!strcmp(token[2],"defaults")) {uwb_config_t factory;uwb_config_defaults(&factory);show(&factory,"FACTORY DEFAULTS (not changed)");}
     else if(nt==3&&!strcmp(token[2],"saved")) {

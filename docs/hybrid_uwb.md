@@ -477,3 +477,57 @@ complete/lost-stage TWR across native40-bit and HAL32-bit rollover, and genuine
 policy as the Universal CMake build rather than silently testing the v1 default.
 Physical validation of the corrected image remains pending. Ordinary hybrid must
 be NO_RATE once the relation is usable; hybrid_static remains stationary-only.
+
+### Corrected-image retest and help
+
+The capture-age correction is STM main8c5fdc5. Topic help is a separate subsequent
+commit; the latest Universal ELF contains both. LPS master3bbd324 and ESP main
+4ba4406 are unchanged by this follow-up; there is no wire-format extension or
+shared-core vendor update. The original user docs/mul_core.md formatting remains
+untouched. No hardware has been programmed or operated by the assistant.
+
+Source trace for propagation age: LPS src/mul_twr.c backdates measuredMs from the
+raw P2 receive marker when RESULT validates; mulTwrDelay carries that acquisition
+uptime. portable/mul_core/mul_relation.c queries mapping/delay at conservatively
+predicted follower TX uptime and publishes the resulting delayAgeMs. Thus4879ms
+belongs to the earlier TWR2905 acquisition at the follower's2910 publication,
+not receiver packet storage. The v2 decoder derives remaining1120ms using max6000
+and the reference/follower coordinate span, retaining its conservative guard.
+These values do not license the RLR to ignore its own invalid capture age.
+
+1. Build from epuck-stm32 with the Universal command at the top of this guide,
+   then cmake --build build/Universal. Program only
+   /home/derder/Documents/epuck-stm32/build/Universal/EPuck_STM32.elf yourself,
+   preserving sectors10/11 and saved calibrated peers/antenna settings. Both ALRs
+   can retain the working channel5/500ms images. Do not change antenna constants.
+2. In USB, try help; help hybrid; help config; cfg help; peer help; help all,
+   waiting for each response to finish. Expect a short overview and grouped topic
+   output. For robot stop/status use uppercase legacy commands as help safety says.
+3. cfg show; cfg set wifi off; cfg set verbosity quiet; cfg set mode hybrid.
+   Keep address0x8D, primary0x8E and enabled0x84/0x85 as currently configured.
+   No reset/defaults is required. Wait10s for acquisition.
+4. Capture30s of hybrid status, hybrid diag, hybrid frames every5s. Frame ages
+   should now be small valid millisecond ceilings, not uniformly65535. Associated
+   fresh valid relations should give last_status=1/no_rate. Optional verbosity
+   summary can show clock=1, rate=0 and unavailable metric TDoA. With a complete
+   five-frame reception, twr_inter_alr should increase; missed stages may still
+   produce missing_twr/timeout and must not fabricate a completion. Relation
+   validity must remain independent of that audit. Pair raw snapshots by their
+   decoded sequence/observed_ms, not by snapshot slot number.
+5. While receiving, run help all. Verify help completes and subsequent counters
+   show RX continuing; optional automatic UWB text should resume afterwards.
+   Retain any PHY/UART fault evidence. Existing298 PHY errors are not explained
+   away by this age fix. This first confirmation needs no new Wi-Fi capture,
+   motion, stationary-rate opt-in or physical calibration.
+
+Validation: before-fix real-contract mock fails the expected NO_RATE assertion;
+after-fix runtime/sanitizer suites pass. Added hardware-vector, reported v2 age,
+late capture, missing stage,40/32-bit rollover, relation expiry and help tests.
+Universal500, Hybrid50/10, legacy ADS initiator/responder, NormalBaseline and
+UwbOffSafe build; ELF configuration-sector checks pass. ESP transport/41 Python
+regressions pass with unchanged UWB3 layout. SPI/UART and UWB-only safety suites
+pass. Current Universal memory map uses36440B main RAM and122804B flash (static,
+not peak hardware measurements). Physical corrected-image acceptance, PHY delivery,
+intermittent valid-command routing and prior UART symptoms remain open. No further
+logs are needed to establish this identified software defect; the retest measures
+whether it resolves the hardware behavior. Broader checkpoint B–D remains deferred.

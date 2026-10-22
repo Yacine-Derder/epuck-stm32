@@ -89,7 +89,7 @@ void mul_hybrid_radio_process(void) {
        .referenceGeneration=out.referenceGeneration,.followerGeneration=out.followerGeneration,.ratePolicy=hybridConfig.mode==5,
        .radioErrors=hybridErrors};
      memcpy(record.legacyFrame,frame,bytes);uwb_runtime_publish(&record);
-     if(out.associated&&hybridConfig.verbosity) {
+     if(out.associated&&hybridConfig.verbosity&&!uwb_runtime_help_active()) {
        char line[192];snprintf(line,sizeof(line),"MULH OBS ref=%lu fol=%lu status=%u clock=%u rate=%u tdoa_dtu=%ld range_diff_mm=%ld power=UNSUPPORTED uncertainty=UNKNOWN",
        (unsigned long)out.observation.referenceSequence,(unsigned long)out.observation.followerSequence,out.observation.status,out.observation.clockValid,out.observation.rateState,(long)out.observation.tdoaDtu,(long)out.observation.rangeDifferenceMm);usb_console_write(line);
      }
@@ -103,7 +103,7 @@ void mul_hybrid_radio_process(void) {
    hybridLastReport=now;uint32_t t[4];mul_timing_snapshot(t);
    mulTelemetry_t r={.type=mulTlmSummary,.peer=0xff,.attempts=hybridReceiver.received,.completed=hybridReceiver.pairs,.rejected=hybridReceiver.rejected,
    .radioErrors=hybridErrors,.timeouts=hybridTimeouts,.spiCycles=t[0],.serviceCycles=t[1],.gapCycles=t[2],.clockHz=t[3]};uwb_runtime_publish(&r);
-   if(hybridConfig.verbosity){char line[320];mul_hybrid_radio_status(line,sizeof(line));usb_console_write(line);}
+   if(hybridConfig.verbosity&&!uwb_runtime_help_active()){char line[320];mul_hybrid_radio_status(line,sizeof(line));usb_console_write(line);}
  }
  mul_timing_service(started);
 }

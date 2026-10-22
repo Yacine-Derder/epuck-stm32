@@ -11,15 +11,21 @@ Completed/software tested: corrected adapter, real-contract mock, actual supplie
 raw C codec vectors,500ms pairing, reported v2 relation ages, wrap, missing TWR
 stages, late capture and expiration guards. Runtime tests now match6000ms firmware
 policy. No ALR/ESP/core protocol change; vendor pin remains LPS3bbd324.
-USB topic help cleanup is the next independent subtask; broader B–D remain deferred.
-Full root cause/vector interpretation: docs/hybrid_uwb.md final section.
+Capture-age fix pushed STM main8c5fdc5. Independent help cleanup is implemented:
+26-line overview, six detailed/all topics, legacy entry points/aliases, bounded
+backpressure pager, optional text suppression only. Real parser/pager/USB framing,
+read-only/mutation gates and concurrent passive RX are tested. Broader B–D remains
+deferred. Full root cause/raw-vector interpretation and exact retest are in
+docs/hybrid_uwb.md; help contract/routing evidence in docs/runtime_uwb.md.
 
-Remaining: complete/test/push concise topic help; physical retest of updated STM
-Universal ELF without changing ALRs or calibrated settings. Expect small valid
-capture ages, NO_RATE/clock=1 for valid pairs, TWR completion only when every stage
-was heard, and unchanged passive/safety behavior. User supplies hardware evidence;
-assistant must not flash. No physical fix/accuracy/UART-fault closure claimed.
-
+Validation: runtime/core sanitizer, real ADS/PHY/SPI/UART/safety suites; seven STM
+profiles and ELF reserved-sector checks; unchanged ESP transport/41 Python checks.
+Remaining: user physical retest of latest Universal ELF, settings/ALRs unchanged,
+small valid capture ages, clock=1/NO_RATE for fresh pairs, TWR completion only on
+complete listener history, RX continues through help. No physical fix/accuracy,
+PHY-delivery or UART-fault closure claimed. Valid cfg show misrouting is not
+reproduced; exact byte framing would be needed only if it recurs. No protocol or
+clock-freshness change beyond the shared invalid-age input correction is justified.
 
 ---
 

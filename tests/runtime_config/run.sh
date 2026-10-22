@@ -53,3 +53,11 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
  tests/runtime_config/test_hybrid.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c -lm -o "$work/hybrid"
 "$work/hybrid"
+
+cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -fsanitize=address,undefined -fno-pie -no-pie \
+ -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
+ -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
+ -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
+ tests/runtime_config/test_help.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c -lm -o "$work/help"
+"$work/help"
