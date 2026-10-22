@@ -531,3 +531,17 @@ not peak hardware measurements). Physical corrected-image acceptance, PHY delive
 intermittent valid-command routing and prior UART symptoms remain open. No further
 logs are needed to establish this identified software defect; the retest measures
 whether it resolves the hardware behavior. Broader checkpoint B–D remains deferred.
+
+## Checkpoint A physical acceptance of the original defect (user retest)
+
+The user retested STM mainf1047b3 (including8c5fdc5) with both DW1000 ALRs unchanged.
+last_status changed0→1 and stayed1; repeated observations showed clock=1; pairs
+rose0→27 and passive twr_inter_alr0→5. twr_reject stayed0 for the first26 pairs,
+then rose to3 with one TWR timeout and additional PHY errors. This physically
+validates correction of the original timestamp/clock-relation failure and proves
+successful passive reconstruction in that run. It does not establish loss-free
+radio delivery: intermittent TWR/PHY failures remain open. Receiver rate stayed
+UNKNOWN/rate0 and metric TDoA remained unavailable, as ordinary hybrid requires.
+No metric TDoA, moving-clock estimator, ranging accuracy or position was validated.
+The assistant did not flash or operate hardware. Checkpoint B now concerns passive
+moving-receiver feasibility; hybrid_static remains a stationary-only baseline.

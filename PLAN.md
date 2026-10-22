@@ -1,31 +1,20 @@
-# Current checkpoint A — capture-age correction and USB help
+# Current checkpoint B — moving receiver-rate feasibility
 
-User physical diagnostics and three pasted raw frames identify an adapter format
-bug: DW3000 SYS_TIME is four bytes bits39:8, previously decoded as five full bytes.
-The incorrect host mock hid it. Real-contract mock reproduces failure; correction
-reconstructs local40-bit time conservatively without increasing15ms threshold.
-The same invalid65535 age caused TWR capture_age and available-relation failures;
-no separate clock-model or wire-protocol change is justified.
+Checkpoint A original age/relation failure is physically accepted from the user's
+retest of STM f1047b3/8c5fdc5, ALRs unchanged: last_status0→1/stays1, clock1,
+pairs0→27, passive TWR0→5. After26 pairs, rejects0→3 with one timeout and PHY
+errors: residual delivery failures remain open. Rate UNKNOWN and metric TDoA NA
+are expected; neither metric TDoA nor accuracy/position is physically validated.
 
-Completed/software tested: corrected adapter, real-contract mock, actual supplied
-raw C codec vectors,500ms pairing, reported v2 relation ages, wrap, missing TWR
-stages, late capture and expiration guards. Runtime tests now match6000ms firmware
-policy. No ALR/ESP/core protocol change; vendor pin remains LPS3bbd324.
-Capture-age fix pushed STM main8c5fdc5. Independent help cleanup is implemented:
-26-line overview, six detailed/all topics, legacy entry points/aliases, bounded
-backpressure pager, optional text suppression only. Real parser/pager/USB framing,
-read-only/mutation gates and concurrent passive RX are tested. Broader B–D remains
-deferred. Full root cause/raw-vector interpretation and exact retest are in
-docs/hybrid_uwb.md; help contract/routing evidence in docs/runtime_uwb.md.
-
-Validation: runtime/core sanitizer, real ADS/PHY/SPI/UART/safety suites; seven STM
-profiles and ELF reserved-sector checks; unchanged ESP transport/41 Python checks.
-Remaining: user physical retest of latest Universal ELF, settings/ALRs unchanged,
-small valid capture ages, clock=1/NO_RATE for fresh pairs, TWR completion only on
-complete listener history, RX continues through help. No physical fix/accuracy,
-PHY-delivery or UART-fault closure claimed. Valid cfg show misrouting is not
-reproduced; exact byte framing would be needed only if it recurs. No protocol or
-clock-freshness change beyond the shared invalid-age input correction is justified.
+B: analyze clock drift versus receiver motion before implementing a rate estimator.
+Existing two-ALR cadence does not uniquely identify both. Keep hybrid NO_RATE,
+hybrid_static stationary-only, strictly passive RX, current wire/config/safety.
+Investigate conditional interval estimation with explicit speed, measurement and
+within-window clock-variation assumptions; missing bounds must fail closed.
+Record deterministic ambiguity and geometry tests before hardware conclusions.
+C roles/addresses and D broader command refactors remain deferred by user request.
+Canonical core pin3bbd324; ESP main4ba4406; STM mainf1047b3 before this checkpoint.
+Details/evidence: docs/hybrid_uwb.md. No hardware flashing is authorized.
 
 ---
 
