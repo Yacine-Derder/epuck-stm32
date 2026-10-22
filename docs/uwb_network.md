@@ -352,3 +352,12 @@ commits, rebuilt in temporary worktrees with the same flags; no physical flashin
 The new beacon radio owner is STM32-only. Canonical codecs support radio1/2 and
 are covered by host compatibility fixtures; a new DW1000 beacon-mode adapter is
 not implemented. Existing mixed ADS and Bitcraze TDoA modes remain the DW1000 path.
+
+
+For a passive DWM3000 RLR in the original custom DW1000 TDMA network, use
+[hybrid_uwb.md](hybrid_uwb.md). That mode reuses the existing protocol and needs
+matching custom channel5 ALR builds. UWB3 carries raw legacy frames; the existing
+UWB2 layouts and experimental0x75 modes remain supported. Hybrid replay/localization
+and scoped Universal UART/SPI hardening are separate from the original standalone
+ADS/beacon workflow described above. The newer guide records current resources
+and preserves historical UART evidence; no hardware resolution is claimed.

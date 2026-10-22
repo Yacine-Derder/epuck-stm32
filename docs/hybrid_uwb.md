@@ -263,3 +263,50 @@ Do not call either historical UART symptom resolved until repeated physical runs
 show stable sessions and quantified error/drop/timing behavior on both boards.
 Stop the campaign on wrong associations, accepted bad CRC, unexpected RF TX from
 an RLR, invalid positions from insufficient geometry or unsafe motor state.
+
+## Validated software envelope and artifacts
+
+Passing automated checks: shared portable sanitizer suites (including hybrid at
+all500/50/10ms),195 LPS Unity tests,178 MUL sanitizer tests at each of those slots,
+DW1000 actual-driver ADS/PHY/profile contracts,20 existing Python ADS analysis
+checks, STM32 runtime/persistence/flash-power-cut/USB/ADS/diagnostic/PHY/safety/UART
+suites, nine coexistence simulations, actual SPI/IRQ fault/preemption tests, and
+ESP transport plus41 Python tests. Tests include full C encoder→collector→shared
+receiver replay→guarded position output, synthetic ground-truth localization,
+wrong/stale epochs, generation changes, CRC precedence, no-RLR-TX, timeout/fault
+recovery, calibration preservation and geometry/constraint independence rejection.
+
+Builds pass for STM32 Universal500 and additional Hybrid50/Hybrid10 images, legacy
+ADS initiator/responder, NormalBaseline and UwbOffSafe. All seven ELF load segments
+stay outside reserved configuration sectors. ESP32-S3 ESP-IDF6.1 builds. LPS clean
+channel5 custom builds at500/50/10ms, legacy ADS roles and default build pass; default
+bin/lps-node-firmware.elf is restored after saving the opt-in artifacts below.
+Existing vendor unused-function/maybe-uninitialized, legacy text truncation and
+newlib/syscall warnings remain visible; software tests do not measure physical
+stack high-water, radio accuracy or deadline compliance.
+
+Paths (relative to their repository):
+
+- STM32: build/Universal/EPuck_STM32.elf (slot500),
+  build/Hybrid50/EPuck_STM32.elf, build/Hybrid10/EPuck_STM32.elf.
+- LPS: bin/hybrid500/lps-node-firmware.elf and .dfu; likewise hybrid50/hybrid10.
+  These are the custom channel5 images. The default top-level bin artifact remains
+  the unchanged default channel2 profile; do not confuse it with the opt-in image.
+- ESP32: build/comm_with_stm32.elf and .bin; build/bootloader/bootloader.bin and
+  build/partition_table/partition-table.bin. Existing provisioning is retained.
+
+Resource comparison against the prior untethered milestone (same Release/trace
+flags for STM32): Universal text/data/BSS105928/768/34680→115208/768/35248B;
+text+data flash+9280B, static RAM+568B (36016B total main RAM; CCM unused).
+LPS default remains123024/1072/15292B. Opt-in channel5 slot500 is123408/1072/15292B
+(+384B text), slot50/10 text123368B. ESP application .bin815664→816080B at the
+validated build. Static sizes are not peak stack/heap or physical timing evidence.
+
+Current source checkpoint hashes are in each repository's Git history and LPS
+PLAN.md. Both firmware vendor snapshots pin the same canonical core revision,
+verified by ThirdParty/mul_core/verify.py; builds/replay require no sibling checkout
+or fetch. No central project document, calibration flash, dsPIC firmware or physical
+robot was modified by the assistant. User-supplied local mul_core.md formatting is
+left untouched. Physical acceptance, receiver-rate observability during motion,
+additional independent localization geometry and publication-grade accuracy remain
+open; this software checkpoint does not close prior hardware gates.
