@@ -38,7 +38,7 @@ For the STM32 RLR, one command at a time after the existing safety grace/ACKs:
 CFG SET mode off
 CFG SET address 0x21
 CFG SET role responder
-CFG SET peer 0x84
+PEER ADD 0x84
 PEER ADD 0x85
 CFG SET wifi on
 CFG SET telemetry on
@@ -47,8 +47,11 @@ HYBRID STATUS
 CFG SHOW
 ```
 
-Existing saved peers may already include0x85: inspect PEER LIST rather than
-resetting settings. The complete configuration is validated before a save;
+Existing saved peers may already include these ALRs: inspect PEER LIST rather
+than resetting settings. Keep the existing primary ADS peer and calibration; ADD
+the ALRs instead of replacing the primary with CFG SET peer. A full table needs
+unneeded non-primary entries removed first. Changing/removing the primary would
+correctly disable its pair-specific calibration, so avoid that for passive setup. The complete configuration is validated before a save;
 hybrid requires both legacy ALR peers enabled and an RLR identity distinct from
 the ALRs. Extra configured peers are retained but the legacy wire roster remains
 unchanged. `mode hybrid` retains the original UNKNOWN receiver-rate policy:

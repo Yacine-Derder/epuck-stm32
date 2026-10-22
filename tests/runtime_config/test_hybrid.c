@@ -6,7 +6,8 @@ static void hybrid_frame(const uint8_t *frame,unsigned n,uint64_t rx) {
 int main(void) {
  memset(nv,255,sizeof(nv));tick=0;uwb_runtime_init();command("CFG SET address 0x21");
  unsigned writes=nvWrites;command("CFG SET mode hybrid");assert(nvWrites==writes&&active.mode==0);
- command("CFG SET peer 0x84");command("PEER ADD 0x85");command("CFG SET verbosity quiet");command("CFG SET correction_mm -99");command("CFG SET calibration on");
+ command("CFG SET correction_mm -99");command("CFG SET calibration on");
+ command("PEER ADD 0x84");command("PEER ADD 0x85");command("CFG SET verbosity quiet");assert(active.peer==1&&active.calibration==1);
  command("CFG SET wifi on");command("CFG SET telemetry on");command("CFG SET mode hybrid");assert(active.mode==4&&config.calibration==1);persisted();
  unsigned transmitted=starts;uint8_t frame[84];
  const uint8_t ref[8]={0x84,0,0,0,0,0,0xcf,0xbc},fol[8]={0x85,0,0,0,0,0,0xcf,0xbc};
