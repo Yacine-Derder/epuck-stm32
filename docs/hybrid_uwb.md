@@ -32,7 +32,8 @@ algorithm, alter TDMA, packet bytes or EEPROM. Default builds retain channel2.
 ALR modes/IDs are still configured with the existing USB menu (mode5, ID132/133).
 No assistant flashing is authorized. Preserve calibration/configuration sectors.
 
-For the STM32 RLR, one command at a time after the existing safety grace/ACKs:
+For the STM32 RLR, one command at a time after the existing safety grace/ACKs.
+Keep an existing unique RLR address if already provisioned;0x21 is an example:
 
 ```text
 CFG SET mode off
@@ -81,7 +82,8 @@ policy. The ALR follower epoch is acquisition-local, never a global boot UUID.
 Summaries retain full queue/UART/PHY/timing diagnostics. Raw records need telemetry
 ON; they are not gated by samples, because offline replay requires all exchanges.
 
-HYBRID STATUS reports received/rejected frames, pairs, current status, observed
+HYBRID STATUS reports received/rejected frames, pairs, last observation status,
+reference/follower freshness, observed
 inter-ALR TWR completions/rejections/timeouts and radio faults. DIAG RESET clears
 only diagnostics, preserving protocol ordering, model/safety state and settings.
 The mode has no TX operation; multiple RLRs add no airtime. Lost relations are not
@@ -299,8 +301,8 @@ Paths (relative to their repository):
   build/partition_table/partition-table.bin. Existing provisioning is retained.
 
 Resource comparison against the prior untethered milestone (same Release/trace
-flags for STM32): Universal text/data/BSS105928/768/34680→115208/768/35248B;
-text+data flash+9280B, static RAM+568B (36016B total main RAM; CCM unused).
+flags for STM32): Universal text/data/BSS105928/768/34680→115268/768/35248B;
+text+data flash+9340B, static RAM+568B (36016B total main RAM; CCM unused).
 LPS default remains123024/1072/15292B. Opt-in channel5 slot500 is123408/1072/15292B
 (+384B text), slot50/10 text123368B. ESP application .bin815664→816080B at the
 validated build. Static sizes are not peak stack/heap or physical timing evidence.

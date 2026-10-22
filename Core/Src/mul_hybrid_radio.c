@@ -24,9 +24,9 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
 }
 void mul_hybrid_radio_status(char *line,size_t capacity) {
- snprintf(line,capacity,"HYBRID passive=1 slot_ms=%u rate=%s rx=%lu reject=%lu pairs=%lu status=%u twr_inter_alr=%lu twr_reject=%lu twr_timeout=%lu phy=%lu timeout=%lu",
+ snprintf(line,capacity,"HYBRID passive=1 slot_ms=%u rate=%s rx=%lu reject=%lu pairs=%lu last_status=%u ref_fresh=%u fol_fresh=%u twr_inter_alr=%lu twr_reject=%lu twr_timeout=%lu phy=%lu timeout=%lu",
  MUL_FOLLOWER_SLOT_MS,hybridConfig.mode==5?"STATIONARY_OPT_IN":"UNKNOWN",(unsigned long)hybridReceiver.received,(unsigned long)hybridReceiver.rejected,
- (unsigned long)hybridReceiver.pairs,hybridLastStatus,(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts);
+ (unsigned long)hybridReceiver.pairs,hybridLastStatus,mulObservationFresh(&hybridReceiver.observations[mulAlrReference],HAL_GetTick()),mulObservationFresh(&hybridReceiver.observations[mulAlrFollower],HAL_GetTick()),(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts);
 }
 bool mul_hybrid_radio_reset_stats(void) {
  if(hybridReceiver.twrActive)return false;

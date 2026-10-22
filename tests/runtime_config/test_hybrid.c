@@ -32,7 +32,7 @@ int main(void) {
  unsigned received=hybridReceiver.received;status=DWT_INT_RXFCG_BIT_MASK|DWT_INT_RXFCE_BIT_MASK;step();assert(hybridReceiver.received==received&&hybridErrors==1);
  tick+=3001;step();assert(!hybridReceiver.rate.hasBaseline&&!hybridReceiver.association.pending);
  writes=nvWrites;command("PEER DISABLE 0x84");assert(nvWrites==writes);command("CFG SET role initiator");assert(nvWrites==writes);
- command("HYBRID STATUS");assert(strstr(captured,"passive=1"));
+ captured[0]=0;command("HYBRID STATUS");assert(strstr(captured,"passive=1")&&strstr(captured,"last_status=")&&strstr(captured,"ref_fresh=0")&&strstr(captured,"fol_fresh=0"));
  command("DIAG RESET");assert(!hybridErrors&&active.calibration==1);uwb_runtime_init();assert(active.mode==5&&active.correction_mm==-99&&active.calibration==1);persisted();
  command("CFG SET mode off");assert(!started&&!mockRadioActive);
  puts("DWM3000 hybrid adapter: strict legacy frames/full RX, no-TX guarantee, original rate policy, CRC precedence, loss, durable configuration/calibration and bounded telemetry passed");return 0;
