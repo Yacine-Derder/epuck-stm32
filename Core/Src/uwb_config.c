@@ -51,10 +51,10 @@ const char *uwb_config_validate(const uwb_config_t *c) {
     for(unsigned j=0;j<i;j++)if(p->address==c->peers[j].address)return "duplicate peer";
   }
   if(c->mode>=4) {
-    uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[2]={false,false};
+    uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[MUL_ALR_COUNT]={false};
     if(c->role!=2||mulAlrRoleForAddress(local)!=mulAlrUnsupported)return "hybrid requires passive responder role and an RLR address distinct from ALRs";
-    for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulAlrRoleForAddress(id);if(r>=0&&r<2)roles[r]=true;}
-    if(!roles[0]||!roles[1])return "hybrid requires enabled reference/follower ALR peers; PEER ADD 0x84 and 0x85";
+    for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulAlrRoleForAddress(id);if(r>=0&&(unsigned)r<MUL_ALR_COUNT)roles[r]=true;}
+    for(unsigned i=0;i<MUL_ALR_COUNT;i++)if(!roles[i])return "hybrid requires enabled legacy ALR peers; PEER ADD 0x84 and 0x85";
   }
   return NULL;
 }
