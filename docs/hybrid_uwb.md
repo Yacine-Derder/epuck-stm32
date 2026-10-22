@@ -315,3 +315,93 @@ robot was modified by the assistant. User-supplied local mul_core.md formatting 
 left untouched. Physical acceptance, receiver-rate observability during motion,
 additional independent localization geometry and publication-grade accuracy remain
 open; this software checkpoint does not close prior hardware gates.
+
+## Reception investigation: targeted evidence gate (2026-10-22)
+
+The new user-reported channel5/slot500 run demonstrates DW1000→DWM3000 reception,
+association and successful inter-ALR TWR (~0.53–0.60m reported, no surveyed truth).
+It does not establish a complete passive exchange or valid transported relation:
+`rx=187 reject=65 pairs=58 twr_inter_alr=0 twr_reject=56 phy=33`, with every
+reported observation `status=0 clock=0 rate=0`. UNKNOWN receiver rate is expected
+in hybrid, but cannot explain clock=0: a valid model would yield clock=1/NO_RATE.
+
+Inspection: the shared PHY explicitly calls dwt_configureframefilter(0,0), so no
+configured hardware destination filter deliberately excludes directed ALR packets.
+The software accepts enabled ALR sources without requiring the destination to be
+the RLR. The five-frame TWR audit requires a fresh reference, matching transaction,
+600–800ms local reception window, POLL plus each next stage, unchanged timestamp/
+power prefixes, bounded report/result intervals and a matching recomputed ToF.
+Previously every failure in those checks (or capture age>15ms) incremented the
+same twr_reject counter; malformed codec/address failures incremented reject.
+The follower's 74-byte published relation is consumed independently. Successful
+ALR TWR does not prove the passive RLR heard all five messages, nor that the next
+follower publication contained a usable relation. No failing raw packet was
+supplied. No exact physical root cause is established yet.
+
+The canonical diagnostic checkpoint is LPS3bbd324b3f5329e5cdc1e50cdce0b78b51054bce.
+It adds counters only: packet bytes, ALR firmware behavior, timestamp arithmetic,
+validation gates, UNKNOWN/static rate policy and UWB3 layouts are unchanged. Both
+consumer snapshots use this pin. Complete exchanges and the actual ALR v2 relation
+publisher/codec pass rollover tests at all500/50/10ms. Missing/reordered components,
+changed prefixes, wrong addresses, missing reference, late capture and invalid
+relation are rejected with distinct evidence; no missing stamps are synthesized.
+
+Read-only case-insensitive USB commands (documented lowercase):
+
+- `hybrid status`: existing summary; last_status=0 means NO_RELATION,1 means NO_RATE,
+  4 means AVAILABLE. Read current freshness separately from last observation.
+- `hybrid diag`: three bounded lines: decoded POLL/RESPONSE/FINAL/REPORT/RESULT
+  counts, total/available decoded relation publications, last diagnostic type/ID/
+  prior stage, and reason counters plus the last accepted follower relation ages.
+  `missing_twr` means no active prior state or an unexpected stage: it includes
+  loss/reordering/duplicates, and does not alone prove RF packet loss. `decode`
+  includes invalid packet type/version/metadata. missing_relation counts unavailable
+  publications on associated pairs; stale_relation counts failed binding/age/
+  conversion of a publication marked available. Counters may overlap; they are
+  not independent loss denominators. Decoded frame counts include duplicates.
+- `hybrid frames`: exactly three bounded on-demand records, slots0/1/2 for the
+  last physically captured34/74/84-byte frame. Each includes RX40, hardware
+  capture-to-service age, coarse observed_ms, length and complete uppercase hex.
+  Each slot is independent, not necessarily one coherent exchange; observed_ms
+  and wire sequences identify this. Even codec-rejected shaped frames are retained.
+  Hardware CRC/error events do not replace these snapshots. No continuous trace,
+  dynamic allocation, automatic extra serial output or radio TX is introduced.
+- `diag reset`: existing idle-only counter reset. Protocol/rate/sequence state,
+  settings and frame snapshots remain unchanged. last model/freshness are not
+  diagnostic counters and may predate a reset.
+
+**Smallest next capture, before checkpoint B/C/D:** leave both ALRs on their
+currently working channel5/500ms images. Only the STM32 diagnostic image needs
+programming; do not mass-erase configuration sectors10/11. Use
+`build/Universal/EPuck_STM32.elf` with the build command at the top of this guide.
+Keep node0x8D, both ALR peers and primary/calibration settings unchanged. Confirm
+`cfg show`, then `cfg set wifi off`, `cfg set verbosity quiet`,
+`cfg set mode hybrid`. Wait10s for normal acquisition. Capture the complete USB
+response to `hybrid status`, `hybrid diag`, `hybrid frames`, then repeat that
+three-command group every5s for30s (one command at a time, let output drain).
+Do not reset counters between groups. Include matching30s serial logs from both
+ALRs with their boot/PHY/slot banners and TX/CLOCK/SYNC/TWR lines. Ground-truth
+separation is welcome but unnecessary to diagnose reconstruction. No movement,
+antenna tuning, hybrid_static or Wi-Fi capture is needed for this first test.
+
+Expected **if healthy**, not claimed observed: both source freshness flags1,
+growing relation available count and hybrid status last_status=1 (NO_RATE),
+and twr_inter_alr growing only when all five valid directed packets were heard.
+If verbosity is temporarily enabled, associated MULH OBS should show clock=1/
+status=1/rate=0. Quiet mode deliberately emits no automatic OBS lines.
+TDoA/range_difference remain INT32_MIN/NA in ordinary hybrid. A missing TWR audit
+must not by itself invalidate an otherwise fresh valid publication. If available
+remains0, the raw follower publication shows whether the ALR sent unavailable
+state or decoding rejected it. If available grows but clock stays0, the model
+reason counters and raw paired sequences/ages locate the failing binding. Unequal
+TWR type counts and missing_twr identify incomplete listener history; prefix,
+timestamp/arithmetic or capture_age identify different validation failures.
+
+Software checks for this checkpoint: portable sanitizer suites/all three slots;
+195 Unity and178 MUL sanitizer tests per slot; default LPS build; STM32 runtime/
+persistence/USB/ADS/beacon/hybrid/no-TX and bounded diagnostics tests; Universal
+build and reserved-sector ELF check; ESP transport/41 Python tests and ESP-IDF
+build; both vendor manifests verified. Hardware failure is **not fixed or accepted**.
+Checkpoint A investigation awaits this capture. B signed-geometry expansion,
+C independent persistent role/address and D command unification have not begun.
+The existing original configuration commands remain authoritative meanwhile.

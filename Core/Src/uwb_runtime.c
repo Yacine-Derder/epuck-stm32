@@ -33,7 +33,7 @@ static bool displayBoot;
 static uint32_t displayGeneration;
 static bool displayStats;
 static const char *const help[]={
-  "HYBRID STATUS; SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
+  "HYBRID STATUS / DIAG / FRAMES; SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
   "CFG SET <field> <value>; all fields persistent; every changed field restarts UWB",
   "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
   "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
@@ -283,9 +283,17 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
-  if(nt==2&&!strcmp(token[0],"hybrid")&&!strcmp(token[1],"status")) {
+  if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames"))) {
     if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
-    else {char text[320];mul_hybrid_radio_status(text,sizeof(text));reply(text);}return true;
+    else {
+      char text[384];
+      if(!strcmp(token[1],"status")){mul_hybrid_radio_status(text,sizeof(text));reply(text);}
+      else for(unsigned i=0;i<3;i++) {
+        if(!strcmp(token[1],"diag"))mul_hybrid_radio_diagnostics(i,text,sizeof(text));
+        else mul_hybrid_radio_frame(i,text,sizeof(text));
+        reply(text);
+      }
+    }return true;
   }
   if(nt==2&&!strcmp(token[0],"sync")&&!strcmp(token[1],"status")) {
     if(!started||active.mode!=3)reply("SYNC UNKNOWN; select mode listen for apparent arrival models");

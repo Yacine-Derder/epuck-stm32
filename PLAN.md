@@ -1,3 +1,40 @@
+# Current heterogeneous reception goal — checkpoint A evidence gate
+
+The user-reported channel5/500ms test receives/pairs both ALRs but reports
+clock=0/status=NO_RELATION, no complete passive TWR and56 aggregate TWR rejects.
+ALR TX delta0 and directed TWR completion are demonstrated by user output; no
+surveyed ranging accuracy or passive reconstruction is established.
+
+Completed: traced PHY/filtering, addressed codec/40-bit capture, staged TWR and
+independent follower-relation consumption. Added reason/type/model counters and
+bounded read-only `hybrid diag` / `hybrid frames` evidence commands. No protocol,
+scheduler, validation or radio behavior change; no purported RF fix. Canonical
+core diagnostic pin: LPS master3bbd324b3f5329e5cdc1e50cdce0b78b51054bce; STM/ESP
+ESP main4ba4406 (capture/replay pin); STM implementation is this checkpoint.
+Both consumer manifests verify the canonical pin; Git history identifies the
+corresponding STM implementation commit.
+
+Verified: portable sanitizer suites/500/50/10;195 Unity +178 MUL sanitizer tests
+per slot; real ALR v2 publisher→codec/inverse across rollover; complete/lost/
+reordered/wrong-address/stale cases; STM runtime/config/calibration/safety/no-TX/
+diagnostic queue bounds, Universal firmware/ELF-sector checks; ESP host41 Python
+checks/transport and ESP-IDF firmware. Default LPS build passes. Unrelated user
+LPS docs/mul_core.md formatting remains untouched. No hardware flashed.
+
+Open: no raw failing packet or per-reason diagnostics yet identifies the physical
+root cause. Frame filtering is disabled; missing passive five-frame TWR history
+must not be confused with unavailable transported relation or receiver rate.
+Next: user programs only STM build/Universal/EPuck_STM32.elf, preserving settings,
+leaves ALRs unchanged, captures30s of `hybrid status`, `hybrid diag`, `hybrid frames`
+every5s after10s warmup in quiet/hybrid/Wi-Fi-off mode, plus matching ALR logs.
+Exact procedure, expected NO_RATE and interpretation: docs/hybrid_uwb.md final
+section. Then reproduce the observed failing branch, make the smallest tested
+fix and push checkpoint A before beginning B. B synthetic signed TDoA validation,
+C independent persistent roles/addresses, D unified commands/CFG SHOW routing
+remain pending. No physical acceptance or UART-fault closure claimed.
+
+---
+
 # MUL STM32 development
 
 ## Verified baseline

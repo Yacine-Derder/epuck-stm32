@@ -33,6 +33,24 @@ int main(void) {
  tick+=3001;step();assert(!hybridReceiver.rate.hasBaseline&&!hybridReceiver.association.pending);
  writes=nvWrites;command("PEER DISABLE 0x84");assert(nvWrites==writes);command("CFG SET role initiator");assert(nvWrites==writes);
  captured[0]=0;command("HYBRID STATUS");assert(strstr(captured,"passive=1")&&strstr(captured,"last_status=")&&strstr(captured,"ref_fresh=0")&&strstr(captured,"fol_fresh=0"));
+ writes=nvWrites;
+ char diagnostic[384];
+ for(unsigned page=0;page<3;page++) {
+   mul_hybrid_radio_diagnostics(page,diagnostic,sizeof(diagnostic));assert(strlen(diagnostic)<317);
+   mul_hybrid_radio_frame(page,diagnostic,sizeof(diagnostic));assert(strlen(diagnostic)<317);
+ }
+ /* All new diagnostic lines must fit the existing USB queue even when
+  * counters have grown to their full width; no queue-size increase. */
+ mulHybridDiagnostics_t before=hybridReceiver.diagnostics;
+ for(unsigned i=0;i<mulHybridReasonCount;i++)hybridReceiver.diagnostics.reason[i]=UINT32_MAX;
+ for(unsigned i=0;i<5;i++)hybridReceiver.diagnostics.twrFrames[i]=UINT32_MAX;
+ hybridReceiver.diagnostics.relations=hybridReceiver.diagnostics.availableRelations=UINT32_MAX;
+ hybridReceiver.diagnostics.lastId=UINT32_MAX;
+ for(unsigned page=0;page<3;page++){mul_hybrid_radio_diagnostics(page,diagnostic,sizeof(diagnostic));assert(strlen(diagnostic)<317);}
+ hybridReceiver.diagnostics=before;
+ captured[0]=0;command("hybrid diag");assert(strstr(captured,"MULH DIAG")&&strstr(captured,"MULH REJECT")&&strstr(captured,"MULH MODEL"));
+ captured[0]=0;command("hybrid frames");assert(strstr(captured,"slot=0")&&strstr(captured,"slot=1")&&strstr(captured,"frame="));
+ assert(starts==transmitted&&nvWrites==writes);
  command("DIAG RESET");assert(!hybridErrors&&active.calibration==1);uwb_runtime_init();assert(active.mode==5&&active.correction_mm==-99&&active.calibration==1);persisted();
  command("CFG SET mode off");assert(!started&&!mockRadioActive);
  puts("DWM3000 hybrid adapter: strict legacy frames/full RX, no-TX guarantee, original rate policy, CRC precedence, loss, durable configuration/calibration and bounded telemetry passed");return 0;
