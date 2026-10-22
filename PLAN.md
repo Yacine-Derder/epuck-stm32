@@ -37,8 +37,14 @@ metric estimator is admitted. hybrid_static remains the stationary baseline.
 - ESP df5dfc5 tools/uwb_frequency.py decodes snapshots and compares explicit synthetic
   Doppler/frequency/holdover scenarios at500/50/10ms. No numerical hardware prior.
 - Actual vendor decoder/all8192 COE codes, passive adapter guards, runtime/help,
-  safety/ADS/PHY/SPI/ESP-link suites and all59 host tests pass. Universal and optional
+  safety/ADS/PHY/SPI/ESP-link suites and all60 host tests pass. Universal and optional
   HybridFrequency build and respect reserved flash sectors. No devices flashed.
+
+- ESP 7acd93f closes a full-wire coverage gap:36 synthetic stationary geometry /
+  unknown-rate scenarios at500/50/10ms, signed/zero range difference, independent
+  receiver/follower skew and native receiver40-bit wrap. All60 host tests pass;
+  stationary results match truth within3 DTU, ordinary hybrid stays NO_RATE.
+  This does not admit an unbounded moving estimator or validate hardware accuracy.
 
 Next: choose and justify an independent path-rate constraint, an observable
 encoder/relative-mapping model, or explicit motion/clock/metrology bounds before

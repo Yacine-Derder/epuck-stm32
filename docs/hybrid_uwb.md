@@ -674,3 +674,13 @@ HybridFrequency RAM36488/FLASH123480. Driver test compilation reports existing
 vendor warnings in unrelated functions; those functions are not modified. Neither
 software tests nor build sizes establish physical latency or frequency accuracy.
 Canonical shared-core/vendor manifests remain unchanged. C/D remain deferred.
+
+
+Checkpoint B coverage follow-up: ESP7acd93f adds36 complete C-wire→UWB3 collector→
+shared-receiver/replay scenarios, using independent Euclidean stationary geometry
+for positive/negative/zero difference at500/50/10ms. Receiver/follower skews vary
+independently, native receiver40-bit rollover is exercised, each stationary case
+produces six observations within3 DTU of truth, and ordinary hybrid produces no
+metric measurement. All60 host tests pass. This closes test coverage, not the
+moving-rate physical/observability gate. Only host fixtures/tests/documentation
+changed; STM/DW firmware and shared-core pins are unchanged in this follow-up.
