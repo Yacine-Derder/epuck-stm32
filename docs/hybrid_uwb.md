@@ -405,3 +405,75 @@ build; both vendor manifests verified. Hardware failure is **not fixed or accept
 Checkpoint A investigation awaits this capture. B signed-geometry expansion,
 C independent persistent role/address and D command unification have not begun.
 The existing original configuration commands remain authoritative meanwhile.
+
+## Capture-age correction after the physical diagnostic run
+
+This supersedes the earlier evidence gate. User-supplied counters identify245/245
+TWR audit rejects as capture_age, with all shape/address/decoder/stage/math counters
+zero,242 available relation publications and208 failed relation checks. All retained
+frame ages are65535. These are user hardware observations, not assistant tests.
+
+Root cause: bundled driver deca_device_api.h documents dwt_readsystime as FOUR
+bytes; dw3000_device.c ull_readsystime reads SYS_TIME_LEN=4, containing bits39:8.
+The adapter mistakenly allocated hardware[5] and mulDecodeTimestamp treated it as
+a full40-bit timestamp, leaving byte4 uninitialized and using the wrong scale.
+The original host mock also incorrectly wrote five full-resolution bytes, hiding
+the defect. Changing only that mock to the real four-byte contract reproduces the
+NO_RELATION failure before the production correction.
+
+Core/Src/mul_hybrid_radio.c now reconstructs bits39:8 into the local40-bit domain.
+The unavailable low8 bits are set to255, the upper edge of the quantization bin,
+so the subsequent millisecond ceiling remains conservative (<=255DTU resolution
+allowance, not an empirical timing correction). Native RX40 is unchanged; signed
+modular subtraction handles rollover before checking the original0..15ms gate.
+65535 is the invalid-age sentinel, not an actual65.535s retention time. The same
+value enters both the diagnostic frame output and protocol checks: it is not just
+a display fault. Genuine negative/late captures still reject; no timeout increased.
+
+The500ms follower slot separates two RF receptions. Capture age measures each
+packet's own RX-to-service latency, not that separation. TWR occupies650..800ms;
+its POLL→RESULT progression is~80ms, below the separate200ms observer timeout.
+No queue or USB wait is involved before age capture/rearm. nowMs is local HAL uptime
+used with unsigned subtraction for coarse age/expiry, while system/RX subtraction
+uses the same native DW3000 clock. Epochs and ALR clocks are not substituted.
+
+stale_relation is independently incremented when an associated publication marked
+available fails mulDownlinkRelation. That function first rejects captureAgeMs>15,
+then checks source identity, receiver domain, exact reference sequence/TX origin,
+source freshness, remaining horizon, inverse mapping and configured slot range.
+The relation's available bit is the follower's transmitter-side statement, not an
+override of local capture validation. Hence available=1/remaining1120 can coexist
+with65535-driven failure. No independent clock-freshness change is justified: the
+single adapter fix repairs the shared input to two independent validation paths.
+Missing passive TWR components do not invalidate a valid published relation.
+
+The three pasted raw snapshots were decoded with the actual C codecs and are
+retained as explicit regression vectors in tests/runtime_config/hybrid_vectors.h:
+
+|Snapshot|Actual decoded meaning|
+|---|---|
+|slot0, RX B8D2B3515F,324487ms|REF0x84 seq2911, TX33CF7F08A2|
+|slot1, RX B1626242AD,323987ms|FOLLOWER0x85 own seq2894, TX F8F1D590A2, reference2910, TWR2905, epoch1|
+|slot1 relation|v2,1989ppb, reference origin24EEE708A2, follower origin F181898F88, origin age502ms, propagation age4879ms,126DTU, reused, max6000ms, remaining1120ms|
+|slot2, RX B4CE5F1003,324217ms|RESULT0x84→0x85 id2910, TX2FCB2CFCA2, encoded corrected ToF132DTU|
+
+The RESULT carries P1..P6:2E9A7D08A2,FB2D20D31F,FB794CD4A2,2EE6A90136,
+2F32D502A2,FBC578E10C. Recomputed raw114DTU/corrected132DTU matches its encoded
+132. Its DW1000 RX-owned power deltas are18/17/18DTU (table2, applied); no DWM3000
+power correction is introduced. These computed values are not surveyed accuracy.
+The follower inverse maps TX to reference2C5F321182,499.999009916ms after reference
+2910. The next reference TX is exactly1s after its carried origin. The newest REF
+RX is500.005187ms after follower RX; RESULT is270.002313ms before that newer REF,
+consistent with the prior superframe's~730ms RESULT. Snapshot slots are independent:
+reference2910's RLR RX and earlier TWR components are absent, so these three frames
+alone cannot establish geometric TDoA or a complete passive exchange. Increasing
+five aggregate type counters does not prove one transaction was received intact.
+No additional logs are indispensable to identify/fix this driver-contract bug.
+
+Regression coverage includes the corrected four-byte mock, actual hardware vectors,
+500ms pairing and reported4879/1120ms model, valid/expired/wrong-sequence bindings,
+complete/lost-stage TWR across native40-bit and HAL32-bit rollover, and genuine
+20ms RX service rejection. The runtime harness now uses the same6000ms propagation
+policy as the Universal CMake build rather than silently testing the v1 default.
+Physical validation of the corrected image remains pending. Ordinary hybrid must
+be NO_RATE once the relation is usable; hybrid_static remains stationary-only.

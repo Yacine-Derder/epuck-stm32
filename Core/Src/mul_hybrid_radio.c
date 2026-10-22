@@ -60,11 +60,17 @@ void mul_hybrid_radio_process(void) {
  uint32_t status=dwt_readsysstatuslo();
  if(status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)) {hybridErrors++;hybridRearm();}
  else if(status&DWT_INT_RXFCG_BIT_MASK) {
-   uint8_t frame[84],raw[5],hardware[5];unsigned bytes=dwt_read_reg(RX_FINFO_ID)&RX_FINFO_RXFLEN_BIT_MASK;
+   uint8_t frame[84],raw[5],hardware[4];unsigned bytes=dwt_read_reg(RX_FINFO_ID)&RX_FINFO_RXFLEN_BIT_MASK;
    bool shape=bytes==36||bytes==76||bytes==86;uint64_t rx=0;uint32_t age=UINT16_MAX;
    if(shape) {
      bytes-=2;dwt_readrxdata(frame,(uint16_t)bytes,0);dwt_readrxtimestamp(raw,DWT_COMPAT_NONE);dwt_readsystime(hardware);
-     rx=mulDecodeTimestamp(raw);int64_t elapsed=mulTimestampDifference(mulDecodeTimestamp(hardware),rx);
+     /* DW3000 SYS_TIME is bits39:8 in FOUR bytes (SYS_TIME_LEN), whereas
+      * RX_STAMP is five full-resolution bytes. Reconstruct the local40-bit
+      * coordinate and use the upper edge of its256-DTU quantization bin so
+      * capture age is rounded outwards. Never decode uninitialized byte5. */
+     uint64_t systemUpper=255;
+     for(unsigned i=0;i<4;i++)systemUpper|=(uint64_t)hardware[i]<<(8*(i+1));
+     rx=mulDecodeTimestamp(raw);int64_t elapsed=mulTimestampDifference(systemUpper,rx);
      if(elapsed>=0&&elapsed<=15*INT64_C(63897600))age=(uint32_t)((elapsed+63897599)/63897600);
    }
    hybridRearm(); /* Freeze all diagnostics before RX; shared math/IO follow rearm. */
