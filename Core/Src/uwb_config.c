@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "uwb_config.h"
+#include "mul_common.h"
 #include <limits.h>
 #include <math.h>
 #include <string.h>
@@ -32,7 +33,7 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
   if(c->identity>2) return "identity: standalone, alr, rlr";
-  if(c->mode>3) return "mode: off, twr, beacon, listen";
+  if(c->mode>5) return "mode: off, twr, beacon, listen, hybrid, hybrid_static";
   if(c->role!=1&&c->role!=2) return "role: initiator, responder";
   if(c->interval_ms<250||c->interval_ms>60000) return "interval_ms: 250..60000";
   if(c->phy) return "phy: only mixed (channel5/6M8/code9) supported";
@@ -48,6 +49,12 @@ const char *uwb_config_validate(const uwb_config_t *c) {
     if(i>=c->peer_count) {if(p->address||p->enabled||p->interval_ms)return "unused peers must be zero";continue;}
     if(p->address==c->node||p->enabled>1||p->interval_ms<250||p->interval_ms>60000)return "invalid peer/self/interval";
     for(unsigned j=0;j<i;j++)if(p->address==c->peers[j].address)return "duplicate peer";
+  }
+  if(c->mode>=4) {
+    uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[2]={false,false};
+    if(c->role!=2||mulAlrRoleForAddress(local)!=mulAlrUnsupported)return "hybrid requires passive responder role and an RLR address distinct from ALRs";
+    for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulAlrRoleForAddress(id);if(r>=0&&r<2)roles[r]=true;}
+    if(!roles[0]||!roles[1])return "hybrid requires enabled reference/follower ALR peers; PEER ADD 0x84 and 0x85";
   }
   return NULL;
 }
@@ -68,7 +75,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(index==17) return "unknown field; use CFG HELP";
   static const struct {unsigned field;const char *name;const char *number;} aliases[]={
     {2,"standalone","0"},{2,"alr","1"},{2,"rlr","2"},
-    {3,"off","0"},{3,"twr","1"},{3,"beacon","2"},{3,"listen","3"},{4,"initiator","1"},{4,"responder","2"},
+    {3,"off","0"},{3,"twr","1"},{3,"beacon","2"},{3,"listen","3"},{3,"hybrid","4"},{3,"hybrid_static","5"},{4,"initiator","1"},{4,"responder","2"},
     {6,"mixed","0"},{9,"off","0"},{9,"on","1"},
     {11,"quiet","0"},{11,"summary","1"},{11,"full","2"},
     {12,"off","0"},{12,"on","1"},{14,"off","0"},{14,"on","1"},{15,"off","0"},{15,"on","1"},{16,"compact","0"}};
@@ -76,7 +83,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
     if(aliases[i].field==index && !strcmp(aliases[i].name,value)) {value=aliases[i].number;break;}
   if((index==2||index==3||index==4||index==6||index==9||index==11||index==12||index==14||index==15||index==16) &&
      (value[0]<'0'||value[0]>'9')) {
-    static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr, beacon, listen","role: initiator, responder"};
+    static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr, beacon, listen, hybrid, hybrid_static","role: initiator, responder"};
     if(index>=2&&index<=4) return errors[index-2];
     return index==16?"telemetry_format: compact":index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
   }

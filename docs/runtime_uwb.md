@@ -301,3 +301,7 @@ explicit measurements, not evidence of their causes. Compare Wi-Fi disabled,
 connected/telemetry off and connected/telemetry on before claiming coexistence.
 Schema-v1 persistent records migrate in RAM, preserving calibration and antenna
 delays; Wi-Fi defaults off. No automatic boot write or configuration reset occurs.
+
+Experimental custom-network modes `hybrid` and `hybrid_static` are documented in
+[hybrid_uwb.md](hybrid_uwb.md). They reuse the existing DW1000 TDMA protocol as a
+passive DWM3000 RLR and preserve the normal configuration journal and safety policy.

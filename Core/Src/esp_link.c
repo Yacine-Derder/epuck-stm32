@@ -64,7 +64,7 @@ uint32_t esp_link_telemetry_dropped(void) {return esp_telemetry_drops;}
 void esp_link_reset_diagnostics(void) {esp_uart_errors=esp_rx_overflows=esp_control_full=esp_telemetry_drops=0;}
 uint8_t esp_link_telemetry(const char *line) {
   if(!esp_link_owner_alive(esp_session_id)||esp_telemetry_pending)return 0;
-  if(strlen(line)!=309U||strncmp(line,"UWB2 ",5))return 0;
+  if(strlen(line)!=309U||(strncmp(line,"UWB2 ",5)&&strncmp(line,"UWB3 ",5)))return 0;
   memcpy(esp_telemetry_line,line,310);esp_telemetry_line[309]='\n';
   esp_telemetry_tick=HAL_GetTick();esp_telemetry_pending=1;return 1;
 }

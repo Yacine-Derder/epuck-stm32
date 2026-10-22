@@ -67,7 +67,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_config.c
     Core/Src/uwb_config_flash.c
     Core/Src/uwb_runtime.c
+    Core/Src/mul_hybrid_radio.c
     Core/Src/mul_ads_radio.c
+    ThirdParty/mul_core/mul_hybrid.c
+    ThirdParty/mul_core/mul_legacy_twr.c
+    ThirdParty/mul_core/mul_clock.c
+    ThirdParty/mul_core/mul_relation.c
+    ThirdParty/mul_core/mul_observation.c
+    ThirdParty/mul_core/mul_downlink.c
+    ThirdParty/mul_core/mul_localization.c
     ThirdParty/mul_core/mul_telemetry.c
     ThirdParty/mul_core/mul_beacon.c
     ThirdParty/mul_core/mul_time.c
@@ -172,3 +180,10 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 
 option(MUL_ADS_TRACE_TIMES "Emit session-tagged six raw timestamps for ADS audit" ON)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_ADS_TRACE_TIMES=$<BOOL:${MUL_ADS_TRACE_TIMES}>)
+
+# Legacy TDMA layout must match both ALRs; this never changes their scheduler.
+set(MUL_HYBRID_SLOT_MS "500" CACHE STRING "Legacy follower spacing: 500, 50, 10 ms")
+if(NOT MUL_HYBRID_SLOT_MS MATCHES "^(500|50|10)$")
+ message(FATAL_ERROR "MUL_HYBRID_SLOT_MS must be 500, 50, or 10")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_FOLLOWER_SLOT_MS=${MUL_HYBRID_SLOT_MS} MUL_PROP_MAX_AGE_MS=6000)

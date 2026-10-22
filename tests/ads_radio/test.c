@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include "../../Core/Src/mul_ads_radio.c"
 static uint32_t tick,status,length;
-static uint8_t input[56],output[56];
+static uint8_t input[84],output[56];
 static uint64_t txMarker,rxMarker;
 static uint16_t txAnt,rxAnt;
 static bool badAnt;
@@ -40,14 +40,14 @@ int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at
 void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert(n==58 && !at && ranging==1); }
 void dwt_setrxaftertxdelay(uint32_t delay) { assert(!delay); }
 uint32_t dwt_read_reg(uint32_t reg) { assert(reg==RX_FINFO_ID); return length; }
-void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n==56 && !at); memcpy(out,input,n); }
+void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n<=84 && !at); memcpy(out,input,n); }
 void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(segment==DWT_COMPAT_NONE); mulEncodeTimestamp(out,rxMarker); }
 void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
 void usb_console_write(const char *text) { assert(strlen(text)<(MUL_UNIVERSAL?320:192)); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }
 static void step(void) { tick++; mul_ads_radio_process(); }
 static mulAdsPacket_t sentPacket(void) {mulAdsPacket_t p; assert(mulAdsDecode(output,56,&p));return p;}
 static void receive(mulAdsPacket_t *p,uint64_t t) {
- assert(mulAdsEncode(input,sizeof(input),p)); length=58; rxMarker=t; status|=DWT_INT_RXFCG_BIT_MASK; step();
+ assert(mulAdsEncode(input,MUL_ADS_LENGTH,p)); length=58; rxMarker=t; status|=DWT_INT_RXFCG_BIT_MASK; step();
 }
 int main(void) {
  assert(mul_ads_radio_init()==DWT_SUCCESS && txAnt==16380 && rxAnt==16380);

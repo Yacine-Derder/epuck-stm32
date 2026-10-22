@@ -4,6 +4,8 @@
 #include "../ads_radio/test.c"
 #undef main
 #include "../../Core/Src/uwb_runtime.c"
+#include "../../Core/Src/mul_hybrid_radio.c"
+void dwt_readsystime(uint8_t *out){mulEncodeTimestamp(out,rxMarker+638976); }
 static uint8_t nv[2*UWB_CONFIG_SECTOR_SIZE],backup[sizeof(nv)];
 static bool wifiEnabled;
 void esp_link_set_enabled(uint8_t enabled) {wifiEnabled=enabled;}

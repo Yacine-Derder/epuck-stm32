@@ -37,6 +37,7 @@ static uint32_t lastPoll,lastStart,lastReport,errors,invalid,timeouts;
 static bool retryRx;
 #if MUL_UNIVERSAL
 #include "mul_beacon.h"
+#include "mul_hybrid_radio.h"
 static void beacon_reset(void);
 static bool beacon_reset_stats(void);
 static void beacon_process(uint32_t now);
@@ -64,6 +65,7 @@ bool mul_ads_radio_peer_stats(unsigned i,mulTelemetry_t *r) {
   r->stamps[0]=peerRx[i];return true;
 }
 bool mul_ads_radio_reset_stats(void) {
+  if(config.mode>=4)return mul_hybrid_radio_reset_stats();
   if(config.mode>=2)return beacon_reset_stats();
   for(unsigned i=0;i<config.peer_count;i++)if(peerStates[i].stage!=adsIdle)return false;
   for(unsigned i=0;i<config.peer_count;i++) {
@@ -139,6 +141,7 @@ int32_t mul_ads_radio_init(void) {
     if(!mulAdsInit(&peerStates[i],(uint8_t)config.node,config.peers[i].address,initiator(),runtimeSession))return DWT_ERROR;
   }
   lastTelemetry=HAL_GetTick();beacon_reset();
+  if(config.mode>=4)mul_hybrid_radio_configure(&config);
 #else
   dwt_settxantennadelay(MUL_ADS_DWM_ANT_DTU); dwt_setrxantennadelay(MUL_ADS_DWM_ANT_DTU);
   if(dwt_gettxantennadelay()!=MUL_ADS_DWM_ANT_DTU || dwt_getrxantennadelay()!=MUL_ADS_DWM_ANT_DTU) return DWT_ERROR;
@@ -168,6 +171,7 @@ int32_t mul_ads_radio_init(void) {
 void mul_ads_radio_process(void) {
   uint32_t now=HAL_GetTick();
 #if MUL_UNIVERSAL
+  if(config.mode>=4){mul_hybrid_radio_process();return;}
   if(config.mode>=2){beacon_process(now);return;}
 #endif
   if(now==lastPoll) return;

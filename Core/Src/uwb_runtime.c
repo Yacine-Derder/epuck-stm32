@@ -7,6 +7,7 @@
 #endif
 #include "main.h"
 #include "mul_ads_radio.h"
+#include "mul_hybrid_radio.h"
 #include "deca_device_api.h"
 #include "epuck_link.h"
 #include "usb_console.h"
@@ -32,12 +33,12 @@ static bool displayBoot;
 static uint32_t displayGeneration;
 static bool displayStats;
 static const char *const help[]={
-  "SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
+  "HYBRID STATUS; SYNC STATUS; PEER HELP / LIST / STATS; DIAG RESET; CFG HELP / HELP: settings activate and save automatically; no APPLY/SAVE step",
   "CFG SET <field> <value>; all fields persistent; every changed field restarts UWB",
   "address (alias node): 0x00..0xFF or 0..255; factory 0x00; provision unique IDs",
   "peer: 0x00..0xFF or 0..255; factory 0x01; must differ from address",
   "identity: standalone (factory), alr, rlr; metadata, never motor authorization",
-  "mode: off (factory), twr, beacon, listen (experimental acquisition)",
+  "mode: off (factory), twr, beacon, listen, hybrid, hybrid_static (stationary opt-in)",
   "role: responder (factory), initiator; independent of robot identity",
   "interval_ms: 250..60000 ms; factory 1000; initiator transaction interval",
   "phy: mixed (factory/only): channel5, 6.8Mbps, code9, preamble128",
@@ -205,7 +206,7 @@ static void display_output(void) {
   case 0:snprintf(text,sizeof(text),"Node address:       0x%02lX",(unsigned long)c->node);break;
   case 1:snprintf(text,sizeof(text),"Peer address:       0x%02lX",(unsigned long)c->peer);break;
   case 2:snprintf(text,sizeof(text),"Robot identity:     %s",identity(c->identity));break;
-  case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode==1?"TWR":c->mode==2?"BEACON":c->mode==3?"LISTEN":"OFF");break;
+  case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode==5?"HYBRID_STATIC":c->mode==4?"HYBRID":c->mode==1?"TWR":c->mode==2?"BEACON":c->mode==3?"LISTEN":"OFF");break;
   case 4:snprintf(text,sizeof(text),"TWR role:           %s",c->role==1?"Initiator":"Responder");break;
   case 5:snprintf(text,sizeof(text),"Interval:           %lu ms",(unsigned long)c->interval_ms);break;
   case 6:snprintf(text,sizeof(text),"PHY:                Mixed channel5 / 6.8Mbps / code9 / preamble128");break;
@@ -282,6 +283,10 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
+  if(nt==2&&!strcmp(token[0],"hybrid")&&!strcmp(token[1],"status")) {
+    if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
+    else {char text[320];mul_hybrid_radio_status(text,sizeof(text));reply(text);}return true;
+  }
   if(nt==2&&!strcmp(token[0],"sync")&&!strcmp(token[1],"status")) {
     if(!started||active.mode!=3)reply("SYNC UNKNOWN; select mode listen for apparent arrival models");
     else {display=4;displayIndex=0;}return true;
