@@ -2,12 +2,19 @@
 #ifndef MUL_HYBRID_RADIO_H
 #define MUL_HYBRID_RADIO_H
 #include "uwb_runtime.h"
+#ifndef MUL_HYBRID_FREQ_DIAG
+#define MUL_HYBRID_FREQ_DIAG 0
+#endif
+#if MUL_HYBRID_FREQ_DIAG != 0 && MUL_HYBRID_FREQ_DIAG != 1
+#error "MUL_HYBRID_FREQ_DIAG must be 0 or 1"
+#endif
 #if MUL_UNIVERSAL
 void mul_hybrid_radio_configure(const uwb_config_t *config);
 void mul_hybrid_radio_process(void);
 void mul_hybrid_radio_status(char *line,size_t capacity);
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity);
 void mul_hybrid_radio_frame(unsigned index,char *line,size_t capacity);
+bool mul_hybrid_radio_frequency(unsigned index,char *line,size_t capacity);
 bool mul_hybrid_radio_reset_stats(void);
 #endif
 #endif

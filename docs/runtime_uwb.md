@@ -315,7 +315,7 @@ No system-wide `status` command or new robot alias is invented. Details are page
 |Command|Contents|
 |---|---|
 |help config / cfg help|Actual fields/values, persistence, calibration, examples|
-|help hybrid|Passive modes, status/diag/frames, age/rate/rejection interpretation|
+|help hybrid|Passive modes, status/diag/frames/frequency, age/rate/rejection interpretation|
 |help peers / peer help|List/stats/add/remove/enable/disable/interval, ID constraints|
 |help telemetry|Enablement, queues, retrieval, output options and counter limits|
 |help safety|Existing stop/status commands and UWB-only restrictions|
@@ -349,3 +349,9 @@ Unknown help topics previously fell through; they now return a topic error withi
 the runtime. No safety checks are weakened or unknown command fragments joined.
 If the sporadic symptom recurs, the indispensable evidence is the exact bytes and
 line endings sent for that one command plus its immediate response, not more RF logs.
+
+
+`hybrid frequency` is a bounded read-only snapshot command. Raw diagnostic capture
+requires Universal built with `MUL_HYBRID_FREQ_DIAG=ON` (default OFF). It does not
+set receiver rate or enable metric TDoA. See docs/hybrid_uwb.md for exact optional
+build/ELF, pre-rearm semantics, sign uncertainty and physical validation limits.

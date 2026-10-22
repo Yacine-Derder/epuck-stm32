@@ -585,3 +585,92 @@ fix and its residual intermittent PHY/TWR failures are recorded above.
 Follow-up ESP93fd7e4 discards pending mobile interpolation if the shared native
 replay context is recreated/evicted; this is separate from physical epoch changes.
 The added lifecycle regression passes alongside the complete53-test host suite.
+
+
+## Optional raw frequency diagnostic (checkpoint B)
+
+The user confirms that independent receiver path-rate/frequency, calibrated encoder
+integration and verified motion/oscillator/metrology bounds are unavailable.
+[The expanded feasibility audit](https://github.com/Yacine-Derder/epuck-esp32/blob/main/docs/uwb_mobile.md#carrier-frequency-feasibility-audit-checkpoint-b-follow-up)
+distinguishes structural observability from accuracy and evaluates bounded motion,
+encoder assistance, known1D motion and stationary calibration/finite holdover.
+
+DW3000 exposes signed21-bit carrier integrator and signed13-bit CIA clock offset
+on this ordinary Ipatov/STS-off PHY (no DW3000-only transmitter extension needed).
+The raw APIs are supported in the bundled driver; mixed-generation frequency
+accuracy/sign has not been physically measured. In the ideal model CFO gives the
+inverse apparent arrival rate: oscillator mismatch and radial Doppler remain
+inseparable even without noise. Two anchor bearings in2D give two equations for
+clock plus two velocity components. No mobile metric rate is justified from these
+inputs alone. More UWB-only logs cannot establish the missing independence.
+
+`MUL_HYBRID_FREQ_DIAG` is a new compile-time diagnostic option, OFF by default,
+requiring Universal. It has no persisted field or packet changes. Enabled capture
+reads CI and, only with original-status CIADONE, COE while the CRC-good packet is
+still frozen, before status clear/rearm. It enables CIA logging when configuring
+hybrid with RX stopped. There is no wait for CIA; missing is distinct from zero.
+SYS_TIME is read afterwards so diagnostic SPI latency remains included in the
+unchanged15ms age admission. No IRQ/SPI policy, antenna constants, scheduling,
+shared math, transmitter behavior, safety or existing mode admission changes.
+Default builds make no additional frequency API calls; the opt-in image's timing
+cost and CIA logging are not physically validated. Returning to another mode
+reinitializes the radio through its existing owner. Do not assume zero overhead.
+
+The case-insensitive read-only `hybrid frequency` returns up to three fixed
+snapshots matching `hybrid frames`: source/type/sequence, native40-bit RX,
+observed_ms, capture_age, raw CI/COE, COE-present and original RX status. Slots are
+independent times/types, not a complete exchange. Repeated queries can duplicate
+one packet; no automatic trace or per-packet UART stream is added. The command
+reads memory only, transmits nothing and writes no configuration. Default builds
+reply that capture is disabled. `help hybrid` describes it without broad command
+refactoring. Raw samples always say `metric_rate=UNKNOWN`.
+
+The2025 Qorvo guide and bundled driver disagree on COE sign, and a ppm comment
+conflicts with the ratio macro. Preserve raw samples; the ESP decoder separately
+labels API algebra rather than claiming hardware-calibrated oscillator rate.
+No sign heuristic, motion/oscillator prior, noise averaging threshold or arbitrary
+correction is admitted. `hybrid_static` stays stationary-only; ordinary `hybrid`
+stays NO_RATE. The original A physical acceptance and residual TWR/PHY errors
+remain as recorded above; metric TDoA is unvalidated.
+
+Build the optional experiment image from epuck-stm32 (do not flash automatically):
+
+```sh
+cmake -S . -B build/HybridFrequency -G Ninja \
+ -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
+ -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
+ -DMUL_TWR_ROLE=0 -DMUL_DIAG_ROLE=0 -DPHY_INTEROP_ROLE=0 \
+ -DMUL_HYBRID_SLOT_MS=500 -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON \
+ -DMUL_HYBRID_FREQ_DIAG=ON
+cmake --build build/HybridFrequency
+```
+
+STM32CubeProgrammer ELF:
+`/home/derder/Documents/epuck-stm32/build/HybridFrequency/EPuck_STM32.elf`.
+The existing default-OFF image is `build/Universal/EPuck_STM32.elf` (same repository).
+Keep the known working ALRs and existing persistent peer/address/calibration
+settings. No physical test or flash was performed by the assistant. This image
+is optional diagnostic software, not a validated moving estimator.
+
+If the operator elects to test this sensor channel, the narrow measurement is raw
+`hybrid frequency` snapshots plus RX/status during a genuinely stationary interval
+with independently compared relative frequency/reference timing to settle sign,
+scale and bias (verified-stationary timestamp cadence is one possible timing
+comparison; sign checking need not require a lab frequency standard). Repeated
+*distinct* samples characterize error; snapshots are not
+a complete capture or delivery-rate denominator. Preserve native timing and
+PHY/TWR counters to check diagnostic overhead. Controlled independently known
+radial motion can then test Doppler. Neither experiment alone proves a general
+moving solution. No request for additional complete RF logs is needed here.
+
+Software checks: tests/frequency/run.sh executes actual bundled register decoders
+(all8192 signed COE codes and CI limits), validates SPI addresses/lengths, default
+OFF linkage, pre-rearm ordering, CRC/length/CIA guards, zero versus missing,
+no TX/NV mutation and USB bounds. Actual adapter output is accepted by the host
+frequency decoder. Runtime/configuration/help, safety policy, ADS, PHY, SPI and
+ESP-link suites pass; all59 ESP host tests pass. Default and opt-in Release ELF
+builds pass reserved-sector checks: Universal RAM36440/FLASH123120 bytes;
+HybridFrequency RAM36488/FLASH123480. Driver test compilation reports existing
+vendor warnings in unrelated functions; those functions are not modified. Neither
+software tests nor build sizes establish physical latency or frequency accuracy.
+Canonical shared-core/vendor manifests remain unchanged. C/D remain deferred.

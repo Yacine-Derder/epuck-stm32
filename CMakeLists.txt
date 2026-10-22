@@ -187,3 +187,10 @@ if(NOT MUL_HYBRID_SLOT_MS MATCHES "^(500|50|10)$")
  message(FATAL_ERROR "MUL_HYBRID_SLOT_MS must be 500, 50, or 10")
 endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_FOLLOWER_SLOT_MS=${MUL_HYBRID_SLOT_MS} MUL_PROP_MAX_AGE_MS=6000)
+
+# Raw per-packet frequency investigation only; never enables a rate estimator.
+option(MUL_HYBRID_FREQ_DIAG "Capture raw hybrid carrier/CIA offset before RX rearm" OFF)
+if(MUL_HYBRID_FREQ_DIAG AND NOT MUL_UNIVERSAL)
+ message(FATAL_ERROR "MUL_HYBRID_FREQ_DIAG requires MUL_UNIVERSAL")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_HYBRID_FREQ_DIAG=$<BOOL:${MUL_HYBRID_FREQ_DIAG}>)

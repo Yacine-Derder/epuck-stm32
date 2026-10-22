@@ -5,8 +5,25 @@
 #undef main
 #include "../../Core/Src/uwb_runtime.c"
 #include "../../Core/Src/mul_hybrid_radio.c"
+#if MUL_HYBRID_FREQ_DIAG
+static unsigned frequencyCiReads,frequencyCoeReads,frequencyConfigurations,frequencyOrder;
+static unsigned frequencyCiOrder,frequencyCoeOrder,frequencySystemOrder;
+static int32_t frequencyCi=-12345;
+static int16_t frequencyCoe=-2048;
+void dwt_configciadiag(uint8_t enable) {assert(enable==DW_CIA_DIAG_LOG_ALL);frequencyConfigurations++;}
+int32_t dwt_readcarrierintegrator(void) {
+ assert(status&DWT_INT_RXFCG_BIT_MASK);frequencyCiReads++;frequencyCiOrder=++frequencyOrder;return frequencyCi;
+}
+int16_t dwt_readclockoffset(void) {
+ assert((status&(DWT_INT_RXFCG_BIT_MASK|DWT_INT_CIADONE_BIT_MASK))==(DWT_INT_RXFCG_BIT_MASK|DWT_INT_CIADONE_BIT_MASK));
+ frequencyCoeReads++;frequencyCoeOrder=++frequencyOrder;return frequencyCoe;
+}
+#endif
 static uint64_t captureServiceDtu=638976; /* 10us, independent of slot phase. */
 void dwt_readsystime(uint8_t *out) {
+#if MUL_HYBRID_FREQ_DIAG
+ frequencySystemOrder=++frequencyOrder;
+#endif
  /* DW3000 SYS_TIME_LEN is FOUR: timestamp bits39:8, not a DW1000 RX_STAMP. */
  uint32_t hi=(uint32_t)(mulTimestampMask(rxMarker+captureServiceDtu)>>8);
  for(unsigned i=0;i<4;i++)out[i]=(uint8_t)(hi>>(8*i));

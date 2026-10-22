@@ -103,6 +103,7 @@ static const char *const help_hybrid[]={
   "  - hybrid status             Counts, freshness and last observation",
   "  - hybrid diag               Frame/rejection/model counters",
   "  - hybrid frames             Last 34/74/84-byte RX snapshots",
+  "  - hybrid frequency          Optional raw carrier/CIA frequency samples",
   "  - diag reset                Reset counters only when no TWR audit active",
   "  - sync status               Separate listen-mode arrival models",
   "",
@@ -114,6 +115,7 @@ static const char *const help_hybrid[]={
   "  - missing_twr: no expected prior stage; loss/reorder/duplicates possible.",
   "  - delay_ms: age of inter-ALR propagation measurement at follower TX.",
   "  - Frame slots are independent captures, not one complete exchange.",
+  "  - Frequency capture needs an opt-in build; it never validates rate.",
   "  - RLR never transmits; inter-ALR TWR is not an RLR range.",
   "  - Unknown receiver rate forbids metric TDoA in ordinary hybrid.",
   "  - Two ALRs alone cannot give a unique unconstrained 2D position.",
@@ -414,14 +416,15 @@ bool uwb_runtime_command(const char *line) {
     if(*p)*p++=0;
   }
   if(!nt) return false;
-  if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames"))) {
+  if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency"))) {
     if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
     else {
       char text[384];
       if(!strcmp(token[1],"status")){mul_hybrid_radio_status(text,sizeof(text));reply(text);}
       else for(unsigned i=0;i<3;i++) {
         if(!strcmp(token[1],"diag"))mul_hybrid_radio_diagnostics(i,text,sizeof(text));
-        else mul_hybrid_radio_frame(i,text,sizeof(text));
+        else if(!strcmp(token[1],"frames"))mul_hybrid_radio_frame(i,text,sizeof(text));
+        else if(!mul_hybrid_radio_frequency(i,text,sizeof(text)))break;
         reply(text);
       }
     }return true;

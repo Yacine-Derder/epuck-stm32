@@ -15,13 +15,22 @@ static uint32_t hybridErrors,hybridTimeouts,hybridLastReport;
 static bool hybridRetry;
 static uint8_t hybridLastStatus;
 /* Fixed-size, on-demand evidence only: no automatic packet trace or heap. */
-static struct {uint8_t frame[84],length;uint64_t rx;uint32_t age,observedMs;} hybridFrames[3];
+static struct {uint8_t frame[84],length;uint64_t rx;uint32_t age,observedMs;
+#if MUL_HYBRID_FREQ_DIAG
+ int32_t ci;int16_t coe;uint32_t status;bool coePresent;
+#endif
+} hybridFrames[3];
 static void hybridRearm(void) {
  dwt_forcetrxoff();dwt_writesysstatuslo(HYBRID_RX_EVENTS|DWT_INT_TXFRS_BIT_MASK);
  hybridRetry=dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS;if(hybridRetry)hybridErrors++;
 }
 void mul_hybrid_radio_configure(const uwb_config_t *c) {
  memset(hybridFrames,0,sizeof(hybridFrames));
+#if MUL_HYBRID_FREQ_DIAG
+ /* Called with RX stopped by the universal radio owner. Diagnostic logging
+  * affects only this explicit experimental hybrid build, not the normal PHY. */
+ dwt_configciadiag(DW_CIA_DIAG_LOG_ALL);
+#endif
  hybridConfig=*c;uint8_t receiver[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};
  mulHybridInit(&hybridReceiver,receiver,c->mode==5);hybridErrors=hybridTimeouts=0;
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
@@ -49,6 +58,23 @@ void mul_hybrid_radio_frame(unsigned index,char *line,size_t capacity) {
  snprintf(line,capacity,"MULH FRAME slot=%u rx=%02lX%08lX age_ms=%lu observed_ms=%lu len=%u frame=%s",index,
  (unsigned long)(hybridFrames[index].rx>>32),(unsigned long)(uint32_t)hybridFrames[index].rx,(unsigned long)hybridFrames[index].age,(unsigned long)hybridFrames[index].observedMs,n,hex);
 }
+bool mul_hybrid_radio_frequency(unsigned index,char *line,size_t capacity) {
+#if MUL_HYBRID_FREQ_DIAG
+ if(index>=3)return false;
+ if(!hybridFrames[index].length){snprintf(line,capacity,"MULH FREQ slot=%u absent",index);return true;}
+ const uint8_t *f=hybridFrames[index].frame;
+ uint32_t seq=(uint32_t)f[25]|(uint32_t)f[26]<<8|(uint32_t)f[27]<<16|(uint32_t)f[28]<<24;
+ snprintf(line,capacity,"MULH FREQ slot=%u peer=0x%02X type=0x%02X seq=%lu rx=%02lX%08lX observed_ms=%lu age_ms=%lu ci_raw=%ld coe_raw=%d coe_present=%u status=0x%08lX metric_rate=UNKNOWN",
+ index,f[13],f[24],(unsigned long)seq,(unsigned long)(hybridFrames[index].rx>>32),
+ (unsigned long)(uint32_t)hybridFrames[index].rx,(unsigned long)hybridFrames[index].observedMs,
+ (unsigned long)hybridFrames[index].age,(long)hybridFrames[index].ci,hybridFrames[index].coe,
+ hybridFrames[index].coePresent,(unsigned long)hybridFrames[index].status);
+ return true;
+#else
+ if(index)return false;
+ snprintf(line,capacity,"MULH FREQ disabled; build with MUL_HYBRID_FREQ_DIAG=ON; metric_rate=UNKNOWN");return true;
+#endif
+}
 bool mul_hybrid_radio_reset_stats(void) {
  if(hybridReceiver.twrActive)return false;
  hybridReceiver.received=hybridReceiver.rejected=hybridReceiver.pairs=hybridReceiver.twrCompleted=hybridReceiver.twrRejected=hybridReceiver.twrTimeouts=0;
@@ -62,8 +88,18 @@ void mul_hybrid_radio_process(void) {
  else if(status&DWT_INT_RXFCG_BIT_MASK) {
    uint8_t frame[84],raw[5],hardware[4];unsigned bytes=dwt_read_reg(RX_FINFO_ID)&RX_FINFO_RXFLEN_BIT_MASK;
    bool shape=bytes==36||bytes==76||bytes==86;uint64_t rx=0;uint32_t age=UINT16_MAX;
+#if MUL_HYBRID_FREQ_DIAG
+   int32_t ci=0;int16_t coe=0;
+#endif
    if(shape) {
-     bytes-=2;dwt_readrxdata(frame,(uint16_t)bytes,0);dwt_readrxtimestamp(raw,DWT_COMPAT_NONE);dwt_readsystime(hardware);
+     bytes-=2;dwt_readrxdata(frame,(uint16_t)bytes,0);dwt_readrxtimestamp(raw,DWT_COMPAT_NONE);
+#if MUL_HYBRID_FREQ_DIAG
+     /* Both belong to this CRC-good RX. Read before forcetrxoff/clear/rearm;
+      * never poll/wait for CIA. Missing CIADONE means no usable COE sample. */
+     ci=dwt_readcarrierintegrator();
+     if(status&DWT_INT_CIADONE_BIT_MASK)coe=dwt_readclockoffset();
+#endif
+     dwt_readsystime(hardware);
      /* DW3000 SYS_TIME is bits39:8 in FOUR bytes (SYS_TIME_LEN), whereas
       * RX_STAMP is five full-resolution bytes. Reconstruct the local40-bit
       * coordinate and use the upper edge of its256-DTU quantization bin so
@@ -72,6 +108,7 @@ void mul_hybrid_radio_process(void) {
      for(unsigned i=0;i<4;i++)systemUpper|=(uint64_t)hardware[i]<<(8*(i+1));
      rx=mulDecodeTimestamp(raw);int64_t elapsed=mulTimestampDifference(systemUpper,rx);
      if(elapsed>=0&&elapsed<=15*INT64_C(63897600))age=(uint32_t)((elapsed+63897599)/63897600);
+
    }
    hybridRearm(); /* Freeze all diagnostics before RX; shared math/IO follow rearm. */
    bool enabled=false;if(shape)for(unsigned i=0;i<hybridConfig.peer_count;i++)if(hybridConfig.peers[i].enabled&&hybridConfig.peers[i].address==frame[13])enabled=true;
@@ -80,6 +117,11 @@ void mul_hybrid_radio_process(void) {
      unsigned index=bytes==34?0:bytes==74?1:2;
      memcpy(hybridFrames[index].frame,frame,bytes);hybridFrames[index].length=(uint8_t)bytes;
      hybridFrames[index].rx=rx;hybridFrames[index].age=age;hybridFrames[index].observedMs=now;
+#if MUL_HYBRID_FREQ_DIAG
+     hybridFrames[index].ci=ci;hybridFrames[index].coe=coe;
+     hybridFrames[index].coePresent=(status&DWT_INT_CIADONE_BIT_MASK)!=0;
+     hybridFrames[index].status=status;
+#endif
    }
    if(shape&&enabled&&mulHybridReceive(&hybridReceiver,frame,bytes,rx,age,now,&out)) {
      if(out.associated)hybridLastStatus=out.observation.status;

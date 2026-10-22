@@ -21,14 +21,34 @@ B feasibility and conditional offline prototype complete/software tested:
   tools/uwb_mobile.py and actual shared C replay extraction. 93fd7e4 hardens native-context recreation. All53 Python tests,
   host C transport/replay builds and12 focused physics/mobile tests pass.
 - STM maina867702 records A physical acceptance; this documentation follow-up
-  links the B result. Canonical/vendor pin3bbd324 remains unchanged. No firmware,
-  protocol, scheduler, configuration, safety, calibration or build files changed.
+  links that host-only B result. At that checkpoint no firmware or build files
+  changed. Canonical/vendor pin3bbd324 remains unchanged in this follow-up.
 
-Next: establish independent physical model/metrology bounds and study known moving
-trajectories before claiming a hardware envelope or on-device mobile estimator.
-True oscillator recovery requires independent path-rate or frequency information;
-more of the same unbounded two-ALR captures cannot resolve that ambiguity.
-Current STM f1047b3 already supports required UWB3 capture, no new flash required.
+B follow-up: user confirms no independent motion/frequency input, integrated
+encoder model or verified bounds. DW3000 carrier/CIA APIs support ordinary mixed
+Ipatov PHY diagnostics, but CFO still mixes clock with radial Doppler; noiseless
+CFO plus cadence is structurally ambiguous. No defensible general live moving
+metric estimator is admitted. hybrid_static remains the stationary baseline.
+- New Universal-only MUL_HYBRID_FREQ_DIAG option is OFF by default. Optional
+  hybrid frequency captures raw CI/COE/status before rearm; no true-rate/metric
+  admission, on-air changes, TX, persistence or arbitrary correction.
+- Bundled COE sign comments contradict the vendor guide. Raw values and API
+  algebra stay labelled; hardware sign/bias/noise remain unvalidated.
+- ESP df5dfc5 tools/uwb_frequency.py decodes snapshots and compares explicit synthetic
+  Doppler/frequency/holdover scenarios at500/50/10ms. No numerical hardware prior.
+- Actual vendor decoder/all8192 COE codes, passive adapter guards, runtime/help,
+  safety/ADS/PHY/SPI/ESP-link suites and all59 host tests pass. Universal and optional
+  HybridFrequency build and respect reserved flash sectors. No devices flashed.
+
+Next: choose and justify an independent path-rate constraint, an observable
+encoder/relative-mapping model, or explicit motion/clock/metrology bounds before
+admitting mobile metric output. Stationary calibration needs finite holdover/error
+bounds; raw CFO alone is not an independent frequency reference. No more UWB-only
+logs can remove that ambiguity. Optional stationary raw-frequency/reference
+comparison would validate sign/scale/bias, not mobile observability. See expanded
+ESP docs/uwb_mobile.md and STM docs/hybrid_uwb.md for alternatives/build/ELF details.
+The previous UWB3 offline interpolation still works with STM f1047b3; the diagnostic
+build is optional and physically untested.
 Full analysis/use/tests/limitations: epuck-esp32/docs/uwb_mobile.md; A acceptance:
 docs/hybrid_uwb.md. hybrid remains NO_RATE and hybrid_static stationary-only.
 Residual intermittent TWR/PHY faults stay open. C/D remain deferred by user request.
