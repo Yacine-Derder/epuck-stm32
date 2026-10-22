@@ -86,8 +86,9 @@ replaced from a stale cache. Missed packets can suppress pairs and TWR completio
 rather than inventing measurements. Epoch/config restarts require warmup.
 
 Checkpoint B: adapter compiles; actual adapter/safety/config/queue regressions and
-shared original receiver tests pass for500/50/10ms. Checkpoint C: producer/bridge v3 and targeted UART software hardening implemented;
-offline replay/localization validation and full integration are in progress. Hardware interoperability and accuracy have not been tested here.
+shared original receiver tests pass for500/50/10ms. Checkpoint C: producer/bridge v3 and targeted UART software hardening implemented.
+Checkpoint D: shared-core offline replay and guarded generic2D solver pass synthetic
+end-to-end and geometry/validity tests. Physical validation remains pending. Hardware interoperability and accuracy have not been tested here.
 
 ## Historical UART handoff — user-reported 2026-10-22 evidence
 
@@ -152,3 +153,113 @@ zero is expected in Universal radio mutex paths. service/gap timing maxima still
 cover the complete polled radio service. Fresh physical runs must compare both
 boards, RF off/hybrid on, connected-idle/forwarding, UART errors, matched sequences,
 TLM STATUS USB/Wi-Fi drops and DWT timing. Neither historical fault is declared fixed.
+
+## Workstation replay and localization
+
+Use the new ESP32 image; the old bridge does not recognize UWB3. Build with the
+existing ESP-IDF6.1 activation/commands in uwb_network.md. On the workstation,
+from epuck-esp32 (substitute actual endpoint addresses):
+
+```sh
+python3 tools/uwb_collect.py --robot 192.168.1.141:3333 --robot 192.168.1.142:3333 --output captures
+python3 tools/uwb_hybrid.py captures/*-robot-*.jsonl --slot 500 \
+ --output hybrid-observations.jsonl \
+ --anchors tools/examples/hybrid_anchors.json --positions hybrid-positions.jsonl
+```
+
+Replace the example anchor coordinates with surveyed fixed ALR positions in
+metres. Replay compiles the verified canonical C snapshot into a temporary host
+library using `cc`; it requires the existing host C compiler and Python standard
+library, no radio access or network dependency. Exact original association,
+relation inversion, receiver-rate policy and TWR arithmetic are reused, not
+reimplemented as a second Python clock model. Output includes reference/follower
+sequences, inferred generations, acquisition epoch, local receiver domain, status,
+rate policy, native TDoA, metres, unknown physical quality and provenance. Captured
+source-generation changes reset host replay conservatively; missing initial history
+needs warmup. Start capture before the reference stream for complete evidence.
+No fitting uses Wi-Fi receipt time. TWR completion rows explicitly target the
+inter-ALR baseline and never become RLR ranges. Incomplete TWR has no reported ToF.
+
+With current two ALRs, position rows correctly have position=null and
+insufficient_geometry. Default hybrid also produces NO_RATE. Neither is a failed
+transport or a reason to assume equal oscillator rates. hybrid_static makes
+conditional TDoA available after the original five-interval stable rate warmup;
+it still does not supply another independent position constraint.
+
+The separate generic solver accepts normalized, already synchronized/co-temporal
+measurement batches (JSONL with batch_id and measurements[]). Each item has valid,
+kind=range or range_difference, anchor ID, value_m, optional sigma_m, and reference
+ID for differences. Positive difference means distance(anchor)-distance(reference).
+It accepts arbitrary IDs and mixed constraints; it does not parse radio packets or
+infer missing synchronization. Anchor JSON has anchors{ID:[x,y]} and optional
+bounds[xmin,xmax,ymin,ymax]. CLI/example synthetic fixtures:
+
+```sh
+python3 tools/uwb_localize.py tools/examples/localization_synthetic.jsonl \
+ --anchors tools/examples/localization_anchors.json --output synthetic-positions.jsonl
+```
+
+Both fixture batches recover(1,2)m; these are synthetic tests, not measured output
+or a new on-air ALR roster. A caller integrating more future anchors/active ranges
+must establish compatible clock domains, measurement times and validity first.
+The solver counts independent constraints on per-anchor distances: duplicate or
+closed-loop TDoA edges do not add geometry. It requires at least three distinct
+noncollinear anchors, and three independent constraints without explicit bounds.
+Bounded two-constraint cases are checked with multiple starts and reject multiple
+solutions. Invalid, impossible, singular, inconsistent or ambiguous batches yield
+position=null. The configurable residual threshold defaults0.25m; it is a software
+selection policy, not measured accuracy. Unit/default weights, residuals and matrix
+conditioning do not establish calibrated physical uncertainty. No mobile-anchor
+covariance or online statistical calibration is implemented.
+
+## Short ordered hardware campaign
+
+No assistant hardware operation is authorized. User programming must preserve
+STM32 sectors10/11 and existing calibrated settings. Save SHOW/LIST, firmware SHAs,
+ALR boot/PHY banners, physical positions, complete serial streams and Wi-Fi JSONL.
+Existing STOP/disarm/watchdog safety requirements remain mandatory; isolate wheels.
+
+1. Program matching channel5/slot500 ALR images. In each LPS USB menu send `i`
+   **without newline**, then `132`+Enter on reference or `133`+Enter on follower.
+   Send `m` without newline then single key `5`. These settings persist but need
+   a reboot. Expected startup: roleREF/FOLLOWER, slot_ms500 and HYBRID_CH5 channel5
+   banner. Preserve other EEPROM settings; saved radio-rate menu values are
+   overridden only by this explicit custom-mode profile. Both ALRs must show
+   packet/scheduled/actual TX equality delta0, follower acquisition and bounded
+   inter-ALR TWR. Do not reset EEPROM as a routine deployment step.
+2. Program STM32 Universal slot500 ELF, preserve configuration sectors; use commands
+   above with `wifi off`, `mode hybrid`. Capture >=10min: both source streams,
+   correct cadence, growing pairs, clock association when transported metadata is
+   fresh, NO_RATE by default, no RLR transmissions. No geometric value is valid
+   merely because a packet decoded. Record errors, gaps and full status.
+3. Hold all devices stationary, select `mode hybrid_static`, wait >=6 reference
+   packets. Expect conditional AVAILABLE TDoA only when relation/rate/ages match;
+   before warmup, loss or invalid relation, expect explicit unavailable status.
+   Compare raw TDoA signs at known placements. Absolute error is unvalidated;
+   retain geometry and antenna settings. Optional original DW1000 RLR comparison
+   needs the same channel5/slot/prop-age and explicit stationary build policy.
+4. Turn an ALR off/reboot it, restore it, then reboot the RLR. No stale relation or
+   sequence may be paired across inferred generations. Expect loss/NO_RATE and
+   warmup/reacquisition rather than extrapolated fake positions. Rapid ALR restarts
+   remain limited by the original absent boot UUID. Test two passive RLRs together;
+   they must add no RF replies or initiator activity.
+5. Set wifi on with telemetry off and repeat, then telemetry on with collector.
+   Capture >=10min each, and a genuine mode-off UART baseline. Compare matched
+   windows of raw-frame sequences, pairs, inter-ALR TWR observation, PHY errors,
+   UART HAL error bits/counts, TLM STATUS separate USB/Wi-Fi queues and DWT service/
+   gap maxima. Stalled readers may drop records but must not stop UWB or grow queues
+   beyond their bounds. Unconsumed USB drops are expected and are not Wi-Fi PDR.
+6. Replay captures with the matching --slot. Validate source/receiver domains,
+   generation resets, unavailable masks and conditional TDoA. Two-ALR position
+   outputs must remain null/insufficient_geometry. Run the synthetic solver fixture
+   separately; never describe it as physical localization evidence.
+7. Inspect MOTOR_STATUS/STREAM_STATUS/LINK_STATUS; exercise STOP and collector
+   disconnect/reconnect without arming/moving. Confirm disarmed state, normal
+   session-loss handling and retained fault reporting. Power-cycle and verify
+   mode/peers/antenna/calibration persistence. Existing ADS/beacon/listen profiles
+   should be checked separately, with only the intended RF topology enabled.
+
+Do not call either historical UART symptom resolved until repeated physical runs
+show stable sessions and quantified error/drop/timing behavior on both boards.
+Stop the campaign on wrong associations, accepted bad CRC, unexpected RF TX from
+an RLR, invalid positions from insufficient geometry or unsafe motor state.

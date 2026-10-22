@@ -54,7 +54,7 @@ is an explicit hardware activation failure, not a successful update confirmation
 | address (node alias) | Hex 0x00..0xFF or decimal 0..255 | 0x00 |
 | peer | Same range; must differ from local address | 0x01 |
 | identity | standalone, alr, rlr | standalone |
-| mode | off, twr, beacon, listen | off |
+| mode | off, twr, beacon, listen, hybrid, hybrid_static | off |
 | role | initiator, responder | responder |
 | interval_ms | 250..60000 ms | 1000 |
 | phy | mixed: channel5, 6.8Mbps, code9, preamble128 | mixed |
