@@ -6,15 +6,33 @@ pairs0→27, passive TWR0→5. After26 pairs, rejects0→3 with one timeout and 
 errors: residual delivery failures remain open. Rate UNKNOWN and metric TDoA NA
 are expected; neither metric TDoA nor accuracy/position is physically validated.
 
-B: analyze clock drift versus receiver motion before implementing a rate estimator.
-Existing two-ALR cadence does not uniquely identify both. Keep hybrid NO_RATE,
-hybrid_static stationary-only, strictly passive RX, current wire/config/safety.
-Investigate conditional interval estimation with explicit speed, measurement and
-within-window clock-variation assumptions; missing bounds must fail closed.
-Record deterministic ambiguity and geometry tests before hardware conclusions.
-C roles/addresses and D broader command refactors remain deferred by user request.
-Canonical core pin3bbd324; ESP main4ba4406; STM mainf1047b3 before this checkpoint.
-Details/evidence: docs/hybrid_uwb.md. No hardware flashing is authorized.
+B feasibility and conditional offline prototype complete/software tested:
+- True oscillator rate and radial motion are not identifiable from these two-ALR
+  timestamps alone; deterministic identical-history examples prove it. Even
+  smooth between-packet clock curvature can hide different geometries.
+- A bracketing reference-ARRIVAL mapping can provide a conditional simultaneous
+  range-difference interval without calling its apparent slope oscillator rate.
+  The first implementation is offline; no mobile firmware validity flag changes.
+- Explicit speed/acceleration/minimum reference distance, oscillator scale/rate
+  slew, physical baseline and metrology bounds are all mandatory. No defaults or
+  ADS correction substitute for an error bound. Missing bracket/invalid relation
+  stays unavailable; conditional outputs never feed the point-based2D solver.
+- ESP mainbb6fd59 records feasibility before implementation; cdf069c implements
+  tools/uwb_mobile.py and actual shared C replay extraction. All52 Python tests,
+  host C transport/replay builds and11 focused physics/mobile tests pass.
+- STM maina867702 records A physical acceptance; this documentation follow-up
+  links the B result. Canonical/vendor pin3bbd324 remains unchanged. No firmware,
+  protocol, scheduler, configuration, safety, calibration or build files changed.
+
+Next: establish independent physical model/metrology bounds and study known moving
+trajectories before claiming a hardware envelope or on-device mobile estimator.
+True oscillator recovery requires independent path-rate or frequency information;
+more of the same unbounded two-ALR captures cannot resolve that ambiguity.
+Current STM f1047b3 already supports required UWB3 capture, no new flash required.
+Full analysis/use/tests/limitations: epuck-esp32/docs/uwb_mobile.md; A acceptance:
+docs/hybrid_uwb.md. hybrid remains NO_RATE and hybrid_static stationary-only.
+Residual intermittent TWR/PHY faults stay open. C/D remain deferred by user request.
+No new physical test was performed by the assistant.
 
 ---
 

@@ -545,3 +545,39 @@ UNKNOWN/rate0 and metric TDoA remained unavailable, as ordinary hybrid requires.
 No metric TDoA, moving-clock estimator, ranging accuracy or position was validated.
 The assistant did not flash or operate hardware. Checkpoint B now concerns passive
 moving-receiver feasibility; hybrid_static remains a stationary-only baseline.
+
+## Checkpoint B moving-RLR feasibility and prototype
+
+ESP commits bb6fd59 (feasibility before implementation) and cdf069c (conditional
+interpolation) provide the [analysis and operating contract](https://github.com/Yacine-Derder/epuck-esp32/blob/main/docs/uwb_mobile.md).
+Timestamp cadence measures a reference-arrival slope that mixes receiver rate and
+radial motion. Deterministic identical-history tests show true oscillator rate
+cannot in general be identified from the current two ALRs alone. Adding inter-ALR
+TWR or a median filter does not supply independent receiver motion information.
+Even frequency diagnostics need Doppler/sign/units treatment, not blind adoption.
+
+The implemented offline approach brackets the follower's mapped emission with two
+actual reference receptions, interpolates the hypothetical reference arrival at
+that emission, and estimates a conditional simultaneous range-difference interval
+at follower RX. It calls its slope apparent arrival rate, never oscillator skew.
+Speed, acceleration, closest reference distance, oscillator scale/rate-slew,
+physical baseline and timestamp/relation bias bounds must be explicit; a synthetic
+schema example is not a measured hardware bound. Lost/stale/bracketless data stays
+unavailable. Conditional records have measurement=null/point_measurement_valid=false
+and cannot become a position from the existing point-measurement solver.
+
+This is a host research prototype using existing UWB3 and exact shared C codec /
+association / relation inversion. No on-air bytes or firmware source/build settings
+changed; no reflashing is needed for this analysis. All52 Python and host transport
+regressions pass, including11 feasibility/mobile tests with2D acceleration, clock
+slew, signed geometry,500/50/10ms,40/32-bit wrap, duplicates/loss/reordering and
+strict invalid-input handling. Synthetic containment is not hardware validation.
+
+Ordinary hybrid remains NO_RATE; hybrid_static remains the stationary baseline.
+There is no claimed moving hardware rate/TDoA accuracy or unique two-anchor2D
+position. A future physical study needs independently established motion/clock/
+metrology bounds and known trajectory truth, rather than assuming those values
+from a small fit residual. For true hardware oscillator rate, independent path-
+rate or frequency-reference information is fundamentally required. C/D role /
+address / broader command refactors remain deferred. A's accepted original-fault
+fix and its residual intermittent PHY/TWR failures are recorded above.
