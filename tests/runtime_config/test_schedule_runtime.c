@@ -4,6 +4,7 @@ int main(void) {
  memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 0x8d");
  command("peer add 0x84");command("peer add 0x85");command("cfg set mode hybrid_static");
  assert(started&&active.rf_enabled);unsigned writes=nvWrites;
+ command("reference 0x86");command("follower 0x87");assert(nvWrites==writes&&active.reference==132&&active.follower==133);
  command("cfg roster set 0x84 0x85 0x86");assert(nvWrites==writes&&!active.schedule.profile);
  command("cfg set slot_ms 50");assert(nvWrites==writes&&active.slot_ms==10);
  command("off");assert(!started&&!active.rf_enabled);
