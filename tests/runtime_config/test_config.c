@@ -24,6 +24,17 @@ int main(void) {
  uint8_t record[128];uwb_config_encode(record,&a,UINT32_MAX);
  assert(uwb_config_decode(record,&b,&gen)&&gen==UINT32_MAX&&uwb_config_equal(&a,&b));
  for(unsigned i=0;i<sizeof(record);i++) {record[i]^=1;assert(!uwb_config_decode(record,&b,&gen));record[i]^=1;}
+ assert(a.slot_ms==10);
+ const char *slots[]={"10","50","500"};
+ for(unsigned i=0;i<3;i++) {
+  b=a;assert(!uwb_config_set(&b,"slot_ms",slots[i]));uwb_config_encode(record,&b,3);
+  assert(uwb_config_decode(record,&c,&gen)&&uwb_config_equal(&b,&c));
+ }
+ b=a;assert(uwb_config_set(&b,"slot_ms","20")&&uwb_config_equal(&b,&a));
+ /* Schema4 migration preserves the old500ms timing and unrelated values. */
+ b=a;b.slot_ms=500;uwb_config_encode(record,&b,4);record[4]=4;record[19]&=7;
+ uint32_t crc4=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(crc4>>(8*i));
+ assert(uwb_config_decode(record,&c,&gen)&&uwb_config_equal(&b,&c));
  const char *bad[]={"","-1","+132","0x","0x100","0x86junk","4294967296"," 132","132 ","1e2"};
  for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){b=a;assert(uwb_config_set(&b,"node",bad[i]));assert(uwb_config_equal(&b,&a));}
  b=a;assert(uwb_config_set(&b,"peer","0x00"));assert(uwb_config_set(&b,"mode","6"));assert(uwb_config_set(&b,"phy","1"));
@@ -45,7 +56,7 @@ int main(void) {
  uint32_t legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
  assert(uwb_config_decode(record,&b,&gen)&&gen==42&&b.node==0x86&&b.peer==0x84);
  /* Genuine v2 node word has no packed roster bytes. Loading is read-only. */
- c=a;c.wifi=1;c.calibration=1;c.correction_mm=-4321;
+ c=a;c.slot_ms=500;c.wifi=1;c.calibration=1;c.correction_mm=-4321;
  uwb_config_encode(record,&c,43);record[4]=2;record[17]=record[18]=record[19]=0;
  legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
  assert(uwb_config_decode(record,&b,&gen)&&gen==43&&uwb_config_equal(&b,&c));
@@ -56,10 +67,10 @@ int main(void) {
  for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){c=b;assert(uwb_config_set(&c,"reference",bad[i]));assert(uwb_config_equal(&c,&b));}
  c=b;assert(uwb_config_set(&c,"reference","0x23")&&uwb_config_set(&c,"follower","255"));
  /* Unknown packed bits are rejected even with an otherwise valid CRC. */
- record[19]=8;legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
+ record[19]=128;legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
  assert(!uwb_config_decode(record,&c,&gen));
  /* Schema3 active records infer RF/role without changing their roster. */
- uwb_config_t old3=a;old3.mode=1;old3.rf_enabled=1;old3.reference=0x42;old3.follower=0x23;
+ uwb_config_t old3=a;old3.slot_ms=500;old3.mode=1;old3.rf_enabled=1;old3.reference=0x42;old3.follower=0x23;
  uwb_config_encode(record,&old3,45);record[4]=3;record[19]=0;
  legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));
  uwb_config_t migrated;assert(uwb_config_decode(record,&migrated,&gen)&&gen==45&&uwb_config_equal(&old3,&migrated));
@@ -82,7 +93,7 @@ int main(void) {
  assert(uwb_config_save(&store,&a,&gen)&&old==writes);
  /* Exercise real v2->v4 migration at every append/rotation power-cut point. */
  assert(b.reference==0x42&&b.follower==0x23);b.mode=1;b.rf_enabled=1;
- flash[4]=2;flash[17]=flash[18]=0;legacyCrc=uwb_config_crc(flash,120);
+ a.slot_ms=500;flash[4]=2;flash[17]=flash[18]=flash[19]=0;legacyCrc=uwb_config_crc(flash,120);
  for(unsigned i=0;i<4;i++)flash[120+i]=(uint8_t)(legacyCrc>>(8*i));
  assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&c,&a));
  memcpy(backup,flash,sizeof(flash));
@@ -102,7 +113,7 @@ int main(void) {
  memset(flash,255,sizeof(flash));uwb_config_encode(flash,&a,UINT32_MAX);
  assert(uwb_config_save(&store,&b,&gen)&&gen==0);assert(uwb_config_load(&store,&c,&gen)&&gen==0&&uwb_config_equal(&c,&b));
  /* Unsupported version with a valid CRC is still rejected. */
- flash[128+4]=5;uint32_t crc=uwb_config_crc(flash+128,120);
+ flash[128+4]=6;uint32_t crc=uwb_config_crc(flash+128,120);
  for(unsigned i=0;i<4;i++)flash[128+120+i]=(uint8_t)(crc>>(8*i));
  assert(uwb_config_load(&store,&c,&gen)&&gen==UINT32_MAX&&uwb_config_equal(&c,&a));
  /* Last slot appends without erase; only the next save rotates/erases.

@@ -32,7 +32,7 @@ int main(void) {
  command("cfg set telemetry on");command("cfg set mode hybrid");
  writes=nvWrites;unsigned tx=starts;captured[0]=0;command("help all");
  uint8_t frame[34],ref[8]={0x84,0,0,0,0,0,0xcf,0xbc};
- mulEncodeTestPacket(frame,ref,10,50000);memcpy(input,frame,34);length=36;rxMarker=100000;
+ assert(mulEncodeScheduledPacket(frame,ref,10,50000,(uint16_t)active.slot_ms));memcpy(input,frame,34);length=36;rxMarker=100000;
  status=DWT_INT_RXFCG_BIT_MASK;tick=10000;uwb_runtime_task();
  assert(uwb_runtime_help_active()&&hybridReceiver.received==1&&accepted>0);
  assert(!strstr(captured,"HYBRID passive=")&&starts==tx&&nvWrites==writes);

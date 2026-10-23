@@ -95,6 +95,7 @@ static const char *const help_config[]={
   "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
   "  - telemetry, wifi, samples: off | on; see help telemetry",
   "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
+  "  - slot_ms: 10 | 50 | 500; reference-to-follower delay, independent of period",
   "",
   "Persistence and calibration",
   "  - Settings are persistent; each changed field restarts UWB.",
@@ -374,7 +375,7 @@ static void display_output(void) {
   case 2:snprintf(text,sizeof(text),"Robot identity:     %s",identity(c->identity));break;
   case 3:snprintf(text,sizeof(text),"UWB mode:           %s",c->mode==5?"HYBRID_STATIC":c->mode==4?"HYBRID":c->mode==1?"TWR":c->mode==2?"BEACON":c->mode==3?"LISTEN":"OFF");break;
   case 4:snprintf(text,sizeof(text),"TWR role:           %s",c->role==1?"Initiator":"Responder");break;
-  case 5:snprintf(text,sizeof(text),"Interval:           %lu ms",(unsigned long)c->interval_ms);break;
+  case 5:snprintf(text,sizeof(text),"Interval:           %lu ms; slot_ms=%lu",(unsigned long)c->interval_ms,(unsigned long)c->slot_ms);break;
   case 6:snprintf(text,sizeof(text),"PHY:                Mixed channel5 / 6.8Mbps / code9 / preamble128");break;
   case 7:snprintf(text,sizeof(text),"TX antenna delay:   %lu DTU",(unsigned long)c->tx_ant_dtu);break;
   case 8:snprintf(text,sizeof(text),"RX antenna delay:   %lu DTU",(unsigned long)c->rx_ant_dtu);break;

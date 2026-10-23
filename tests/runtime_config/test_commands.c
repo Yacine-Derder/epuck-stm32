@@ -7,13 +7,13 @@ static void frame(unsigned i,bool follower) {
  const uint8_t ref[8]={0x84,0,0,0,0,0,0xcf,0xbc},fol[8]={0x85,0,0,0,0,0,0xcf,0xbc};
  uint64_t ms=63897600,tx=mulTimestampMask(MUL_TIMESTAMP_MASK-2000*ms+i*1000*ms);
  uint64_t origin=500000+i*1000*ms,rx=mulTimestampMask(MUL_TIMESTAMP_MASK-100000+i*1000*ms);
- tick=10000+i*1000+(follower?MUL_FOLLOWER_SLOT_MS:0);head=tail=count=0;
- if(!follower){mulEncodeTestPacket(input,ref,i,tx);length=36;rxMarker=rx;}
+ tick=10000+i*1000+(follower?active.slot_ms:0);head=tail=count=0;
+ if(!follower){assert(mulEncodeScheduledPacket(input,ref,i,tx,(uint16_t)active.slot_ms));length=36;rxMarker=rx;}
  else {
-  mulTestPacket_t p={.sequence=500+i,.txTimestamp=mulTimestampMask(origin+MUL_FOLLOWER_SLOT_DTU)};memcpy(p.source,fol,8);
+  mulTestPacket_t p={.sequence=500+i,.txTimestamp=mulTimestampMask(origin+(active.slot_ms*UINT64_C(63897600)))};memcpy(p.source,fol,8);
   mulRelation_t r={.version=2,.available=true,.epoch=7,.referenceSequence=i,.twrSequence=i,.referenceOrigin=tx,.followerOrigin=origin,
-   .originAgeMs=MUL_FOLLOWER_SLOT_MS,.delayAgeMs=MUL_FOLLOWER_SLOT_MS,.delayDtu=120,.maxAgeMs=6000,.delayState=mulPropagationFresh};
-  mulRelationEncode(input,&p,&r);length=76;rxMarker=mulTimestampMask(rx+MUL_FOLLOWER_SLOT_DTU+1000);
+   .originAgeMs=active.slot_ms,.delayAgeMs=active.slot_ms,.delayDtu=120,.maxAgeMs=6000,.delayState=mulPropagationFresh};
+  p.slotMs=(uint16_t)active.slot_ms;mulRelationEncode(input,&p,&r);length=76;rxMarker=mulTimestampMask(rx+(active.slot_ms*UINT64_C(63897600))+1000);
  }
  status=DWT_INT_RXFCG_BIT_MASK;runtime_step();
  /* The same service call can enqueue a periodic summary after the RX record.
@@ -30,7 +30,7 @@ static void frame(unsigned i,bool follower) {
 }
 static void legacy_v3_boot(void) {
  uwb_config_t expected=active;uint32_t before=nvWrites;
- uint8_t record[128];uwb_config_encode(record,&expected,77);record[4]=3;record[19]=0;
+ uint8_t record[128];uwb_config_encode(record,&expected,77);expected.slot_ms=500;record[4]=3;record[19]=0;
  uint32_t crc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(crc>>(8*i));
  memset(nv,255,sizeof(nv));memcpy(nv,record,sizeof(record));uwb_runtime_init();
  assert(nvWrites==before&&generation==77&&loadedAtBoot&&uwb_config_equal(&active,&expected));

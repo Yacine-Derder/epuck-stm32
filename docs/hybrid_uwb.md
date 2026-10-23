@@ -7,15 +7,15 @@ The RLR does not transmit. Other universal ADS/beacon/listen modes remain separa
 
 ## Build and configuration (software-tested, physical acceptance pending)
 
-Use the normal Universal build in runtime_uwb.md, additionally selecting the
-**same follower slot as both ALRs**:
+Use the normal Universal build in runtime_uwb.md, using persistent `cfg set slot_ms 10`
+on all three nodes after upgrading (see runtime_uwb.md):
 
 ```sh
 cmake -S . -B build/Universal -G Ninja \
  -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
  -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
  -DMUL_TWR_ROLE=0 -DMUL_DIAG_ROLE=0 -DPHY_INTEROP_ROLE=0 \
- -DMUL_HYBRID_SLOT_MS=500 -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON
+ -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON
 cmake --build build/Universal
 ```
 
@@ -24,7 +24,7 @@ is unsupported by DWM3000. In lps-node-firmware:
 
 ```sh
 make clean
-make -j4 EXTRA_CFLAGS='-DMUL_HYBRID_CH5=1 -DMUL_FOLLOWER_SLOT_MS=500 -DMUL_PROP_MAX_AGE_MS=6000'
+make -j4 EXTRA_CFLAGS='-DMUL_HYBRID_CH5=1 -DMUL_PROP_MAX_AGE_MS=6000'
 ```
 
 This only changes PHY in persisted custom modes5/6. It does not select a diagnostic
@@ -640,7 +640,7 @@ cmake -S . -B build/HybridFrequency -G Ninja \
  -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
  -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
  -DMUL_TWR_ROLE=0 -DMUL_DIAG_ROLE=0 -DPHY_INTEROP_ROLE=0 \
- -DMUL_HYBRID_SLOT_MS=500 -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON \
+ -DMUL_TIMING_TRACE=ON -DMUL_ADS_TRACE_TIMES=ON \
  -DMUL_HYBRID_FREQ_DIAG=ON
 cmake --build build/HybridFrequency
 ```

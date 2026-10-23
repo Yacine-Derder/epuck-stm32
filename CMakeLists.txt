@@ -182,7 +182,7 @@ option(MUL_ADS_TRACE_TIMES "Emit session-tagged six raw timestamps for ADS audit
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_ADS_TRACE_TIMES=$<BOOL:${MUL_ADS_TRACE_TIMES}>)
 
 # Legacy TDMA layout must match both ALRs; this never changes their scheduler.
-set(MUL_HYBRID_SLOT_MS "500" CACHE STRING "Legacy follower spacing: 500, 50, 10 ms")
+set(MUL_HYBRID_SLOT_MS "10" CACHE STRING "Legacy API fallback only; operational spacing uses persistent slot_ms")
 if(NOT MUL_HYBRID_SLOT_MS MATCHES "^(500|50|10)$")
  message(FATAL_ERROR "MUL_HYBRID_SLOT_MS must be 500, 50, or 10")
 endif()

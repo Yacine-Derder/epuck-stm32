@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 /* Explicit little-endian wire schema; never persist a C structure. */
-#define UWB_CONFIG_VERSION 4u
+#define UWB_CONFIG_VERSION 5u
 #define UWB_MAX_PEERS 8u
 #define UWB_PROTOCOL_STANDALONE 0u
 #define UWB_PROTOCOL_RLR 3u
@@ -22,6 +22,7 @@ typedef struct {
   uwb_peer_t peers[UWB_MAX_PEERS];
   uint32_t protocol_role; // Separate from ADS initiator/responder and identity metadata.
   uint32_t rf_enabled; // RF operation gate; mode selection is retained while off.
+  uint32_t slot_ms; // Persistent reference-to-follower delay; not the measurement period.
   uint32_t reference,follower; // Explicit legacy TDMA roster; separate from TWR role.
 } uwb_config_t;
 /* identity: 0 standalone / 1 ALR / 2 RLR; mode: 0 off / 1 ADS / 2 beacon / 3 listen;

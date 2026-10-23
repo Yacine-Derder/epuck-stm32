@@ -9,7 +9,7 @@ static void twr_exchange(const uint8_t ref[8],bool loseResponse) {
  uint8_t frame[84];uint32_t base=UINT32_MAX-700;
  uint64_t tx=mulTimestampMask(MUL_TIMESTAMP_MASK-660*UINT64_C(63897600));
  uint64_t rx=mulTimestampMask(MUL_TIMESTAMP_MASK-680*UINT64_C(63897600));
- tick=base;mulEncodeTestPacket(frame,ref,10,tx);hybrid_frame(frame,34,rx);
+ tick=base;assert(mulEncodeScheduledPacket(frame,ref,10,tx,(uint16_t)active.slot_ms));hybrid_frame(frame,34,rx);
  uint64_t ms=63897600,stamps[6];
  stamps[0]=mulTimestampMask(tx+650*ms);stamps[1]=900000000000ULL;
  stamps[2]=mulTimestampMask(stamps[1]+20*ms);stamps[3]=mulTimestampMask(stamps[0]+20*ms+200);
@@ -42,21 +42,21 @@ int main(void) {
      tick=20000+policy*20000+i*1000;head=tail=count=0;wifiHead=wifiTail=wifiCount=0;
      uint64_t tx=mulTimestampMask(MUL_TIMESTAMP_MASK-2*1000*UINT64_C(63897600)+i*1000*UINT64_C(63897600));
      uint64_t rx=mulTimestampMask(100000+i*1000*UINT64_C(63897600));
-     mulEncodeTestPacket(frame,ref,i,tx);hybrid_frame(frame,34,rx);
-     tick+=MUL_FOLLOWER_SLOT_MS;
-     mulTestPacket_t p={.sequence=i+500,.txTimestamp=mulTimestampMask(500000+i*1000*UINT64_C(63897600)+MUL_FOLLOWER_SLOT_DTU)};memcpy(p.source,fol,8);
+     assert(mulEncodeScheduledPacket(frame,ref,i,tx,(uint16_t)active.slot_ms));hybrid_frame(frame,34,rx);
+     tick+=active.slot_ms;
+     mulTestPacket_t p={.sequence=i+500,.txTimestamp=mulTimestampMask(500000+i*1000*UINT64_C(63897600)+(active.slot_ms*UINT64_C(63897600)))};memcpy(p.source,fol,8);
      mulRelation_t r={.available=true,.epoch=1,.version=1,.referenceSequence=i,.twrSequence=i,.referenceOrigin=tx,
-     .followerOrigin=mulTimestampMask(500000+i*1000*UINT64_C(63897600)),.originAgeMs=MUL_FOLLOWER_SLOT_MS,.delayAgeMs=MUL_FOLLOWER_SLOT_MS,.remainingMs=100};
-     mulRelationEncode(frame,&p,&r);hybrid_frame(frame,74,rx+MUL_FOLLOWER_SLOT_DTU+1000);
+     .followerOrigin=mulTimestampMask(500000+i*1000*UINT64_C(63897600)),.originAgeMs=active.slot_ms,.delayAgeMs=active.slot_ms,.remainingMs=100};
+     p.slotMs=(uint16_t)active.slot_ms;mulRelationEncode(frame,&p,&r);hybrid_frame(frame,74,rx+(active.slot_ms*UINT64_C(63897600))+1000);
      assert(count>=2);mulTelemetry_t decoded;assert(mulTelemetryDecode(telemetry[(head+TLM_CAPACITY-1)%TLM_CAPACITY],&decoded));
      assert(decoded.captureAgeMs==1);
-     assert(decoded.type==mulTlmHybridRx&&decoded.legacyLength==74&&decoded.legacyRx==mulTimestampMask(rx+MUL_FOLLOWER_SLOT_DTU+1000)&&!memcmp(decoded.legacyFrame,frame,74));
+     assert(decoded.type==mulTlmHybridRx&&decoded.legacyLength==74&&decoded.legacyRx==mulTimestampMask(rx+(active.slot_ms*UINT64_C(63897600))+1000)&&!memcmp(decoded.legacyFrame,frame,74));
      bool tdoaFound=false;
      for(unsigned n=0;n<count;n++) {
        mulTelemetry_t t;assert(mulTelemetryDecode(telemetry[(tail+n)%TLM_CAPACITY],&t));
        if(t.type!=mulTlmTdoa)continue;
        lastTdoa=t;tdoaFound=true;assert(t.tdoa.referenceSequence==i&&t.tdoa.followerSequence==i+500&&t.tdoa.reference==0x84&&t.tdoa.follower==0x85);
-       assert(t.uptimeMs==tick&&t.tdoa.rx==mulTimestampMask(rx+MUL_FOLLOWER_SLOT_DTU+1000)&&t.ratePolicy==policy);
+       assert(t.legacySlotMs==active.slot_ms&&t.uptimeMs==tick&&t.tdoa.rx==mulTimestampMask(rx+(active.slot_ms*UINT64_C(63897600))+1000)&&t.ratePolicy==policy);
        const char *log=NULL,*next=captured;while((next=strstr(next,"MULH OBS ref="))){log=next;next++;}assert(log);
        unsigned rs,fs,st,clock,rate;int dt,mm;
        assert(sscanf(log,"MULH OBS ref=%u fol=%u status=%u clock=%u rate=%u tdoa_dtu=%d range_diff_mm=%d",&rs,&fs,&st,&clock,&rate,&dt,&mm)==7);
@@ -102,12 +102,12 @@ int main(void) {
  command("CFG SET mode hybrid");
  for(unsigned i=0;i<3;i++) {
    uint64_t ms=63897600,tx=100000+i*1000*ms,rx=200000+i*1000*ms;
-   tick=100000+i*1000;mulEncodeTestPacket(frame,ref,2910+i,tx);hybrid_frame(frame,34,rx);
-   mulTestPacket_t p={.sequence=151+i,.txTimestamp=mulTimestampMask(500000+i*1000*ms+MUL_FOLLOWER_SLOT_DTU)};memcpy(p.source,fol,8);
+   tick=100000+i*1000;assert(mulEncodeScheduledPacket(frame,ref,2910+i,tx,(uint16_t)active.slot_ms));hybrid_frame(frame,34,rx);
+   mulTestPacket_t p={.sequence=151+i,.txTimestamp=mulTimestampMask(500000+i*1000*ms+(active.slot_ms*UINT64_C(63897600)))};memcpy(p.source,fol,8);
    mulRelation_t r={.version=2,.available=true,.epoch=7,.referenceSequence=2910+i,.twrSequence=2905+i,
    .referenceOrigin=tx,.followerOrigin=500000+i*1000*ms,.originAgeMs=502,.delayAgeMs=4879,
    .maxAgeMs=6000,.delayDtu=120,.delayState=mulPropagationReused};
-   mulRelationEncode(frame,&p,&r);tick+=MUL_FOLLOWER_SLOT_MS;hybrid_frame(frame,74,rx+MUL_FOLLOWER_SLOT_DTU+1000);
+   p.slotMs=(uint16_t)active.slot_ms;mulRelationEncode(frame,&p,&r);tick+=active.slot_ms;hybrid_frame(frame,74,rx+(active.slot_ms*UINT64_C(63897600))+1000);
  }
  assert(hybridLastStatus==mulDownlinkNoRate&&hybridReceiver.relation.remainingMs==1120);
  assert(!hybridReceiver.diagnostics.reason[mulHybridStaleRelation]);

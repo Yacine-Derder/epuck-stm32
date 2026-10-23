@@ -367,3 +367,47 @@ must be distinct, enabled peers before activating hybrid; the RLR ID must differ
 Change the roster while mode is off when replacing participants. `cfg show` now
 includes the saved/active snapshot's explicit roster. It does not infer roles from
 84/85 when a custom roster is configured. Calibration and peer lists are retained.
+
+## Persistent runtime hybrid slot
+
+`cfg set slot_ms 10` selects the reference-to-follower transmission delay;
+50 and500ms are also supported by the same firmware. `cfg show` displays
+`slot_ms`, and `hybrid status` reports the active value and `slot_mismatch` count.
+The overall ALR cadence stays1000ms; `interval_ms` remains the separate ADS-TWR
+setting and does not control hybrid cadence. Every accepted change uses the
+existing stop/prepare/save/resume transaction and discards old association, clock
+rate and propagation state. Antenna calibration, peer tables, RF/mode and
+telemetry policies are retained. A fresh stationary acquisition is required.
+
+Schema5 uses bits27..28 of the packed node word (1=10,2=50,3=500ms), keeping the
+128-byte record, peer offsets, CRC and commit-last journal unchanged. Versions1..4
+load read-only with500ms, preserving the previous deployment; fresh factory
+settings use10ms. Old hand-built50/10ms images had no persistent slot field and
+must be explicitly set after upgrade. Unsupported slot codes/reserved bits fail
+validation. Existing append/rotation power-cut recovery still applies.
+
+Reference and follower broadcasts now advertise the delay in packet-type high
+bits, without changing34/74/84-byte radio frames or fixed-length UWB3 telemetry.
+The receiver requires a matching advertisement; mismatches/old unadvertised ALRs
+increment `slot_mismatch`, invalidate association/rate acquisition, and cannot
+produce valid TDoA. Update both ALRs before using this runtime profile. Set all
+three nodes explicitly to10ms; packets never silently rewrite persistent settings.
+See the LPS `docs/mul_commands.md` deployment procedure for the coordinated test.
+
+STM32 operator commands after flashing (keep the receiver stationary):
+
+```text
+off
+cfg set slot_ms 10
+show
+hybrid status
+on
+```
+
+Use the existing address0x8d, role RLR, enabled peers0x84/0x85 and
+`mode hybrid_static`; do not reset peers or calibration. Wi-Fi/TLM settings remain
+unchanged. All three slot values are tested with actual receiver association,
+NO_RATE/AVAILABLE telemetry, mismatch rejection, flash reboot and preserved
+rosters/calibration in one executable. Hardware accuracy is not established by
+these tests. `MUL_HYBRID_SLOT_MS` remains only a legacy API fallback; changing
+normal operational timing requires no rebuild.

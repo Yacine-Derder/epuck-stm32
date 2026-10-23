@@ -33,6 +33,7 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
 #endif
  hybridConfig=*c;uint8_t receiver[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};
  mulNetwork_t network={0};(void)mulNetworkInit(&network,(uint8_t)c->reference,(uint8_t)c->follower);
+ network.slotMs=(uint16_t)c->slot_ms;
  (void)mulHybridInitNetwork(&hybridReceiver,&network,receiver,c->mode==5);hybridErrors=hybridTimeouts=0;
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
 }
@@ -42,9 +43,9 @@ void mul_hybrid_radio_suspend(void) {
  mulClockReset(&hybridReceiver.rate);hybridLastStatus=mulDownlinkNoRelation;
 }
 void mul_hybrid_radio_status(char *line,size_t capacity) {
- snprintf(line,capacity,"HYBRID passive=1 slot_ms=%u rate=%s rx=%lu reject=%lu pairs=%lu last_status=%u ref_fresh=%u fol_fresh=%u twr_inter_alr=%lu twr_reject=%lu twr_timeout=%lu phy=%lu timeout=%lu",
- MUL_FOLLOWER_SLOT_MS,hybridConfig.mode==5?"STATIONARY_OPT_IN":"UNKNOWN",(unsigned long)hybridReceiver.received,(unsigned long)hybridReceiver.rejected,
- (unsigned long)hybridReceiver.pairs,hybridLastStatus,mulObservationFresh(&hybridReceiver.observations[mulAlrReference],HAL_GetTick()),mulObservationFresh(&hybridReceiver.observations[mulAlrFollower],HAL_GetTick()),(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts);
+ snprintf(line,capacity,"HYBRID passive=1 slot_ms=%u rate=%s rx=%lu reject=%lu pairs=%lu last_status=%u ref_fresh=%u fol_fresh=%u twr_inter_alr=%lu twr_reject=%lu twr_timeout=%lu phy=%lu timeout=%lu slot_mismatch=%lu",
+ hybridConfig.slot_ms,hybridConfig.mode==5?"STATIONARY_OPT_IN":"UNKNOWN",(unsigned long)hybridReceiver.received,(unsigned long)hybridReceiver.rejected,
+ (unsigned long)hybridReceiver.pairs,hybridLastStatus,mulObservationFresh(&hybridReceiver.observations[mulAlrReference],HAL_GetTick()),mulObservationFresh(&hybridReceiver.observations[mulAlrFollower],HAL_GetTick()),(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts,(unsigned long)hybridReceiver.diagnostics.reason[mulHybridScheduleMismatch]);
 }
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity) {
  const mulHybridDiagnostics_t *d=&hybridReceiver.diagnostics;
@@ -151,7 +152,7 @@ void mul_hybrid_radio_process(void) {
      }
      record=(mulTelemetry_t){.type=mulTlmHybridRx,.peer=frame[13],.remoteRadio=1,.transaction=out.packet.sequence,
        .exchange=out.broadcast?out.relation.epoch:0,.quality=out.associated?out.observation.status:255,.flags=mulTlmStampValid,
-       .legacyLength=(uint8_t)bytes,.legacyRx=rx,.captureAgeMs=(uint16_t)age,.legacySlotMs=MUL_FOLLOWER_SLOT_MS,
+       .legacyLength=(uint8_t)bytes,.legacyRx=rx,.captureAgeMs=(uint16_t)age,.legacySlotMs=hybridConfig.slot_ms,
        .referenceGeneration=out.referenceGeneration,.followerGeneration=out.followerGeneration,.ratePolicy=hybridConfig.mode==5,
        .radioErrors=hybridErrors};
      memcpy(record.legacyFrame,frame,bytes);uwb_runtime_publish(&record);

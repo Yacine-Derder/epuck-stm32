@@ -6,6 +6,7 @@ static const char *const frames[]={
 "41DC4ECFBCFFFFFFFFFFFFFFFF850000000000CFBC4D554C024E0B0000A290D5F1F8021701000000000000005E0B0000590B0000A208E7EE24888F8981F1C5070000F6010F137E007017",
 "41DC5ECFBC850000000000CFBC840000000000CFBC4D554C145E0B0000A2087D9A2E1FD3202DFBA2D44C79FB3601A9E62EA202D5322F0CE178C5FBA2FC2CCB2F840000000189E512010230E511010249E5120102"};
 
+ mulNetwork_t historical=mulDefaultNetwork;historical.slotMs=500;
  uint8_t b[84];mulTestPacket_t p;mulRelation_t r;uint64_t nextReference;
  for(unsigned k=0;k<3;k++) {
    unsigned n=k==0?34:k==1?74:84;
@@ -28,10 +29,10 @@ static const char *const frames[]={
      pair.follower.source.txTimestamp=p.txTimestamp;
      memcpy(pair.reference.sourceClock,(uint8_t[]){0x84,0,0,0,0,0,0xcf,0xbc},8);
      memcpy(pair.follower.sourceClock,p.source,8);int64_t dt;
-     assert(!mulDownlinkRelation(&r,&pair,323987,65535,&dt));
-     assert(mulDownlinkRelation(&r,&pair,323987,1,&dt)&&dt==INT64_C(31948736736));
-     pair.reference.source.sequence=2911;assert(!mulDownlinkRelation(&r,&pair,323987,1,&dt));
-     pair.reference.source.sequence=2910;assert(!mulDownlinkRelation(&r,&pair,325108,1,&dt));
+     assert(!mulDownlinkRelationNetwork(&historical,&r,&pair,323987,65535,&dt));
+     assert(mulDownlinkRelationNetwork(&historical,&r,&pair,323987,1,&dt)&&dt==INT64_C(31948736736));
+     pair.reference.source.sequence=2911;assert(!mulDownlinkRelationNetwork(&historical,&r,&pair,323987,1,&dt));
+     pair.reference.source.sequence=2910;assert(!mulDownlinkRelationNetwork(&historical,&r,&pair,325108,1,&dt));
    } else {
      mulTwrPacket_t t;uint32_t raw,corrected;assert(mulTwrDecode(b,n,&t));
      assert(t.type==mulTwrResult&&t.id==2910&&t.tof==132);

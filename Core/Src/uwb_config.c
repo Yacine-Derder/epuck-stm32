@@ -27,13 +27,14 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
 }
 void uwb_config_defaults(uwb_config_t *c) {
   *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
-    .reference=0x84,.follower=0x85,.tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
+    .slot_ms=10,.reference=0x84,.follower=0x85,.tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
 }
 const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->node>255||c->peer>255) return "address/peer: 0x00..0xFF or decimal 0..255";
   if(c->node==c->peer) return "address: node and peer must differ";
   mulNetwork_t network;
   if(c->reference>254||c->follower>254||!mulNetworkInit(&network,(uint8_t)c->reference,(uint8_t)c->follower))return "reference/follower: distinct IDs 0..254";
+  if(!mulSlotValid(c->slot_ms))return "slot_ms: 10, 50 or 500";
   if(c->rf_enabled>1||(!c->mode&&c->rf_enabled))return "RF: on/off; select a mode before on";
   if(c->protocol_role!=UWB_PROTOCOL_STANDALONE&&c->protocol_role!=UWB_PROTOCOL_RLR)return "protocol role: standalone or rlr; ref/follower unavailable";
   if(c->protocol_role==UWB_PROTOCOL_RLR&&(c->mode==1||c->mode==2))return "role rlr is passive; choose role standalone before a transmitting mode";
@@ -65,7 +66,7 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   return NULL;
 }
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
-  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return a->protocol_role==b->protocol_role && a->rf_enabled==b->rf_enabled && a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
+  uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return a->slot_ms==b->slot_ms && a->protocol_role==b->protocol_role && a->rf_enabled==b->rf_enabled && a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
 }
 const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) {
   char fieldLower[24],valueLower[24];
@@ -80,6 +81,12 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
     if(!strcmp(value,"on")||!strcmp(value,"1"))candidate.rf_enabled=1;
     else if(!strcmp(value,"off")||!strcmp(value,"0"))candidate.rf_enabled=0;
     else return "rf_enabled: on/off";
+    const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+  }
+  if(!strcmp(field,"slot_ms")) {
+    uint32_t slot=!strcmp(value,"10")?10:!strcmp(value,"50")?50:!strcmp(value,"500")?500:0;
+    if(!slot)return "slot_ms: 10, 50 or 500";
+    uwb_config_t candidate=*c;candidate.slot_ms=slot;
     const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
   }
   if(!strcmp(field,"reference")||!strcmp(field,"follower")) {
@@ -140,19 +147,24 @@ void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c
   uint32_t v[FIELDS];fields(c,v);for(unsigned i=0;i<FIELDS;i++) put(out+16+4*i,v[i]);
   /* v3 packs roster bytes; v4 adds RF enable in bit24 and protocol role in bits25..26 of the node word.
    * Record size, peer offsets, CRC and commit-last journal geometry stay fixed. */
-  put(out+16,c->node|(c->reference<<8)|(c->follower<<16)|(c->rf_enabled<<24)|(c->protocol_role<<25));
+  put(out+16,c->node|(c->reference<<8)|(c->follower<<16)|(c->rf_enabled<<24)|(c->protocol_role<<25)|((uint32_t)(c->slot_ms==10?1:c->slot_ms==50?2:3)<<27));
   for(unsigned i=0;i<UWB_MAX_PEERS;i++) {out[88+4*i]=c->peers[i].address;out[89+4*i]=c->peers[i].enabled;out[90+4*i]=(uint8_t)c->peers[i].interval_ms;out[91+4*i]=(uint8_t)(c->peers[i].interval_ms>>8);}
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
 bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
-  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
+  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=4&&get(in+4)!=UWB_CONFIG_VERSION)||get(in+8)!=UWB_CONFIG_RECORD_SIZE||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
 
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
   uwb_config_t candidate={0};assign(&candidate,v);
+  candidate.slot_ms=500; // Legacy schema had a compile-time500ms deployment.
   candidate.reference=0x84;candidate.follower=0x85;candidate.rf_enabled=candidate.mode!=0;candidate.protocol_role=candidate.mode>=4?UWB_PROTOCOL_RLR:UWB_PROTOCOL_STANDALONE;
   if(get(in+4)>=3) {
-    if((get(in+4)==3&&(v[0]&UINT32_C(0xFF000000)))||(v[0]&UINT32_C(0xF8000000)))return false;
-    if(get(in+4)==4){candidate.rf_enabled=(v[0]>>24)&1;candidate.protocol_role=(v[0]>>25)&3;}
+    if((get(in+4)==3&&(v[0]&UINT32_C(0xFF000000)))||(v[0]&(get(in+4)>=5?UINT32_C(0xE0000000):UINT32_C(0xF8000000))))return false;
+    if(get(in+4)>=4){candidate.rf_enabled=(v[0]>>24)&1;candidate.protocol_role=(v[0]>>25)&3;}
+    if(get(in+4)>=5) {
+      unsigned slot=(v[0]>>27)&3;if(!slot)return false;
+      candidate.slot_ms=slot==1?10:slot==2?50:500;
+    }
     candidate.node=v[0]&255;candidate.reference=(v[0]>>8)&255;candidate.follower=(v[0]>>16)&255;
   }
   if(get(in+4)==1) {
