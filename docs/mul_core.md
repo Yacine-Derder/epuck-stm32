@@ -5,10 +5,12 @@ Do not begin Stage 3H, mixed-radio TWR/TDoA or localization from this checkpoint
 
 Canonical source is LPS `portable/mul_core`. This repository's
 [checked-in snapshot/API and wire specification](../ThirdParty/mul_core/README.md)
-is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to published
-LPS `0e3b5802e04f87e2c6e5e41ae07c165ae07ea0d1` (ADS validity/failure diagnostics update). The corresponding STM32 code
-checkpoint is `1bd3ecdba534549b4c9ac89f17fd8bd7270fe056`. Later documentation
-commits keep this same dependency; record both final HEADs with hardware logs.
+is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to local canonical
+`a73b7c5904dcf8088e713c69be3136410357e2f4` (fixed-size onboard TDoA telemetry).
+This pin is deliberately unpublished; explicit --allow-local export preserves
+committed source provenance and offline hashes without a push/fetch. Historical
+Stage3G/ADS checkpoints below retain their original evidence; they do not name
+the current dependency. Current hybrid/logging behavior is in docs/hybrid_uwb.md.
 
 No third remote, submodule or sibling checkout is needed for a standalone build.
 Python 3 (standard library only) is required for the offline build-time checks.

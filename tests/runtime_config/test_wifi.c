@@ -22,6 +22,11 @@ int main(void){
  r.mode=4;r.role=2;assert(mulTelemetryEncode(encoded,sizeof(encoded),&r));assert(!strncmp(encoded,"UWB3 ",5));
  for(unsigned i=0;i<16;i++)esp_link_task();before=(unsigned)strlen(uart3_output);
  assert(esp_link_telemetry(encoded));esp_link_task();assert(strstr(uart3_output+before,"UWB3 "));
+ r=(mulTelemetry_t){.type=mulTlmTdoa,.node=141,.peer=133,.radio=2,.mode=5,.role=2,.epoch=99,.ratePolicy=1,.legacySlotMs=500,
+ .tdoa={.reference=132,.follower=133,.referenceSequence=3666,.followerSequence=3676,.status=4,.clockValid=1,.rateState=1,.ratePpb=0,.tdoaDtu=-28,.rangeDifferenceMm=-131}};
+ assert(mulTelemetryEncode(encoded,sizeof(encoded),&r)&&strlen(encoded)==309);
+ for(unsigned i=0;i<16;i++)esp_link_task();before=(unsigned)strlen(uart3_output);
+ assert(esp_link_telemetry(encoded));esp_link_task();assert(strstr(uart3_output+before,encoded));
  assert(!motor_arm_pending&&motor_state!=MOTOR_ARMED);
  esp_length=10;esp_discard=esp_fault=1;esp_link_set_enabled(0);assert(!esp_length&&!esp_discard&&!esp_fault);assert(!esp_active&&!esp_link_telemetry(encoded));
  assert(!motor_arm_pending&&!motor_count);puts("Wi-Fi-enabled UWB-only policy: ARM rejected, reserved control priority, bounded optional UART/TTL and disable passed");return 0;

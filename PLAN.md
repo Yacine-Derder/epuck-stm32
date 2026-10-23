@@ -1,3 +1,19 @@
+# Current follow-up — onboard TDoA Wi-Fi telemetry
+
+Implemented/software tested; hardware validation pending. Each associated onboard
+RLR localization result is now a dedicated fixed-length UWB3 type7, including
+invalid/status/rate cases, before its raw debug frame. No localization/TDMA/TWR
+math changes. Capture uptime is preserved. STM and ESP vendor snapshots pin local
+unpublished core a73b7c5904dcf8088e713c69be3136410357e2f4; no push is authorized.
+
+Runtime tests verify USB-result equality, exact Wi-Fi/UART bytes, independent
+sequences, timestamp precision, ordinary NO_RATE/static policy, capture time,
+bounded overflow/control safety and retained legacy behavior. Universal clean
+build/check_elf passes: RAM36552B, FLASH128776B. No flashing or hardware accuracy/
+UART reliability claim. Updated docs/hybrid_uwb.md links the sibling ESP compact/
+raw logging guide and ~/Documents/uwb_logs workflow. Existing prior checkpoints
+below remain their recorded software/hardware status.
+
 # Current checkpoint D — unified UWB command interface
 
 The user authorized proceeding with C/D while preserving ordinary hybrid NO_RATE.

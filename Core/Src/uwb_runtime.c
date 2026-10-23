@@ -210,7 +210,7 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
   r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)(active.mode>=4?2:active.role); // Preserve the existing passive UWB3 wire role.
-  if(r->type!=mulTlmPeer)r->uptimeMs=HAL_GetTick();
+  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa)r->uptimeMs=HAL_GetTick();
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}

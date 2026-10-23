@@ -131,7 +131,25 @@ void mul_hybrid_radio_process(void) {
    }
    if(shape&&enabled&&mulHybridReceive(&hybridReceiver,frame,bytes,rx,age,now,&out)) {
      if(out.associated)hybridLastStatus=out.observation.status;
-     mulTelemetry_t record={.type=mulTlmHybridRx,.peer=frame[13],.remoteRadio=1,.transaction=out.packet.sequence,
+     /* Prioritize the associated onboard result over this packet's debug copy.
+      * Both use the existing bounded, nonblocking telemetry queues. */
+     mulTelemetry_t record={0};
+     if(out.associated) {
+       const mulLocalization_t *o=&out.observation;
+       record=(mulTelemetry_t){.type=mulTlmTdoa,.peer=o->follower[0],.remoteRadio=1,
+        .uptimeMs=o->observedMs,.exchange=o->followerEpoch,
+        .referenceGeneration=o->referenceGeneration,.followerGeneration=o->followerGeneration,
+        .captureAgeMs=(uint16_t)age,.legacySlotMs=o->slotMs,.ratePolicy=hybridConfig.mode==5,
+        .radioErrors=hybridErrors,.timeouts=hybridTimeouts,
+        .tdoa={.reference=o->reference[0],.follower=o->follower[0],
+          .referenceSequence=o->referenceSequence,.followerSequence=o->followerSequence,
+          .tdoaDtu=o->tdoaDtu,.rangeDifferenceMm=o->rangeDifferenceMm,.ratePpb=o->ratePpb,
+          .status=o->status,.clockValid=o->clockValid,.rateState=o->rateState,.rx=o->receiverTimestamp,
+          .delayAgeMs=o->delayAgeMs,.delayDtu=o->delayDtu,.clockAgeMs=o->clockAgeMs,
+          .delayState=o->delayState,.powerFlags=o->powerFlags,.unknownComponents=o->unknownComponents}};
+       uwb_runtime_publish(&record);
+     }
+     record=(mulTelemetry_t){.type=mulTlmHybridRx,.peer=frame[13],.remoteRadio=1,.transaction=out.packet.sequence,
        .exchange=out.broadcast?out.relation.epoch:0,.quality=out.associated?out.observation.status:255,.flags=mulTlmStampValid,
        .legacyLength=(uint8_t)bytes,.legacyRx=rx,.captureAgeMs=(uint16_t)age,.legacySlotMs=MUL_FOLLOWER_SLOT_MS,
        .referenceGeneration=out.referenceGeneration,.followerGeneration=out.followerGeneration,.ratePolicy=hybridConfig.mode==5,

@@ -166,8 +166,8 @@ existing ESP-IDF6.1 activation/commands in uwb_network.md. On the workstation,
 from epuck-esp32 (substitute actual endpoint addresses):
 
 ```sh
-python3 tools/uwb_collect.py --robot 192.168.1.141:3333 --robot 192.168.1.142:3333 --output captures
-python3 tools/uwb_hybrid.py captures/*-robot-*.jsonl --slot 500 \
+python3 tools/uwb_collect.py --robot 192.168.1.141:3333 --robot 192.168.1.142:3333 --raw
+python3 tools/uwb_hybrid.py ~/Documents/uwb_logs/*-raw.jsonl --slot 500 \
  --output hybrid-observations.jsonl \
  --anchors tools/examples/hybrid_anchors.json --positions hybrid-positions.jsonl
 ```
@@ -760,3 +760,33 @@ this document; only persistent settings choose the new roster. The original
 checkpoint A physical acceptance and intermittent PHY/TWR errors remain unchanged.
 Checkpoint D's command compatibility matrix/aliases are next; C does not claim
 that full interface is already implemented.
+
+
+## Onboard TDoA over Wi-Fi (additive UWB3 type7)
+
+The adapter now publishes each associated `out.observation` before its raw frame,
+using the existing bounded runtime USB/Wi-Fi queues. Reference/follower sequences,
+status/clock/rate, signed DTU/mm, capture uptime/native RX and relation/rate metadata
+are copied directly from the onboard result, including invalid observations.
+No localization, association, ALR timing, TWR or clock mathematics changed. USB
+verbosity/help suppression does not suppress associated Wi-Fi records. The runtime
+preserves the observation's capture uptime instead of replacing it at publication.
+Record size remains152 bytes /310 UART bytes; older ESP validators need updating.
+Both vendor snapshots pin the local canonical commit a73b7c5904dcf8088e713c69be3136410357e2f4.
+It is deliberately unpublished; offline hashes/builds work without a push.
+
+The [logging/workflow guide](../../epuck-esp32/docs/uwb_logging.md) defines compact
+(default) and raw JSONL, field/status meanings, live statistics, migration and exact
+operator build/flash/configuration commands. Logging now defaults to
+~/Documents/uwb_logs. Existing offline reconstruction needs `--raw`; compact files
+contain onboard experimental results, not reconstruction inputs. Ordinary hybrid
+remains NO_RATE; hybrid_static is stationary-only and uncertainty remains UNKNOWN.
+
+Software tests compare the actual USB OBS line against the new record and verify
+identical bytes in the Wi-Fi queue for associated ordinary/static observations,
+including independent sequences, native40 timestamps and capture uptime. Saturation
+increments each sink's counters without waiting/TX; UART tests preserve control
+priority and forward the exact309-character line. Complete runtime configuration,
+persistence, safety, TWR/hybrid and help regressions pass. The Universal clean build
+and reserved-sector check pass (RAM36552B, FLASH128776B). No hardware was flashed;
+UART fault resolution, packet delivery and physical accuracy are not claimed.

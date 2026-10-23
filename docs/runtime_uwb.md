@@ -294,7 +294,7 @@ Telemetry and identity never authorize ARM or movement in this image.
 With the existing ESP32 provisioned on Wi-Fi, run from epuck-esp32:
 
 ```sh
-python3 tools/uwb_collect.py --robot 192.168.1.21:3333 --robot 192.168.1.22:3333 --output captures
+python3 tools/uwb_collect.py --robot 192.168.1.21:3333 --robot 192.168.1.22:3333 --raw
 ```
 
 The read-only collector sends session heartbeats and saves per-robot JSONL files,

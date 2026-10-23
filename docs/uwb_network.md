@@ -60,10 +60,10 @@ Do not assume every record can be delivered at high rates.
 From epuck-esp32:
 
 ```sh
-python3 tools/uwb_collect.py --robot 192.168.1.21:3333 --robot 192.168.1.22:3333 --output captures
+python3 tools/uwb_collect.py --robot 192.168.1.21:3333 --robot 192.168.1.22:3333 --raw
 ```
 
-Substitute actual IPs. Each robot gets a timestamped `captures/*-robot-N.jsonl`
+Substitute actual IPs. Each robot gets a timestamped `~/Documents/uwb_logs/*-robot-N-raw.jsonl`
 file with endpoint, UTC and host monotonic receipt time. CTRL-C closes files.
 The collector reconnects after failures and sends only CONTROL_HB; it never sends
 ARM, movement, STOP or configuration. Reconnect/bridge/corrupt events and modulo32
@@ -235,7 +235,7 @@ raw RX ticks from independent receivers must never be subtracted as global time.
 Offline analysis, in epuck-esp32:
 
 ```sh
-python3 tools/uwb_tdoa.py captures/*-robot-*.jsonl --output observations.jsonl
+python3 tools/uwb_tdoa.py ~/Documents/uwb_logs/*-raw.jsonl --output observations.jsonl
 ```
 
 It exports observations, apparent clock fits and grouped transmitter epoch/sequence

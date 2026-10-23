@@ -32,14 +32,14 @@ int main(void) {
  memset(nv,255,sizeof(nv));tick=0;uwb_runtime_init();command("CFG SET address 0x21");
  unsigned writes=nvWrites;command("CFG SET mode hybrid");assert(nvWrites==writes&&active.mode==0);
  command("CFG SET correction_mm -99");command("CFG SET calibration on");
- command("PEER ADD 0x84");command("PEER ADD 0x85");command("CFG SET verbosity quiet");assert(active.peer==1&&active.calibration==1);
+ command("PEER ADD 0x84");command("PEER ADD 0x85");command("CFG SET verbosity summary");assert(active.peer==1&&active.calibration==1);
  command("CFG SET wifi on");command("CFG SET telemetry on");command("CFG SET mode hybrid");assert(active.mode==4&&config.calibration==1);persisted();
- unsigned transmitted=starts;uint8_t frame[84];
+ unsigned transmitted=starts;uint8_t frame[84];mulTelemetry_t lastTdoa={0};
  const uint8_t ref[8]={0x84,0,0,0,0,0,0xcf,0xbc},fol[8]={0x85,0,0,0,0,0,0xcf,0xbc};
  for(unsigned policy=0;policy<2;policy++) {
    if(policy)command("CFG SET mode hybrid_static");
    for(unsigned i=0;i<10;i++) {
-     tick=20000+policy*20000+i*1000;head=tail=count=0;
+     tick=20000+policy*20000+i*1000;head=tail=count=0;wifiHead=wifiTail=wifiCount=0;
      uint64_t tx=mulTimestampMask(MUL_TIMESTAMP_MASK-2*1000*UINT64_C(63897600)+i*1000*UINT64_C(63897600));
      uint64_t rx=mulTimestampMask(100000+i*1000*UINT64_C(63897600));
      mulEncodeTestPacket(frame,ref,i,tx);hybrid_frame(frame,34,rx);
@@ -51,9 +51,31 @@ int main(void) {
      assert(count>=2);mulTelemetry_t decoded;assert(mulTelemetryDecode(telemetry[(head+TLM_CAPACITY-1)%TLM_CAPACITY],&decoded));
      assert(decoded.captureAgeMs==1);
      assert(decoded.type==mulTlmHybridRx&&decoded.legacyLength==74&&decoded.legacyRx==mulTimestampMask(rx+MUL_FOLLOWER_SLOT_DTU+1000)&&!memcmp(decoded.legacyFrame,frame,74));
+     bool tdoaFound=false;
+     for(unsigned n=0;n<count;n++) {
+       mulTelemetry_t t;assert(mulTelemetryDecode(telemetry[(tail+n)%TLM_CAPACITY],&t));
+       if(t.type!=mulTlmTdoa)continue;
+       lastTdoa=t;tdoaFound=true;assert(t.tdoa.referenceSequence==i&&t.tdoa.followerSequence==i+500&&t.tdoa.reference==0x84&&t.tdoa.follower==0x85);
+       assert(t.uptimeMs==tick&&t.tdoa.rx==mulTimestampMask(rx+MUL_FOLLOWER_SLOT_DTU+1000)&&t.ratePolicy==policy);
+       const char *log=NULL,*next=captured;while((next=strstr(next,"MULH OBS ref="))){log=next;next++;}assert(log);
+       unsigned rs,fs,st,clock,rate;int dt,mm;
+       assert(sscanf(log,"MULH OBS ref=%u fol=%u status=%u clock=%u rate=%u tdoa_dtu=%d range_diff_mm=%d",&rs,&fs,&st,&clock,&rate,&dt,&mm)==7);
+       assert(t.tdoa.referenceSequence==rs&&t.tdoa.followerSequence==fs&&t.tdoa.status==st&&t.tdoa.clockValid==clock&&t.tdoa.rateState==rate&&t.tdoa.tdoaDtu==dt&&t.tdoa.rangeDifferenceMm==mm);
+       bool wifi=false;for(unsigned j=0;j<wifiCount;j++)if(!strcmp(telemetry[(tail+n)%TLM_CAPACITY],wifiQueue[(wifiTail+j)%TLM_CAPACITY]))wifi=true;
+       assert(wifi); /* The actual separate Wi-Fi queue holds identical bytes. */
+     }
+     assert(tdoaFound==(i>0));
    }
    assert(hybridReceiver.pairs>0&&hybridLastStatus==(policy?mulDownlinkAvailable:mulDownlinkNoRate));
  }
+ /* Every associated result gets a publish attempt; bounded queues account for
+  * loss rather than waiting in the radio path. Capture uptime is not rewritten. */
+ head=tail=count=0;wifiHead=wifiTail=wifiCount=0;lastTdoa.uptimeMs=17;
+ uwb_runtime_publish(&lastTdoa);mulTelemetry_t queued;assert(mulTelemetryDecode(telemetry[tail],&queued)&&queued.uptimeMs==17);
+ for(unsigned i=1;i<TLM_CAPACITY;i++)uwb_runtime_publish(&lastTdoa);
+ uint32_t usbBefore=dropped,wifiBefore=wifiDrops;uwb_runtime_publish(&lastTdoa);
+ assert(count==TLM_CAPACITY&&wifiCount==TLM_CAPACITY&&dropped==usbBefore+1&&wifiDrops==wifiBefore+1&&starts==transmitted);
+ head=tail=count=0;wifiHead=wifiTail=wifiCount=0;
  /* The reported v2 state is usable with a valid local capture age. It is
   * an inter-ALR propagation measurement age, not RX service/queue latency. */
  command("CFG SET mode hybrid");
