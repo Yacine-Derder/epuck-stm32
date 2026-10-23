@@ -10,7 +10,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-pie -no-p
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_runtime.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_runtime.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/runtime"
 "$work/runtime"
 
@@ -36,21 +36,21 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_multi.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_multi.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/multi"
 "$work/multi"
 cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -fsanitize=address,undefined -fno-pie -no-pie \
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_beacon.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_beacon.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/beacon"
 "$work/beacon"
 cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -fsanitize=address,undefined -fno-pie -no-pie \
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_hybrid.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_hybrid.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/hybrid"
 "$work/hybrid"
 
@@ -58,7 +58,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_help.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_help.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/help"
 "$work/help"
 
@@ -67,7 +67,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
  -DMUL_FOLLOWER_SLOT_MS=$slot -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_network.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_network.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/network"
 "$work/network"
 done
@@ -77,7 +77,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
  -DMUL_FOLLOWER_SLOT_MS=$slot -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_commands.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_commands.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/commands"
 "$work/commands"
 done
@@ -90,6 +90,14 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-function -g -
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
- tests/runtime_config/test_schedule_runtime.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ tests/runtime_config/test_schedule_runtime.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/schedule_runtime"
 "$work/schedule_runtime"
+
+cc -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-function -g -fsanitize=address,undefined -fno-pie -no-pie \
+ -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
+ -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
+ -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
+ tests/runtime_config/test_multi_hybrid.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
+ ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/multi_hybrid"
+"$work/multi_hybrid"

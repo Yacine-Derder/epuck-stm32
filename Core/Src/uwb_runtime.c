@@ -234,11 +234,11 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
   r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)(active.mode>=4?2:active.role); // Preserve the existing passive UWB3 wire role.
-  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa)r->uptimeMs=HAL_GetTick();
+  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa&&r->type!=mulTlmVector)r->uptimeMs=HAL_GetTick();
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
-  bool important=r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
+  bool important=r->type==mulTlmVector||r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
   telemetry_enqueue(telemetry,telemetryEssential,NULL,&head,&tail,&count,&highWater,&dropped,line,important);
   if(active.wifi)
     telemetry_enqueue(wifiQueue,wifiEssential,wifiQueuedAt,&wifiHead,&wifiTail,&wifiCount,&wifiHigh,&wifiDrops,line,important);
@@ -266,7 +266,6 @@ static void stop(void) {
 static bool prepare(const uwb_config_t *c) {
   stop();
   if(!c->mode||!c->rf_enabled) return true;
-  if(c->mode>=4&&c->schedule.profile==MUL_PROFILE_MULTI){reply("ERR multi receiver adapter not enabled in this checkpoint");return false;}
   uint64_t session;if(!uwb_runtime_session(&session)) return false;
   telemetryEpoch=session;mul_ads_radio_configure(c,session);radioTouched=true;
   int32_t status=mul_ads_radio_init();mul_ads_radio_stop();

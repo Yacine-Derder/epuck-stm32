@@ -13,8 +13,9 @@ int main(void) {
  command("cfg roster show");drain();assert(strstr(captured,"profile=2 count=8")&&strstr(captured,"ALR slot=7 id=0x8B"));
  command("cfg roster set 0x84 0x84 0x86");assert(nvWrites==writes&&active.schedule.count==8);
  command("cfg set slot_ms 500");assert(nvWrites==writes&&active.slot_ms==10);
- command("on");assert(!started&&!active.rf_enabled); // profile2 adapter milestone is not activated yet
+ command("on");assert(started&&active.rf_enabled);
+ command("off");assert(!started&&!active.rf_enabled);
  command("cfg roster set 0x84 0x85");assert(!active.schedule.profile&&active.reference==132&&active.follower==133);
  command("on");assert(started&&active.rf_enabled&&active.mode==5);persisted();
- puts("Multi runtime: RF-OFF roster/slot transactions, N8 save/reboot, malformed/no-write, disabled unfinished profile and N2 restore passed");return 0;
+ puts("Multi runtime: RF-OFF roster/slot transactions, N8 save/reboot, malformed/no-write, passive multi activation and N2 restore passed");return 0;
 }

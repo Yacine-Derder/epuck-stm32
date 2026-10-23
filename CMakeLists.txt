@@ -83,6 +83,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/mul_diag.c
     Core/Src/mul_timing.c
     ThirdParty/mul_core/mul_core.c
+    ThirdParty/mul_core/mul_multi_receiver.c
+    ThirdParty/mul_core/mul_multi_protocol.c
     ThirdParty/mul_core/mul_schedule.c
     ThirdParty/mul_core/mul_common.c
     ${QORVO_DRIVER_SOURCES}

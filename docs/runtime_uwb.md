@@ -433,3 +433,28 @@ slot changes. The unfinished multi receiver profile cannot yet enable RF at this
 checkpoint; configuring it does not silently activate the legacy two-node path.
 See the LPS `docs/mul_multi_alr.md` architecture and forthcoming handoff for
 integration status. No hardware operation was performed.
+
+## Multi-ALR profile2
+
+`off`, then `cfg roster set 0x84 0x85 0x86 [..0x8b]`,
+`cfg set slot_ms 10`, `cfg roster show`, `on` selects passive multi reception.
+Two-ID roster selects the unchanged legacy path; `cfg set profile multi` explicitly
+selects the new protocol for two IDs. `cfg set profile legacy` requires two IDs.
+`cfg set schedule_revision 1` and `cfg set cycle_ms 1000` require RF OFF; only1Hz
+is currently supported. Roster is independent of the ADS peer/calibration table.
+Every ALR must use the same ordered IDs, spacing, period and revision.
+
+The radio owner captures full40/80-byte broadcasts and native RX/SYS_TIME,
+re-arms before math/telemetry, and closes a partial vector20ms after the last
+configured slot. TWR is performed by ALRs; this receiver never transmits in either
+hybrid mode. Type8 coherent vectors have essential queue priority; type9 traces
+are optional. Existing type6/type7 legacy records retain their format. `hybrid
+status` reports multi count, fingerprint, received/rejected/duplicate/late counts.
+`hybrid frames` retains the last reference/follower evidence, not all eight slots.
+
+Software validation: `MUL_MULTI_TRACE=/tmp/multi.uart sh tests/runtime_config/run.sh`
+exercises actual radio code, EEPROM-like journal, UART queues and production math
+for N2/3/4/8, independent skews, exact signed geometry, missing/invalid siblings,
+no-rate policy and40/32-bit wrap. From epuck-esp32 run
+`python3 tools/verify_multi_replay.py /tmp/multi.uart` to replay those bytes through
+the real ESP owner, loopback TCP reconnect and compact JSONL. No hardware is used.
