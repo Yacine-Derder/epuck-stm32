@@ -124,5 +124,5 @@ int main(void) {
  assert(uwb_config_save(&store,&b,&gen)&&gen==1024&&erases==eraseBefore);
  assert(uwb_config_save(&store,&a,&gen)&&gen==1025&&erases==eraseBefore+1);
  assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&c,&a));
- printf("configuration CRC/schema/validation/calibration/journal/power-cut tests passed (%u erases)\n",erases);
+ printf("configuration CRC/schema/validation/calibration/journal/power-cut tests passed (%u erases)\n",erases);return 0;
 }

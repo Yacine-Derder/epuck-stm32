@@ -16,7 +16,7 @@ for enabled in 0 1;do
  ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock.c \
  ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c \
  ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c \
- ThirdParty/mul_core/mul_time.c ThirdParty/mul_core/mul_ads.c ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c \
+ ThirdParty/mul_core/mul_time.c ThirdParty/mul_core/mul_ads.c ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c \
  -lm -o "$work/adapter"
  "$work/adapter"
 done

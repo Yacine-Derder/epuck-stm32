@@ -411,3 +411,25 @@ NO_RATE/AVAILABLE telemetry, mismatch rejection, flash reboot and preserved
 rosters/calibration in one executable. Hardware accuracy is not established by
 these tests. `MUL_HYBRID_SLOT_MS` remains only a legacy API fallback; changing
 normal operational timing requires no rebuild.
+
+## Multi-ALR configuration checkpoint
+
+`cfg roster show` displays the ordered schedule and its fingerprint.
+With RF OFF, `cfg roster set 0x84 0x85 0x86` stores a profile2 roster;2..8 IDs
+are accepted, with duplicates/impossible timing rejected before flash writes.
+A two-ID roster restores the existing implicit legacy profile. The ALR roster
+is independent of the ADS peer table, so eight ALRs do not overwrite calibrated
+primary peers. `cfg set profile multi` also permits explicit profile2 with N=2.
+The supported cycle period is currently1000ms (`cfg set cycle_ms 1000`);
+`cfg set schedule_revision <nonzero uint32>` is available for profile2.
+
+Legacy settings remain128-byte schema1..5 records. Profile2 settings use an
+aligned256-byte schema6 record containing the same settings prefix, canonical
+32-byte schedule, outer CRC and final commit word. Scanning recognizes both
+sizes at128-byte boundaries and reserves both halves before a256-byte write.
+Interrupted appends/sector rotations retain the previous committed record;
+legacy migrations remain read-only. RF OFF is required for roster, profile and
+slot changes. The unfinished multi receiver profile cannot yet enable RF at this
+checkpoint; configuring it does not silently activate the legacy two-node path.
+See the LPS `docs/mul_multi_alr.md` architecture and forthcoming handoff for
+integration status. No hardware operation was performed.

@@ -95,6 +95,7 @@ static const char *const help_config[]={
   "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
   "  - telemetry, wifi, samples: off | on; see help telemetry",
   "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
+  "  - cfg roster show/set id0 id1 [..id7]; schedule changes require RF OFF",
   "  - slot_ms: 10 | 50 | 500; reference-to-follower delay, independent of period",
   "",
   "Persistence and calibration",
@@ -265,6 +266,7 @@ static void stop(void) {
 static bool prepare(const uwb_config_t *c) {
   stop();
   if(!c->mode||!c->rf_enabled) return true;
+  if(c->mode>=4&&c->schedule.profile==MUL_PROFILE_MULTI){reply("ERR multi receiver adapter not enabled in this checkpoint");return false;}
   uint64_t session;if(!uwb_runtime_session(&session)) return false;
   telemetryEpoch=session;mul_ads_radio_configure(c,session);radioTouched=true;
   int32_t status=mul_ads_radio_init();mul_ads_radio_stop();
@@ -350,6 +352,14 @@ static void display_output(void) {
     return;
   }
   const uwb_config_t *c=&displayConfig;char text[320];
+  if(display==5) {
+    mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
+    if(displayIndex==0)snprintf(text,sizeof(text),"SCHEDULE profile=%u count=%u slot_ms=%u cycle_ms=%u revision=%lu hash=%08lX",schedule.profile,schedule.count,schedule.slotMs,schedule.periodMs,(unsigned long)schedule.revision,(unsigned long)mulScheduleFingerprint(&schedule));
+    else if(displayIndex<=schedule.count){unsigned slot=displayIndex-1;snprintf(text,sizeof(text),"ALR slot=%u id=0x%02X offset_ms=%u",slot,schedule.ids[slot],mulScheduleOffsetMs(&schedule,slot));}
+    else {display=0;return;}
+    if(usb_console_try_write(text))displayIndex++;
+    return;
+  }
   if(display==4) {
     if(!mul_ads_radio_sync_status(displayIndex,text,sizeof(text))){display=0;return;}
     if(usb_console_try_write(text))displayIndex++;
@@ -385,7 +395,7 @@ static void display_output(void) {
   case 12:snprintf(text,sizeof(text),"Telemetry:          %s",onoff(c->telemetry));break;
   case 13:snprintf(text,sizeof(text),"Telemetry interval: %lu ms",(unsigned long)c->telemetry_ms);break;
   case 14:snprintf(text,sizeof(text),"Ranging samples:    %s",onoff(c->samples));break;
-  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
+  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
   case 22:snprintf(text,sizeof(text),"Protocol role:      %s",c->protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone");break;
@@ -463,10 +473,10 @@ bool uwb_runtime_command(const char *line) {
     if(line[i]<32||line[i]>126) {reply("ERR malformed command");return true;}
     copy[i]=line[i]>='A'&&line[i]<='Z'?line[i]+('a'-'A'):line[i];
   }
-  copy[n]=0;char *token[5]={0};unsigned nt=0;char *p=copy;
+  copy[n]=0;char *token[11]={0};unsigned nt=0;char *p=copy;
   while(*p) {
     if(*p==' ') {p++;continue;}
-    if(nt==5) {reply("ERR too many command arguments");return true;}
+    if(nt==11) {reply("ERR too many command arguments");return true;}
     token[nt++]=p;while(*p&&*p!=' ')p++;
     if(*p)*p++=0;
   }
@@ -559,6 +569,15 @@ bool uwb_runtime_command(const char *line) {
     else reply("ERR help [topic]; use config, hybrid, peers, telemetry, safety or all");
     return true; /* Unknown topics must not fall through to robot safety dispatch. */
   }
+  if(!strcmp(token[0],"cfg")&&nt>=3&&!strcmp(token[1],"roster")) {
+    if(nt==3&&!strcmp(token[2],"show")){displayConfig=current;display=5;displayIndex=0;return true;}
+    if(nt<5||strcmp(token[2],"set")){reply("ERR cfg roster set id0 id1 [id2..id7]");return true;}
+    if(current.rf_enabled||started){reply("ERR roster requires RF OFF");return true;}
+    uint8_t ids[MUL_MAX_ALRS]={0};
+    for(unsigned i=3;i<nt;i++){unsigned id;if(!number(token[i],254,&id)){reply("ERR ALR ID: 0..254");return true;}ids[i-3]=(uint8_t)id;}
+    uwb_config_t candidate=current;const char *error=uwb_config_roster(&candidate,ids,nt-3);
+    if(error)reply(error);else update(&candidate);return true;
+  }
   if(strcmp(token[0],"cfg")&&strcmp(token[0],"tlm")) return false;
   if(!strcmp(token[0],"tlm")) {
     if(nt==2&&!strcmp(token[1],"next")) {
@@ -580,6 +599,7 @@ bool uwb_runtime_command(const char *line) {
       show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
+    if((!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
     uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
     /* Preserve legacy cfg set mode auto-start semantics. Canonical mode above
      * changes only selection; explicit on/off is independent. */

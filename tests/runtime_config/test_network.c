@@ -51,7 +51,7 @@ int main(void) {
  unsigned transmitted=starts;
  const unsigned slots[]={10,50,500};
  for(unsigned i=0;i<3;i++) {
-  char cmd[40];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",slots[i]);command(cmd);
+  command("off");char cmd[40];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",slots[i]);command(cmd);
   assert(active.slot_ms==slots[i]);exercise(0x42,0x23);exercise(0x85,0x84);
  }
  assert(starts==transmitted);
