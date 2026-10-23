@@ -76,6 +76,27 @@ int main(void) {
  uint32_t usbBefore=dropped,wifiBefore=wifiDrops;uwb_runtime_publish(&lastTdoa);
  assert(count==TLM_CAPACITY&&wifiCount==TLM_CAPACITY&&dropped==usbBefore+1&&wifiDrops==wifiBefore+1&&starts==transmitted);
  head=tail=count=0;wifiHead=wifiTail=wifiCount=0;
+ /* Sustained 5 records/s with a saturated, unconsumed USB queue. Every
+  * observation (including NO_RATE) survives competing summaries on Wi-Fi. */
+ wifiWritable=true;
+ for(unsigned cycle=0;cycle<600;cycle++) {
+   tick+=1000;
+   mulTelemetry_t summary={.type=mulTlmSummary};
+   for(unsigned i=0;i<TLM_CAPACITY;i++)uwb_runtime_publish(&summary);
+   mulTelemetry_t observation=lastTdoa;
+   if(cycle%2) {
+     observation.tdoa.status=mulDownlinkNoRate;observation.tdoa.rateState=0;
+     observation.tdoa.ratePpb=INT32_MIN;observation.tdoa.tdoaDtu=INT32_MIN;
+     observation.tdoa.rangeDifferenceMm=INT32_MIN;
+   }
+   uwb_runtime_publish(&observation);
+   unsigned before=wifiSent;
+   for(unsigned i=0;i<TLM_CAPACITY;i++)telemetry_task();
+   assert(wifiSent==before+TLM_CAPACITY&&!wifiCount&&count==TLM_CAPACITY);
+   assert(mulTelemetryDecode(wifiLast,&queued)&&queued.type==mulTlmTdoa);
+   assert(queued.tdoa.status==observation.tdoa.status&&queued.tdoa.rangeDifferenceMm==observation.tdoa.rangeDifferenceMm);
+ }
+ wifiWritable=false;head=tail=count=0;wifiHead=wifiTail=wifiCount=0;
  /* The reported v2 state is usable with a valid local capture age. It is
   * an inter-ALR propagation measurement age, not RX service/queue latency. */
  command("CFG SET mode hybrid");

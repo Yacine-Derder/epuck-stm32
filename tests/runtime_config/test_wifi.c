@@ -27,6 +27,23 @@ int main(void){
  assert(mulTelemetryEncode(encoded,sizeof(encoded),&r)&&strlen(encoded)==309);
  for(unsigned i=0;i<16;i++)esp_link_task();before=(unsigned)strlen(uart3_output);
  assert(esp_link_telemetry(encoded));esp_link_task();assert(strstr(uart3_output+before,encoded));
+ /* HAL backpressure retains a pending record without blocking or corrupting it. */
+ cmd("CONTROL_HB");mock_tx3_busy=1;assert(esp_link_telemetry(encoded));
+ before=(unsigned)strlen(uart3_output);
+ for(unsigned i=0;i<100;i++)esp_link_task();
+ assert(esp_telemetry_pending&&strlen(uart3_output)==before);
+ mock_tx3_busy=0;esp_link_task();assert(!esp_telemetry_pending&&strstr(uart3_output+before,encoded));
+ /* A full optional debug FIFO cannot starve TDoA; actual replies still win. */
+ for(unsigned cycle=0;cycle<100;cycle++) {
+   uart3_output[0]=0;cmd("CONTROL_HB");
+   for(unsigned i=0;i<ESP_QUEUE;i++)esp_link_log("optional flood");
+   assert(esp_link_telemetry(encoded));
+   esp_link_reply_to(id,"essential reply");before=(unsigned)strlen(uart3_output);
+   esp_link_task();assert(strstr(uart3_output+before,"essential reply"));
+   before=(unsigned)strlen(uart3_output);esp_link_task();
+   assert(strstr(uart3_output+before,encoded)&&!esp_telemetry_pending);
+   for(unsigned i=0;i<ESP_QUEUE+2;i++)esp_link_task();tick+=10;
+ }
  assert(!motor_arm_pending&&motor_state!=MOTOR_ARMED);
  esp_length=10;esp_discard=esp_fault=1;esp_link_set_enabled(0);assert(!esp_length&&!esp_discard&&!esp_fault);assert(!esp_active&&!esp_link_telemetry(encoded));
  assert(!motor_arm_pending&&!motor_count);puts("Wi-Fi-enabled UWB-only policy: ARM rejected, reserved control priority, bounded optional UART/TTL and disable passed");return 0;

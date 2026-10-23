@@ -9,7 +9,7 @@ UART_HandleTypeDef huart1, huart3;
 USBD_HandleTypeDef hUsbDeviceFS;
 static USBD_CDC_HandleTypeDef usb;
 static char uart3_output[65536],usb_output[8192],robot_tx[32];
-static uint8_t robot_busy, mock_rx_fail;
+static uint8_t robot_busy, mock_rx_fail, mock_tx3_busy;
 static const uint8_t *robot_pointer;
 uint32_t HAL_GetTick(void) { return tick; }
 void HAL_NVIC_ClearPendingIRQ(int irq) { assert(irq==USART1_IRQn || irq==USART3_IRQn); }
@@ -23,6 +23,7 @@ uint32_t HAL_UART_Receive_IT(UART_HandleTypeDef *uart,uint8_t *p,uint16_t n) {
 uint32_t HAL_UART_Transmit_IT(UART_HandleTypeDef *uart,const uint8_t *p,uint16_t n) {
  ++tx_calls;
  if(uart==&huart3) {
+  if(mock_tx3_busy)return HAL_BUSY;
   size_t used=strlen(uart3_output); assert(used+n<sizeof(uart3_output)); memcpy(uart3_output+used,p,n); uart3_output[used+n]=0;
   HAL_UART_TxCpltCallback(uart);
  } else {

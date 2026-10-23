@@ -204,3 +204,23 @@ with a one-second handshake bound. Disconnect diagnostics do not extend the
 500 ms network-heartbeat or existing motor watchdog deadlines.
 
 Linux build/flash/monitor commands, example failure messages and reproduction steps: [disconnect_diagnostics.md](disconnect_diagnostics.md).
+
+## UWB observation delivery
+
+UWB runtime USB and Wi-Fi queues remain independent, four records per sink.
+TDoA (including unavailable statuses), ranges and paired observations can evict
+an optional raw/event/summary record when full. Retained records stay in sequence
+order. Optional records cannot evict measurements; all-essential overflow remains
+counted. The USB queue drains only through `TLM NEXT`; an unconsumed USB queue
+filling is expected and cannot block Wi-Fi. UART3 schedules actual control replies
+before pending UWB telemetry, then optional LOG/DATA, so diagnostics cannot keep
+telemetry pending indefinitely. No queue sizes, wire formats or radio math change.
+
+`TLM STATUS drops=USB/WIFI` counts separate runtime sink losses (including
+optional eviction and expiry). `uart_drops` counts accepted UART telemetry that
+expires/is purged before transmission; it is distinct from `uart_errors`.
+ESP32 `UWBSTAT dropped` is another counter: bridge queue eviction, disconnected
+arrival/purge or expiry. None of these alone measures TDoA loss. Compare TDoA
+reference/follower sequence progress over the same connected capture interval;
+full-stream gaps can include intentionally discarded optional records. Raw/debug
+collector capture still retains every delivered raw record.

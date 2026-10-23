@@ -21,6 +21,7 @@ static bool savedValid,started,initialized,radioTouched,applied,loadedAtBoot,dur
 #define TLM_LENGTH MUL_TLM_LINE
 static char telemetry[TLM_CAPACITY][TLM_LENGTH];
 static unsigned head,tail,count,highWater;
+static bool telemetryEssential[TLM_CAPACITY],wifiEssential[TLM_CAPACITY];
 static uint32_t dropped,accepted,telemetrySequence,lastIdleReport;
 static uint64_t telemetryEpoch;
 static char wifiQueue[TLM_CAPACITY][TLM_LENGTH];
@@ -206,6 +207,27 @@ static void help_start(const char *topic) {
  usb_console_write("ERR help topic; use config, hybrid, peers, telemetry, safety or all");
 }
 const uwb_config_t *uwb_runtime_active(void) {return &active;}
+/* Preserve FIFO sequence order. An essential observation can evict the oldest
+ * optional record, but optional traffic can never displace an observation.
+ * At most three fixed-size copies; no waits, allocation or radio operations. */
+static void telemetry_enqueue(char queue[TLM_CAPACITY][TLM_LENGTH],bool essential[],
+ uint32_t *at,unsigned *h,unsigned *t,unsigned *n,unsigned *high,uint32_t *drops,
+ const char *line,bool important) {
+  if(*n==TLM_CAPACITY) {
+    unsigned victim=0;
+    if(important)while(victim<*n&&essential[(*t+victim)%TLM_CAPACITY])victim++;
+    if(!important||victim==*n){(*drops)++;return;}
+    for(unsigned i=victim;i+1<*n;i++) {
+      unsigned dst=(*t+i)%TLM_CAPACITY,src=(*t+i+1)%TLM_CAPACITY;
+      memcpy(queue[dst],queue[src],TLM_LENGTH);essential[dst]=essential[src];
+      if(at)at[dst]=at[src];
+    }
+    *h=(*h+TLM_CAPACITY-1)%TLM_CAPACITY;(*n)--;(*drops)++;
+  }
+  memcpy(queue[*h],line,TLM_LENGTH);essential[*h]=important;
+  if(at)at[*h]=HAL_GetTick();
+  *h=(*h+1)%TLM_CAPACITY;(*n)++;if(*n>*high)*high=*n;
+}
 void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
@@ -214,12 +236,10 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
-  if(count==TLM_CAPACITY)dropped++;
-  else {memcpy(telemetry[head],line,sizeof(line));head=(head+1)%TLM_CAPACITY;count++;if(count>highWater)highWater=count;}
-  if(active.wifi) {
-    if(wifiCount==TLM_CAPACITY)wifiDrops++;
-    else {memcpy(wifiQueue[wifiHead],line,sizeof(line));wifiQueuedAt[wifiHead]=HAL_GetTick();wifiHead=(wifiHead+1)%TLM_CAPACITY;wifiCount++;if(wifiCount>wifiHigh)wifiHigh=wifiCount;}
-  }
+  bool important=r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
+  telemetry_enqueue(telemetry,telemetryEssential,NULL,&head,&tail,&count,&highWater,&dropped,line,important);
+  if(active.wifi)
+    telemetry_enqueue(wifiQueue,wifiEssential,wifiQueuedAt,&wifiHead,&wifiTail,&wifiCount,&wifiHigh,&wifiDrops,line,important);
   accepted++;
 }
 void uwb_runtime_telemetry(const char *line) {
@@ -544,8 +564,8 @@ bool uwb_runtime_command(const char *line) {
       if(!count) reply("TLM EMPTY");
       else if(usb_console_try_write(telemetry[tail])) {tail=(tail+1)%TLM_CAPACITY;count--;}
     } else if(nt==2&&!strcmp(token[1],"status")) {
-      char text[192];snprintf(text,sizeof(text),"TLM STATUS usb=%u wifi=%u capacity_each=4 high=%u/%u drops=%lu/%lu accepted=%lu uart_errors=%lu",
-        count,wifiCount,highWater,wifiHigh,(unsigned long)dropped,(unsigned long)wifiDrops,(unsigned long)accepted,(unsigned long)esp_link_uart_errors());reply(text);
+      char text[256];snprintf(text,sizeof(text),"TLM STATUS usb=%u wifi=%u capacity_each=4 high=%u/%u drops=%lu/%lu accepted=%lu uart_errors=%lu uart_drops=%lu",
+        count,wifiCount,highWater,wifiHigh,(unsigned long)dropped,(unsigned long)wifiDrops,(unsigned long)accepted,(unsigned long)esp_link_uart_errors(),(unsigned long)esp_link_telemetry_dropped());reply(text);
     } else reply("ERR TLM NEXT | STATUS");
     return true;
   }

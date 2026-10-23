@@ -24,6 +24,7 @@ static volatile uint8_t esp_ring[ESP_RING];
 static volatile uint16_t esp_head, esp_tail;
 static uint32_t esp_received_tick[ESP_RING];
 static char esp_line[128], esp_queue[ESP_QUEUE][ESP_LINE], esp_tx[ESP_LINE];
+static uint8_t esp_queue_control[ESP_QUEUE];
 static uint16_t esp_length;
 static uint8_t esp_discard, esp_cr, esp_qhead, esp_qtail, esp_count;
 static uint8_t esp_valid, esp_hb_seen;
@@ -46,6 +47,7 @@ static uint8_t esp_enqueue(const char *line, uint8_t control)
   __disable_irq();
   if (esp_active && esp_count < (control ? ESP_QUEUE : ESP_QUEUE - 4U)) {
     snprintf(esp_queue[esp_qhead], ESP_LINE, "%s\n", line);
+    esp_queue_control[esp_qhead]=control!=0U;
     esp_qhead = (uint8_t)((esp_qhead + 1U) % ESP_QUEUE);
     ++esp_count;
     ok = 1U;
@@ -332,16 +334,32 @@ void esp_link_task(void)
   }
   esp_link_publish_sensor();
   mask=__get_PRIMASK(); __disable_irq();
-  if (!esp_busy && esp_count) {
-    memcpy(esp_tx,esp_queue[esp_qtail],ESP_LINE); esp_busy=1U;
+  /* Select actual control responses before telemetry, then optional LOG/DATA.
+   * The legacy FIFO mixed those classes, allowing continuous debug output to
+   * starve the independent telemetry slot despite ample UART capacity. */
+  unsigned selected=0;
+  if(esp_telemetry_pending) {
+    while(selected<esp_count&&!esp_queue_control[(esp_qtail+selected)%ESP_QUEUE])selected++;
+  }
+  if (!esp_busy && selected<esp_count) {
+    unsigned slot=(esp_qtail+selected)%ESP_QUEUE;
+    memcpy(esp_tx,esp_queue[slot],ESP_LINE); esp_busy=1U;
     if (HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,(uint16_t)strlen(esp_tx))==HAL_OK) {
-      esp_qtail=(uint8_t)((esp_qtail+1U)%ESP_QUEUE); --esp_count;control_sent=1;
+      if(selected==0U)esp_qtail=(uint8_t)((esp_qtail+1U)%ESP_QUEUE);
+      else {
+      for(unsigned i=selected;i+1U<esp_count;i++) {
+        unsigned dst=(esp_qtail+i)%ESP_QUEUE,src=(esp_qtail+i+1U)%ESP_QUEUE;
+        memcpy(esp_queue[dst],esp_queue[src],ESP_LINE);esp_queue_control[dst]=esp_queue_control[src];
+      }
+      esp_qhead=(uint8_t)((esp_qhead+ESP_QUEUE-1U)%ESP_QUEUE);
+      }
+      --esp_count;control_sent=1;
     } else esp_busy=0U;
   }
   if(esp_telemetry_pending && (!esp_link_owner_alive(esp_session_id)||(uint32_t)(HAL_GetTick()-esp_telemetry_tick)>1000U)) {
     esp_telemetry_pending=0;esp_telemetry_drops++;
   }
-  if(!control_sent&&!esp_busy&&!esp_count&&esp_telemetry_pending) {
+  if(!control_sent&&!esp_busy&&esp_telemetry_pending) {
     memcpy(esp_tx,esp_telemetry_line,310);esp_tx[310]=0;esp_busy=1;
     if(HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,310)==HAL_OK)esp_telemetry_pending=0;
     else esp_busy=0;

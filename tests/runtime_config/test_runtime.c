@@ -29,9 +29,11 @@ void dwt_readsystime(uint8_t *out) {
  for(unsigned i=0;i<4;i++)out[i]=(uint8_t)(hi>>(8*i));
 }
 static uint8_t nv[2*UWB_CONFIG_SECTOR_SIZE],backup[sizeof(nv)];
-static bool wifiEnabled;
+static bool wifiEnabled,wifiWritable;
+static char wifiLast[MUL_TLM_LINE];
+static unsigned wifiSent;
 void esp_link_set_enabled(uint8_t enabled) {wifiEnabled=enabled;}
-uint8_t esp_link_telemetry(const char *line) {(void)line;return 0;}
+uint8_t esp_link_telemetry(const char *line) {if(!wifiWritable)return 0;memcpy(wifiLast,line,MUL_TLM_LINE);wifiSent++;return 1;}
 uint32_t esp_link_uart_errors(void) {return 0;}
 uint32_t esp_link_telemetry_dropped(void) {return 0;}
 void esp_link_reset_diagnostics(void) {}
