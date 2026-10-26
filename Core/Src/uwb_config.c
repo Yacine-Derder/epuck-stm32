@@ -66,7 +66,11 @@ const char *uwb_config_validate(const uwb_config_t *c) {
     if(c->plan_selected) {
       if(c->mode<4||c->protocol_role!=UWB_PROTOCOL_RLR)return "selected plan requires hybrid RLR mode";
       if(c->node>254||mulScheduleIndex(&c->plan.broadcast,(uint8_t)c->node)>=0)return "plan RLR must be outside ALR roster";
-      if(c->rf_enabled&&(c->plan.enabled&MUL_PLAN_AR))return "active ALR-RLR adapter pending; RF stays OFF";
+      if(c->rf_enabled&&(c->plan.enabled&MUL_PLAN_AR)) {
+        bool assigned=false;
+        for(unsigned i=0;i<c->plan.rlrCount;i++)if(c->plan.rlrs[i]==c->node)assigned=true;
+        if(!assigned)return "active AR requires node in plan RLR roster";
+      }
     }
   }
   mulClockFitConfig_t clock;uwb_config_clock(c,&clock);

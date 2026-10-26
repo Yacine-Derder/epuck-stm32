@@ -12,8 +12,10 @@ int main(void) {
  assert(current.plan.broadcast.revision==UINT32_MAX&&current.plan.broadcast.count==4&&current.plan.rlrCount==2);
  command("plan use on");assert(current.plan_selected&&!started);persisted();
  assert(!memcmp(&current.schedule,&retained.schedule,sizeof(current.schedule))&&current.slot_ms==retained.slot_ms);
- writes=nvWrites;command("on");command("cfg set slot_ms 50");command("cfg roster set 132 133 134");
- command("plan set reply_ms 20");command("plan rlrs 32");command("plan alrs 32 32");command("plan set util_percent 100");
+ command("on");assert(started&&current.rf_enabled);persisted();
+ writes=nvWrites;command("plan set reply_ms 20");assert(nvWrites==writes);
+ command("off");assert(!started);writes=nvWrites;command("cfg set slot_ms 50");command("cfg roster set 132 133 134");
+ command("plan rlrs 32");command("plan alrs 32 32");command("plan set util_percent 100");
  command("plan set revision 4294967296");command("plan set revision -1");command("plan set guard_us 101");command("plan use maybe");
  assert(nvWrites==writes&&current.plan_selected&&!started);
  command("cfg set clock_window 30");assert(current.clock.window==30&&current.clock.periodMs==1000);
@@ -23,5 +25,5 @@ int main(void) {
  writes=nvWrites;usbReady=false;command("plan show");drain();assert(display==6&&displayIndex==0&&nvWrites==writes);usbReady=true;drain();assert(!display);
  command("plan use off");assert(!current.plan_selected&&current.plan_present&&current.slot_ms==retained.slot_ms);
  command("on");assert(started&&current.rf_enabled&&!current.plan_selected);persisted();
- assert(!starts);puts("Plan runtime: RF-OFF edits, independent retained profile, schema9 reboot, bounded backpressure preview, malformed/no-write, effective period, active AR gate and deselection recovery passed");return 0;
+ assert(!starts);puts("Plan runtime: RF-OFF edits, independent retained profile, schema9 reboot, bounded backpressure preview, malformed/no-write, effective period, assigned AR activation and deselection recovery passed");return 0;
 }

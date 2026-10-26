@@ -19,6 +19,11 @@ static void selected_enabled_reboot(void) {
 }
 int main(void) {
  selected_enabled_reboot();
+ uwb_config_t ar;uwb_config_defaults(&ar);ar.node=142;ar.mode=5;ar.protocol_role=UWB_PROTOCOL_RLR;
+ mulRangingPlan_t assigned=plan();assigned.enabled|=MUL_PLAN_AR;
+ assert(!uwb_config_plan_set(&ar,&assigned,true));uwb_config_t beforeAr=ar;
+ assert(uwb_config_set(&ar,"rf_enabled","on")&&uwb_config_equal(&ar,&beforeAr));
+ ar.node=141;assert(!uwb_config_set(&ar,"rf_enabled","on"));
  for(unsigned profile=0;profile<3;profile++)for(unsigned selected=0;selected<2;selected++) {
   uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;old.mode=4;old.protocol_role=UWB_PROTOCOL_RLR;
   if(profile)assert(!uwb_config_set(&old,"clock_estimator","regression"));

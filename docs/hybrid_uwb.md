@@ -790,3 +790,23 @@ priority and forward the exact309-character line. Complete runtime configuration
 persistence, safety, TWR/hybrid and help regressions pass. The Universal clean build
 and reserved-sector check pass (RAM36552B, FLASH128776B). No hardware was flashed;
 UART fault resolution, packet delivery and physical accuracy are not claimed.
+
+
+Generated AR plans are software-enabled with shared core `9935db3` (RF4, codec2).
+RF ON requires the local STM32 node in the plan RLR roster. The radio replies only
+to the assigned ALR/cycle/operation/hash, using verified delayed RESPONSE/REPORT
+markers. AA-only and unselected hybrid remain passive. Mandatory broadcasts
+preempt ranging; failed/late operations are retired rather than retried.
+
+Essential UWB3 range13 retains original acquisition uptime, separate report uptime,
+six mixed-clock stamps, initiator-DTU raw ToF, power metadata, full plan identity,
+and UNKNOWN physical uncertainty/uncalibrated status. Quality14 and `hybrid ar`
+report responder faults/drop/reset state; reference_seen does not prove freshness.
+`samples on` enables optional native90 RX and verified TX type12 traces. Queue
+saturation favors range13 over traces; transport losses remain observable.
+
+Host sanitizer tests run the actual persisted runtime and DW3000 adapter with
+independent reference/initiator/RLR clocks,5/10/20ms replies, coalesced IRQs,
+late/stamp/hash/broadcast/rearm faults and reboot. ESP loopback delivery checks
+priority, reconnect and compact/debug records. No device was accessed; physical
+interoperability, deadlines and accuracy remain unvalidated.

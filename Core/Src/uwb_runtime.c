@@ -46,10 +46,10 @@ static const char *const help_commands[]={
   "  - cfg help                  List configuration options",
   "  - plan show|init|use|set     Generated ranging plan (RF OFF edits)",
   "  - on / off                  Enable RF; retain selected mode",
-  "  - mode / role / addr        Selection, passive role and address",
+  "  - mode / role / addr        Selection, protocol role and address",
   "",
   "UWB diagnostics",
-  "  - hybrid status|diag|frames  Passive reception diagnostics",
+  "  - hybrid status|diag|frames  Reception diagnostics; hybrid ar for responder",
   "  - sync status               Listen-mode synchronization state",
   "  - diag reset                Reset idle diagnostic counters",
   "",
@@ -101,7 +101,7 @@ static const char *const help_config[]={
   "  - plan set aa|ar on|off; aa_millihz|ar_millihz 0..10000",
   "  - plan set slot_ms|cycle_ms|lead_us|process_us|air_us|guard_us N",
   "  - plan set reply_ms 5|10|20; util_percent 10..80; revision N",
-  "  - Generated plans receive RF4 passively; active AR remains unavailable",
+  "  - Generated plans receive RF4; AR replies only in assigned responder slots",
   "  - slot_ms: compat 10/50/500; experimental numerical; cycle_ms 100..2000",
   "  - profile experimental: tx_lead_us, rx_budget_us, airtime_us, guard_us",
   "  - alr_alr_twr: on/off; experimental budgets are hardware-unverified",
@@ -141,7 +141,7 @@ static const char *const help_hybrid[]={
   "  - delay_ms: age of inter-ALR propagation measurement at follower TX.",
   "  - Frame slots are independent captures, not one complete exchange.",
   "  - Frequency capture needs an opt-in build; it never validates rate.",
-  "  - RLR never transmits; inter-ALR TWR is not an RLR range.",
+  "  - RLR transmits only assigned AR replies; inter-ALR TWR is separate.",
   "  - Unknown receiver rate forbids metric TDoA in ordinary hybrid.",
   "  - Two ALRs alone cannot give a unique unconstrained 2D position.",
 };
@@ -243,11 +243,11 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
   r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)(active.mode>=4?2:active.role); // Preserve the existing passive UWB3 wire role.
-  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa&&r->type!=mulTlmVector&&r->type!=mulTlmPlanVector)r->uptimeMs=HAL_GetTick();
+  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa&&r->type!=mulTlmVector&&r->type!=mulTlmPlanVector&&r->type!=mulTlmPlanRange)r->uptimeMs=HAL_GetTick();
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
-  bool important=r->type==mulTlmPlanVector||r->type==mulTlmVector||r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
+  bool important=r->type==mulTlmPlanRange||r->type==mulTlmPlanVector||r->type==mulTlmVector||r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
   telemetry_enqueue(telemetry,telemetryEssential,NULL,&head,&tail,&count,&highWater,&dropped,line,important);
   if(active.wifi)
     telemetry_enqueue(wifiQueue,wifiEssential,wifiQueuedAt,&wifiHead,&wifiTail,&wifiCount,&wifiHigh,&wifiDrops,line,important);
@@ -364,7 +364,7 @@ static void display_output(void) {
     const mulRangingPlan_t *p=&c->plan;mulRangingBudget_t b;unsigned count=mulRangingPlanCount(p,1);
     if(!c->plan_present) {if(displayIndex){display=0;return;}snprintf(text,sizeof(text),"PLAN absent; use plan init with RF OFF");}
     else if(mulRangingPlanValidate(p,&b)){display=0;reply("ERR invalid plan");return;}
-    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=passive",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration);
+    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=%s",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration,(p->enabled&MUL_PLAN_AR)?"scheduled_AR":"passive");
     else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs);
     else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity);
     else if(displayIndex<3u+p->broadcast.count)snprintf(text,sizeof(text),"PLAN ALR slot=%u id=%u",displayIndex-3,p->broadcast.ids[displayIndex-3]);
@@ -617,11 +617,12 @@ bool uwb_runtime_command(const char *line) {
     else {mulClockFitConfig_t config;uwb_config_clock(&current,&config);snprintf(text,sizeof(text),"CLOCK saved method=%u window=%u compensate=%u period_ms=%u",config.estimator,config.window,config.compensate,config.periodMs);}
     reply(text);return true;
   }
-  if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency"))) {
+  if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency")||!strcmp(token[1],"ar"))) {
     if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
     else {
       char text[384];
-      if(!strcmp(token[1],"status")){mul_hybrid_radio_status(text,sizeof(text));reply(text);}
+      if(!strcmp(token[1],"ar")){mul_hybrid_radio_diagnostics(4,text,sizeof(text));reply(text);}
+      else if(!strcmp(token[1],"status")){mul_hybrid_radio_status(text,sizeof(text));reply(text);}
       else for(unsigned i=0;i<3;i++) {
         if(!strcmp(token[1],"diag"))mul_hybrid_radio_diagnostics(i,text,sizeof(text));
         else if(!strcmp(token[1],"frames"))mul_hybrid_radio_frame(i,text,sizeof(text));
@@ -630,7 +631,7 @@ bool uwb_runtime_command(const char *line) {
       }
     }return true;
   }
-  if(!strcmp(token[0],"hybrid")){reply("ERR hybrid status/diag/frames/frequency");return true;}
+  if(!strcmp(token[0],"hybrid")){reply("ERR hybrid status/diag/frames/frequency/ar");return true;}
   if(nt==2&&!strcmp(token[0],"sync")&&!strcmp(token[1],"status")) {
     if(!started||active.mode!=3)reply("SYNC UNKNOWN; select mode listen for apparent arrival models");
     else {display=4;displayIndex=0;}return true;
