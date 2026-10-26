@@ -13,7 +13,7 @@ for enabled in 0 1;do
  -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
  -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
  tests/frequency/test_adapter.c Core/Src/uwb_config.c \
- ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c \
+ ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_plan_protocol.c ThirdParty/mul_core/mul_ranging_plan.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c \
  ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c \
  ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c \
  ThirdParty/mul_core/mul_time.c ThirdParty/mul_core/mul_ads.c ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c \

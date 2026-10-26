@@ -535,3 +535,19 @@ preview reports the interval. It configures the matching passive RLR schedule;
 it does not enable active RLR ranging. ALR firmware uses these candidates in its
 actual five-message state machine; fixed AA windows remain until planner integration.
 Older shared decoders reject newly assigned reply bits; update all participants.
+
+
+### Generated-plan dependency preparation
+
+The shared core now pins published LPS7334036. It includes the64-byte full-plan
+codec2, two-slot LPS EEPROM backend, RF envelope4 and optional passive
+`mulMultiReceiverInitPlan`. Completed planned cycles carry the full-plan hash,
+including RLR roster and rates. CMake and host tests link the new protocol/planner
+dependencies. Legacy initialization and profile3 RF3 behavior remain unchanged.
+
+**The live STM32 adapter does not select this API yet.** Schema9 plan persistence,
+RF-OFF plan commands, radio initialization and explicit versioned raw/vector labels
+are still required. The current STM32/ESP path cannot consume generated LPS RF4;
+use retained unselected profiles for compatibility until those pieces are wired.
+No RLR TX is introduced by a passive receiver API. Active ALR–RLR participation
+remains later work. No hardware was flashed or operated for this dependency update.

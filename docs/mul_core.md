@@ -1,14 +1,15 @@
 # Stage 3G STM32 integration
 
 Software and host/build validation are complete; hardware acceptance is pending.
-Do not begin Stage 3H, mixed-radio TWR/TDoA or localization from this checkpoint.
+The current authorized upgrade campaign supersedes the historical stop below;
+no hardware programming or operation is authorized.
 
 Canonical source is LPS `portable/mul_core`. This repository's
 [checked-in snapshot/API and wire specification](../ThirdParty/mul_core/README.md)
-is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to local canonical
-`a73b7c5904dcf8088e713c69be3136410357e2f4` (fixed-size onboard TDoA telemetry).
-This pin is deliberately unpublished; explicit --allow-local export preserves
-committed source provenance and offline hashes without a push/fetch. Historical
+is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to published canonical
+`7334036ecc94f74281dbeac4f1e87cacae26e44f` (full-plan codec2/RF4 and passive
+receiver API). Deterministic export preserves committed source provenance and
+offline hashes without build-time push/fetch. Historical
 Stage3G/ADS checkpoints below retain their original evidence; they do not name
 the current dependency. Current hybrid/logging behavior is in docs/hybrid_uwb.md.
 
