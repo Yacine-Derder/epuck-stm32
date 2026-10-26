@@ -7,7 +7,7 @@ no hardware programming or operation is authorized.
 Canonical source is LPS `portable/mul_core`. This repository's
 [checked-in snapshot/API and wire specification](../ThirdParty/mul_core/README.md)
 is pinned by [UPSTREAM.json](../ThirdParty/mul_core/UPSTREAM.json) to published canonical
-`7334036ecc94f74281dbeac4f1e87cacae26e44f` (full-plan codec2/RF4 and passive
+`f5bbbecd68eb3bf34f83718539a654cefa276a6c` (full-plan codec2/RF4 and passive
 receiver API). Deterministic export preserves committed source provenance and
 offline hashes without build-time push/fetch. Historical
 Stage3G/ADS checkpoints below retain their original evidence; they do not name

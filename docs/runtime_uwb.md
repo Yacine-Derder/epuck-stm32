@@ -539,18 +539,17 @@ Older shared decoders reject newly assigned reply bits; update all participants.
 
 ### Generated-plan dependency preparation
 
-The shared core now pins published LPS7334036. It includes the64-byte full-plan
+The shared core now pins published LPSf5bbbec. It includes the64-byte full-plan
 codec2, two-slot LPS EEPROM backend, RF envelope4 and optional passive
 `mulMultiReceiverInitPlan`. Completed planned cycles carry the full-plan hash,
 including RLR roster and rates. CMake and host tests link the new protocol/planner
 dependencies. Legacy initialization and profile3 RF3 behavior remain unchanged.
 
-**The live STM32 adapter does not select this API yet.** Schema9 plan persistence,
-RF-OFF plan commands, radio initialization and explicit versioned raw/vector labels
-are still required. The current STM32/ESP path cannot consume generated LPS RF4;
-use retained unselected profiles for compatibility until those pieces are wired.
-No RLR TX is introduced by a passive receiver API. Active ALR–RLR participation
-remains later work. No hardware was flashed or operated for this dependency update.
+Schema9 plan persistence, RF-OFF commands and radio initialization now connect
+this API to passive RF4 reception. UWB3 types11/12 carry planned vector/raw data
+with quality4 and full-plan fingerprint. Matching ESP/collector support is required;
+older decoders reject these new types. No RLR TX is introduced by this API.
+Active ALR–RLR participation remains later work. No hardware was flashed or operated for this dependency update.
 
 
 ### Independent generated-plan persistence (schema9)
@@ -576,8 +575,27 @@ unselected. Schemas1..8 retain prior decoding; public128-byte decode rejects9.
 Nested plan CRC/version validation supplements the outer record CRC. Journal
 append/rotation cuts preserve the previous committed record.
 
-**Generated RF activation is still refused.** This milestone connects storage,
-configuration and preview; RF4 radio selection and distinct raw/vector telemetry
-must be connected before removing that gate. A stored selected plan can reboot
-safely with RF OFF. The retained unselected hybrid path continues to operate.
+**Selected AA-only plans now enable passive RF4 reception** in hybrid/hybrid_static
+modes. An enabled AR class still refuses RF activation until the active adapter
+is implemented. Selection preserves retained configuration and the estimator uses
+the effective plan period. New vectors keep cycle observation uptime and priority
+over raw traces in both USB/Wi-Fi queues. The retained unselected path continues
+to use its original wire formats.
 No hardware was flashed, reset or operated.
+
+
+Software-only generated-plan replay:
+
+```sh
+# STM32 host fixture with simulated DW3000, no devices:
+MUL_PLAN_TRACE=/tmp/plan.uart sh tests/runtime_config/run.sh
+# Sibling ESP checkout; only loopback sockets:
+python3 tools/verify_multi_replay.py --planned /tmp/plan.uart
+```
+
+The adapter scenarios coverN2/4/8,100/200/1000ms, signed geometry/clock skews,
+missing and wrong-plan frames, capture age, native40/cycle32/uptime32 rollover,
+selection reboot and zero transmissions. Replay checks full-plan identities,
+native raw bytes and compact profile4 labels through the ESP owner/parser/queues,
+TCP reconnect and collector. This does not establish physical interoperability or
+short-slot reliability. Complete plan fingerprints must match on all participants.

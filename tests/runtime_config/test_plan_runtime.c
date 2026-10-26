@@ -23,5 +23,5 @@ int main(void) {
  writes=nvWrites;usbReady=false;command("plan show");drain();assert(display==6&&displayIndex==0&&nvWrites==writes);usbReady=true;drain();assert(!display);
  command("plan use off");assert(!current.plan_selected&&current.plan_present&&current.slot_ms==retained.slot_ms);
  command("on");assert(started&&current.rf_enabled&&!current.plan_selected);persisted();
- assert(!starts);puts("Plan runtime: RF-OFF edits, independent retained profile, schema9 reboot, bounded backpressure preview, malformed/no-write, effective period, pending activation gate and deselection recovery passed");return 0;
+ assert(!starts);puts("Plan runtime: RF-OFF edits, independent retained profile, schema9 reboot, bounded backpressure preview, malformed/no-write, effective period, active AR gate and deselection recovery passed");return 0;
 }

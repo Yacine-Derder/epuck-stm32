@@ -66,8 +66,7 @@ const char *uwb_config_validate(const uwb_config_t *c) {
     if(c->plan_selected) {
       if(c->mode<4||c->protocol_role!=UWB_PROTOCOL_RLR)return "selected plan requires hybrid RLR mode";
       if(c->node>254||mulScheduleIndex(&c->plan.broadcast,(uint8_t)c->node)>=0)return "plan RLR must be outside ALR roster";
-      // Persistence is connected before RF4 telemetry/radio activation. Fail closed.
-      if(c->rf_enabled)return "generated radio integration pending; RF stays OFF";
+      if(c->rf_enabled&&(c->plan.enabled&MUL_PLAN_AR))return "active ALR-RLR adapter pending; RF stays OFF";
     }
   }
   mulClockFitConfig_t clock;uwb_config_clock(c,&clock);
@@ -102,10 +101,10 @@ const char *uwb_config_validate(const uwb_config_t *c) {
     if(p->address==c->node||p->enabled>1||p->interval_ms<250||p->interval_ms>60000)return "invalid peer/self/interval";
     for(unsigned j=0;j<i;j++)if(p->address==c->peers[j].address)return "duplicate peer";
   }
-  if(c->mode>=4&&schedule.profile>=MUL_PROFILE_MULTI) {
+  if(c->mode>=4&&!c->plan_selected&&schedule.profile>=MUL_PROFILE_MULTI) {
     if(mulScheduleIndex(&schedule,(uint8_t)c->node)>=0)return "RLR identity must be outside ALR roster";
   }
-  if(c->mode>=4&&schedule.profile==MUL_PROFILE_LEGACY) {
+  if(c->mode>=4&&!c->plan_selected&&schedule.profile==MUL_PROFILE_LEGACY) {
     uint8_t local[8]={(uint8_t)c->node,0,0,0,0,0,0xcf,0xbc};bool roles[MUL_ALR_COUNT]={false};
     if(mulNetworkRole(&network,local)!=mulAlrUnsupported)return "hybrid requires an RLR address distinct from configured ALRs";
     for(unsigned i=0;i<c->peer_count;i++)if(c->peers[i].enabled){uint8_t id[8]={c->peers[i].address,0,0,0,0,0,0xcf,0xbc};mulAlrRole_t r=mulNetworkRole(&network,id);if(r>=0&&(unsigned)r<MUL_ALR_COUNT)roles[r]=true;}

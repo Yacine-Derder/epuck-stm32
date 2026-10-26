@@ -101,7 +101,7 @@ static const char *const help_config[]={
   "  - plan set aa|ar on|off; aa_millihz|ar_millihz 0..10000",
   "  - plan set slot_ms|cycle_ms|lead_us|process_us|air_us|guard_us N",
   "  - plan set reply_ms 5|10|20; util_percent 10..80; revision N",
-  "  - Generated RF4 activation is pending; stored plans do not enable TX",
+  "  - Generated plans receive RF4 passively; active AR remains unavailable",
   "  - slot_ms: compat 10/50/500; experimental numerical; cycle_ms 100..2000",
   "  - profile experimental: tx_lead_us, rx_budget_us, airtime_us, guard_us",
   "  - alr_alr_twr: on/off; experimental budgets are hardware-unverified",
@@ -243,11 +243,11 @@ void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
   r->node=(uint8_t)active.node;r->radio=2;r->mode=(uint8_t)active.mode;r->role=(uint8_t)(active.mode>=4?2:active.role); // Preserve the existing passive UWB3 wire role.
-  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa&&r->type!=mulTlmVector)r->uptimeMs=HAL_GetTick();
+  if(r->type!=mulTlmPeer&&r->type!=mulTlmTdoa&&r->type!=mulTlmVector&&r->type!=mulTlmPlanVector)r->uptimeMs=HAL_GetTick();
   r->depth=(uint16_t)(count+wifiCount);r->highWater=(uint16_t)(highWater+wifiHigh);
   r->dropped=dropped+wifiDrops;r->uartErrors=esp_link_uart_errors();r->txDropped=esp_link_telemetry_dropped();
   char line[MUL_TLM_LINE];if(!mulTelemetryEncode(line,sizeof(line),r)){dropped++;return;}
-  bool important=r->type==mulTlmVector||r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
+  bool important=r->type==mulTlmPlanVector||r->type==mulTlmVector||r->type==mulTlmTdoa||r->type==mulTlmRange||r->type==mulTlmObservation;
   telemetry_enqueue(telemetry,telemetryEssential,NULL,&head,&tail,&count,&highWater,&dropped,line,important);
   if(active.wifi)
     telemetry_enqueue(wifiQueue,wifiEssential,wifiQueuedAt,&wifiHead,&wifiTail,&wifiCount,&wifiHigh,&wifiDrops,line,important);
@@ -364,7 +364,7 @@ static void display_output(void) {
     const mulRangingPlan_t *p=&c->plan;mulRangingBudget_t b;unsigned count=mulRangingPlanCount(p,1);
     if(!c->plan_present) {if(displayIndex){display=0;return;}snprintf(text,sizeof(text),"PLAN absent; use plan init with RF OFF");}
     else if(mulRangingPlanValidate(p,&b)){display=0;reply("ERR invalid plan");return;}
-    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4_activation=pending",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration);
+    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=passive",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration);
     else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs);
     else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity);
     else if(displayIndex<3u+p->broadcast.count)snprintf(text,sizeof(text),"PLAN ALR slot=%u id=%u",displayIndex-3,p->broadcast.ids[displayIndex-3]);

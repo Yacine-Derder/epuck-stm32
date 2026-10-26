@@ -25,7 +25,7 @@ int main(void) {
   mulClockFitConfig_t clock;uwb_config_effective_clock(&c,&clock);assert(clock.periodMs==effective.periodMs);
   assert(effective.ids[0]==(selected?32:132));
   uwb_config_t before=c;
-  if(selected)assert(uwb_config_set(&c,"rf_enabled","on")&&uwb_config_equal(&before,&c)); // Adapter activation still gated.
+  if(selected){assert(!uwb_config_set(&c,"rf_enabled","on"));c=before;} // Passive RF4 now supported.
   c.rf_enabled=1;assert(uwb_config_plan_set(&c,&p,selected));c=before;
   p.rlrs[0]=32;assert(uwb_config_plan_set(&c,&p,selected)&&uwb_config_equal(&c,&before));p=plan();
   memset(flash,255,sizeof(flash));uint32_t gen=0;assert(uwb_config_save(&store,&old,&gen));memcpy(backup,flash,sizeof(flash));
