@@ -67,6 +67,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_config.c
     Core/Src/uwb_config_flash.c
     Core/Src/uwb_runtime.c
+    Core/Src/mul_plan_radio.c
     Core/Src/mul_hybrid_radio.c
     Core/Src/mul_ads_radio.c
     ThirdParty/mul_core/mul_hybrid.c

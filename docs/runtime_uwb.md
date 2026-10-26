@@ -607,3 +607,28 @@ ALRs from the retained legacy profile; unrelated retained peers must not make a
 valid selected RF-ON record fall back to an older record at reboot. Schema1..8
 and the public128-byte rejection rule remain unchanged. The reboot regression
 uses full-plan ALRs32..35 and retained132/133 without adding legacy peers.
+
+
+### Scheduled AR responder implementation (activation still gated)
+
+The DW3000 plan responder now implements RF4 POLL/RESPONSE/FINAL/REPORT/RESULT for
+its assigned RLR/cycle/operation. It requires a matching valid reference-clock
+mapping before responding, binds the full-plan fingerprint and pair, retires each
+attempt once per cycle, and gives frozen broadcasts priority over range deadlines.
+Delayed responses/reports use raw512-DTU alignment, live antenna readback, DX_TIME
+readback, before/after-SPI lead checks and exact TX-marker verification. Concurrent
+TX/RX status is handled in TX-first order; unarmed TX status, lost events, invalid
+frames and failed starts return to bounded receive recovery.
+
+Completed results retain six mixed-domain native timestamps, power metadata,
+initiator-unit raw ToF, pair/operation/hash and backdated receiver acquisition
+uptime in a committed record. DW3000 power correction is explicitly unsupported;
+no DW1000 bias table is transplanted. A new reference cannot relabel a pending
+result. This record API is not yet connected to versioned range telemetry, so AR
+RF activation remains refused. Existing selected AA-only plans remain passive.
+
+Host tests exercise full5/10/20ms exchanges with independent reference, ALR
+initiator and RLR clocks, signed skews, separate/coalesced TX/RX, another RLR's
+assignment, late SPI, incorrect marker/hash, missing IRQ/deadline, stale TX status,
+broadcast priority after expiry and failed-RX recovery. Tests drive simulated
+registers; no hardware was programmed or operated.

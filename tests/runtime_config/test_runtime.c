@@ -25,7 +25,7 @@ void dwt_readsystime(uint8_t *out) {
  frequencySystemOrder=++frequencyOrder;
 #endif
  /* DW3000 SYS_TIME_LEN is FOUR: timestamp bits39:8, not a DW1000 RX_STAMP. */
- uint32_t hi=(uint32_t)(mulTimestampMask(rxMarker+captureServiceDtu)>>8);
+ uint32_t hi=(uint32_t)(mulTimestampMask(planClockOverride?planHardwareTime:rxMarker+captureServiceDtu)>>8);
  for(unsigned i=0;i<4;i++)out[i]=(uint8_t)(hi>>(8*i));
 }
 static uint8_t nv[2*UWB_CONFIG_SECTOR_SIZE],backup[sizeof(nv)];

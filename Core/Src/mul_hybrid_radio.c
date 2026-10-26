@@ -3,6 +3,7 @@
 #if MUL_UNIVERSAL
 #include "mul_hybrid.h"
 #include "mul_multi_receiver.h"
+#include "mul_plan_radio.h"
 #include "qorvo_platform.h"
 #include "dw3000_deca_regs.h"
 #include "mul_timing.h"
@@ -56,9 +57,11 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
  memset(&multiReceiver,0,sizeof(multiReceiver));
  if(c->plan_selected)(void)mulMultiReceiverInitPlan(&multiReceiver,&hybridConfig.plan,receiver,c->mode==5);
  else if(c->schedule.profile>=MUL_PROFILE_MULTI)(void)mulMultiReceiverInit(&multiReceiver,&c->schedule,receiver,c->mode==5);
+ mul_plan_radio_configure(c->plan_selected?&hybridConfig.plan:NULL,(uint8_t)c->node,&multiReceiver.rate);
  uwb_config_effective_clock(c,&hybridReceiver.clockConfig);uwb_config_effective_clock(c,&multiReceiver.clockConfig);
 }
 void mul_hybrid_radio_suspend(void) {
+ mul_plan_radio_suspend();
  multiReceiver.active=false;mulClockReset(&multiReceiver.rate);
  hybridReceiver.twrActive=false;hybridReceiver.association.pending=false;
  for(unsigned i=0;i<MUL_ALR_COUNT;i++)hybridReceiver.observations[i].valid=false;
@@ -134,6 +137,7 @@ static void multiProcess(void) {
  uint32_t started=mul_timing_now(),now=HAL_GetTick();mulMultiCycle_t completed;
  if(mulMultiReceiverPoll(&multiReceiver,now,&completed))publishVector(&completed);
  uint32_t status=dwt_readsysstatuslo();
+ if(mul_plan_radio_process(now,status)){mul_timing_service(started);return;}
  if(status&(SYS_STATUS_ALL_RX_ERR|DWT_INT_RXOVRR_BIT_MASK)){hybridErrors++;hybridRearm();}
  else if(status&DWT_INT_RXFCG_BIT_MASK) {
   uint8_t frame[MUL_MULTI_FOLLOWER_BYTES],raw[5],hardware[4];
@@ -150,6 +154,7 @@ static void multiProcess(void) {
   mulMultiReceiveOutput_t out;
   if(shape&&mulMultiReceiverReceive(&multiReceiver,frame,bytes,rx,age,now,&out)) {
    if(out.cycleReady)publishVector(&out.completed);
+   if(!out.broadcast.slot)mul_plan_radio_reference(out.broadcast.packet.sequence,(uint16_t)age);
    if(!out.broadcast.slot)publishClock(&multiReceiver.rate,&multiReceiver.fit,&multiReceiver.clockConfig,&out.broadcast.packet,rx,now,(uint16_t)age);
    unsigned index=out.broadcast.slot?1:0;
    memcpy(hybridFrames[index].frame,frame,bytes);hybridFrames[index].length=(uint8_t)bytes;

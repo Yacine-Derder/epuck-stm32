@@ -7,7 +7,11 @@
 #include <stdio.h>
 #include "../../Core/Src/mul_ads_radio.c"
 static uint32_t tick,status,length;
-static uint8_t input[84],output[56];
+static uint8_t input[90],output[90];
+static unsigned outputLength;
+static uint32_t delayedRegister;
+static uint64_t planHardwareTime,planSetupLag;
+static bool planClockOverride;
 static uint64_t txMarker,rxMarker;
 static uint16_t txAnt,rxAnt;
 static bool badAnt;
@@ -28,7 +32,9 @@ void dwt_forcetrxoff(void) {mockRadioActive=false;}
 void dwt_writesysstatuslo(uint32_t bits) { status&=~bits; }
 uint32_t dwt_readsysstatuslo(void) { return status; }
 int32_t dwt_rxenable(int mode) { assert(mode==DWT_START_RX_IMMEDIATE); rearms++; mockRadioActive=rxResult==DWT_SUCCESS; return rxResult; }
+void dwt_setdelayedtrxtime(uint32_t target) {delayedRegister=target&~1u;if(planClockOverride)planHardwareTime+=planSetupLag;}
 int32_t dwt_starttx(uint8_t mode) {
+ if(outputLength==90){assert(mode==(DWT_START_TX_DELAYED|DWT_RESPONSE_EXPECTED));starts++;mockRadioActive=startResult==DWT_SUCCESS;return startResult;}
 #if MUL_UNIVERSAL
  if(config.mode>=2){mulBeacon_t beacon;assert(mulBeaconDecode(output,56,&beacon));assert(mode==DWT_START_TX_IMMEDIATE);starts++;mockRadioActive=startResult==DWT_SUCCESS;return startResult;}
 #endif
@@ -36,11 +42,11 @@ int32_t dwt_starttx(uint8_t mode) {
  assert(mode==(DWT_START_TX_IMMEDIATE|(p.type==mulAdsReport?0:DWT_RESPONSE_EXPECTED)));
  starts++; mockRadioActive=startResult==DWT_SUCCESS; return startResult;
 }
-int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert(n==56 && !at); memcpy(output,p,n); return writeResult; }
-void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert(n==58 && !at && ranging==1); }
+int32_t dwt_writetxdata(uint16_t n,uint8_t *p,uint16_t at) { assert((n==56||n==90) && !at);outputLength=n; memcpy(output,p,n); return writeResult; }
+void dwt_writetxfctrl(uint16_t n,uint16_t at,uint8_t ranging) { assert((n==58||n==92) && !at && ranging==1); }
 void dwt_setrxaftertxdelay(uint32_t delay) { assert(!delay); }
-uint32_t dwt_read_reg(uint32_t reg) { assert(reg==RX_FINFO_ID); return length; }
-void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n<=84 && !at); memcpy(out,input,n); }
+uint32_t dwt_read_reg(uint32_t reg) {if(reg==DX_TIME_ID)return delayedRegister;assert(reg==RX_FINFO_ID); return length; }
+void dwt_readrxdata(uint8_t *out,uint16_t n,uint16_t at) { assert(n<=90 && !at); memcpy(out,input,n); }
 void dwt_readrxtimestamp(uint8_t *out,dwt_ip_sts_segment_e segment) { assert(segment==DWT_COMPAT_NONE); mulEncodeTimestamp(out,rxMarker); }
 void dwt_readtxtimestamp(uint8_t *out) { mulEncodeTimestamp(out,txMarker); }
 void usb_console_write(const char *text) { assert(strlen(text)<(MUL_UNIVERSAL?320:192)); assert(strlen(captured)+strlen(text)+2<sizeof(captured)); strcat(captured,text); strcat(captured,"\n"); }

@@ -14,6 +14,7 @@ int main(void) {
   char cmd[64];snprintf(cmd,sizeof(cmd),"plan set cycle_ms %u",periods[trial]);command(cmd);command("plan set aa on");
   command("cfg set clock_estimator regression");command("cfg set telemetry on");command("cfg set wifi on");command("cfg set samples on");command("plan use on");persisted();
   unsigned writes=nvWrites;uwb_runtime_init();assert(current.plan_selected&&!current.rf_enabled&&nvWrites==writes);command("on");
+  writes=nvWrites;uwb_runtime_init();assert(started&&current.rf_enabled&&current.plan_selected&&nvWrites==writes);
   assert(started&&current.rf_enabled&&multiReceiver.plan==&hybridConfig.plan&&multiReceiver.schedule.count==counts[trial]);
   assert(multiReceiver.clockConfig.periodMs==periods[trial]&&!current.schedule.profile&&current.slot_ms==10);
   unsigned transmissions=starts;uint32_t hash=mulRangingPlanFingerprint(&active.plan);
