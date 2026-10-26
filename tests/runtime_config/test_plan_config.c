@@ -9,7 +9,16 @@ static mulRangingPlan_t plan(void) {
  p.broadcast.txLeadUs=1000;p.broadcast.rxBudgetUs=500;assert(!mulRangingPlanValidate(&p,NULL));return p;
 }
 static void outer_crc(uint8_t *b) {uint32_t crc=uwb_config_crc(b,248);for(unsigned i=0;i<4;i++)b[248+i]=(uint8_t)(crc>>(8*i));}
+static void selected_enabled_reboot(void) {
+ uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;old.mode=4;old.protocol_role=UWB_PROTOCOL_RLR;
+ c=old;mulRangingPlan_t p=plan();assert(!uwb_config_plan_set(&c,&p,true));assert(!uwb_config_set(&c,"rf_enabled","on"));
+ // This plan's ALRs32..35 intentionally differ from retained legacy132/133.
+ // Decoding must bind selection before validating RF-ON roster eligibility.
+ memset(flash,255,sizeof(flash));uint32_t gen=0;assert(uwb_config_save(&store,&old,&gen));assert(uwb_config_save(&store,&c,&gen));
+ assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,&c)&&loaded.rf_enabled&&loaded.plan_selected);
+}
 int main(void) {
+ selected_enabled_reboot();
  for(unsigned profile=0;profile<3;profile++)for(unsigned selected=0;selected<2;selected++) {
   uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;old.mode=4;old.protocol_role=UWB_PROTOCOL_RLR;
   if(profile)assert(!uwb_config_set(&old,"clock_estimator","regression"));

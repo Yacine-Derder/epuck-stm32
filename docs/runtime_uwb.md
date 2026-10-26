@@ -599,3 +599,11 @@ selection reboot and zero transmissions. Replay checks full-plan identities,
 native raw bytes and compact profile4 labels through the ESP owner/parser/queues,
 TCP reconnect and collector. This does not establish physical interoperability or
 short-slot reliability. Complete plan fingerprints must match on all participants.
+
+
+Schema9 boot validation binds the verified full plan/selection before checking
+RF-enabled roster eligibility. A selected plan can intentionally use different
+ALRs from the retained legacy profile; unrelated retained peers must not make a
+valid selected RF-ON record fall back to an older record at reboot. Schema1..8
+and the public128-byte rejection rule remain unchanged. The reboot regression
+uses full-plan ALRs32..35 and retained132/133 without adding legacy peers.

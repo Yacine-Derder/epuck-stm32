@@ -274,7 +274,7 @@ void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c
   for(unsigned i=0;i<UWB_MAX_PEERS;i++) {out[88+4*i]=c->peers[i].address;out[89+4*i]=c->peers[i].enabled;out[90+4*i]=(uint8_t)c->peers[i].interval_ms;out[91+4*i]=(uint8_t)(c->peers[i].interval_ms>>8);}
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
-static bool decode_base(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation,const mulSchedule_t *schedule) {
+static bool decode_base(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation,const mulSchedule_t *schedule,const mulRangingPlan_t *plan,bool selected) {
   if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=4&&get(in+4)!=UWB_CONFIG_VERSION&&!(schedule&&(get(in+4)==UWB_CONFIG_MULTI_VERSION||get(in+4)==UWB_CONFIG_CLOCK_VERSION||get(in+4)==UWB_CONFIG_TIMING_VERSION||get(in+4)==UWB_CONFIG_PLAN_VERSION)))||get(in+8)!=(schedule?UWB_CONFIG_MULTI_RECORD_SIZE:UWB_CONFIG_RECORD_SIZE)||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
 
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
@@ -299,11 +299,12 @@ static bool decode_base(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c
   // Schema8 prefix has only the old compact slot tag. Full numerical timing
   // belongs to the independently validated extension, never the packed alias.
   if(get(in+4)==UWB_CONFIG_TIMING_VERSION||get(in+4)==UWB_CONFIG_PLAN_VERSION)candidate.slot_ms=schedule->slotMs;
+  if(plan){candidate.plan=*plan;candidate.plan_present=1;candidate.plan_selected=selected;}
   if(uwb_config_validate(&candidate)) return false;
   *c=candidate;*generation=get(in+12);return true;
 }
 bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
- return decode_base(in,c,generation,NULL);
+ return decode_base(in,c,generation,NULL,NULL,false);
 }
 static bool decode_multi(const uint8_t in[UWB_CONFIG_MULTI_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
  bool planned=get(in+4)==UWB_CONFIG_PLAN_VERSION;
@@ -313,21 +314,17 @@ static bool decode_multi(const uint8_t in[UWB_CONFIG_MULTI_RECORD_SIZE],uwb_conf
  for(unsigned i=planned?240:experimental?173:clock?172:160;i<248;i++)if(in[i])return false;
  if((experimental||planned)&&in[172]>1)return false;
  if(planned&&(in[173]>1||in[174]||in[175]))return false;
- mulSchedule_t schedule;uwb_config_t candidate;uint32_t gen;
+ mulSchedule_t schedule;mulRangingPlan_t plan;uwb_config_t candidate;uint32_t gen;
+ if(planned&&!mulRangingPlanDecode(in+176,&plan))return false;
  if(!mulScheduleDecode(in+128,&schedule)||
     (experimental?schedule.profile!=MUL_PROFILE_EXPERIMENTAL:planned?false:schedule.profile>MUL_PROFILE_MULTI)||
-    (!clock&&schedule.profile!=MUL_PROFILE_MULTI)||!decode_base(in,&candidate,&gen,&schedule))return false;
+    (!clock&&schedule.profile!=MUL_PROFILE_MULTI)||!decode_base(in,&candidate,&gen,&schedule,planned?&plan:NULL,planned&&in[173]))return false;
  if(clock) {
   mulClockFitConfig_t decoded;if(!mulClockFitConfigDecode(in+160,&decoded))return false;
   if((experimental||planned)&&!in[172]) {
    mulClockFitConfig_t defaults;uwb_config_clock(&candidate,&defaults);
    if(memcmp(&defaults,&decoded,sizeof(defaults)))return false;
   }else candidate.clock=decoded;
-  if(uwb_config_validate(&candidate))return false;
- }
- if(planned) {
-  if(!mulRangingPlanDecode(in+176,&candidate.plan))return false;
-  candidate.plan_present=1;candidate.plan_selected=in[173];
   if(uwb_config_validate(&candidate))return false;
  }
  *c=candidate;*generation=gen;return true;
