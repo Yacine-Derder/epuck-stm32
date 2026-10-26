@@ -1,7 +1,50 @@
 #define main legacy_config_tests
 #include "test_config.c"
 #undef main
+static void experimental_journal(void) {
+ const unsigned counts[]={2,4,8};
+ for(unsigned k=0;k<3;k++)for(unsigned explicit=0;explicit<2;explicit++) {
+  uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;c=old;
+  uint8_t ids[8]={132,133,134,135,136,137,138,139};
+  assert(!uwb_config_roster(&c,ids,counts[k]));
+  assert(!uwb_config_set(&c,"profile","experimental"));
+  uwb_config_t before=c;assert(uwb_config_set(&c,"slot_ms","3")&&uwb_config_equal(&before,&c));
+  assert(!uwb_config_set(&c,"tx_lead_us","1000"));assert(!uwb_config_set(&c,"rx_budget_us","500"));
+  assert(!uwb_config_set(&c,"slot_ms","3"));assert(!uwb_config_set(&c,"alr_alr_twr","off"));
+  if(explicit)assert(!uwb_config_set(&c,"clock_estimator","regression"));
+  assert(!uwb_config_set(&c,"cycle_ms","200"));
+  mulClockFitConfig_t clock;uwb_config_clock(&c,&clock);assert(clock.periodMs==200);
+  assert((c.clock.periodMs!=0)==(explicit!=0));
+  assert(!uwb_config_roster(&c,ids,counts[k])&&c.schedule.profile==3);
+  before=c;
+  const char *fields[]={"slot_ms","cycle_ms","guard_us","tx_lead_us","rx_budget_us","airtime_us"};
+  const char *bad[]={"65536","201","101","499","99","399"};
+  for(unsigned i=0;i<6;i++)assert(uwb_config_set(&c,fields[i],bad[i])&&uwb_config_equal(&c,&before));
+  assert(uwb_config_set(&c,"profile","multi")&&uwb_config_equal(&c,&before));
+  memset(flash,255,sizeof(flash));uint32_t gen=0;assert(uwb_config_save(&store,&old,&gen));memcpy(backup,flash,sizeof(flash));
+  for(int fail=0;fail<=64;fail++) {
+   memcpy(flash,backup,sizeof(flash));budget=fail;bool ok=uwb_config_save(&store,&c,&gen);budget=-1;
+   assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,ok?&c:&old));
+  }
+  memcpy(flash,backup,sizeof(flash));assert(uwb_config_save(&store,&c,&gen));assert(flash[260]==8);
+  assert(!uwb_config_decode(flash+256,&loaded,&gen));
+  assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,&c));
+  unsigned previous=writes;assert(uwb_config_save(&store,&c,&gen)&&previous==writes);
+  // CRC-valid unknown marker must roll back, including implicit vs explicit semantics.
+  flash[256+172]=2;uint32_t crc=uwb_config_crc(flash+256,248);
+  for(unsigned i=0;i<4;i++)flash[256+248+i]=(uint8_t)(crc>>(8*i));
+  assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,&old));
+  // All word cuts during sector rotation preserve the previously committed state.
+  memset(flash,255,sizeof(flash));for(unsigned at=0;at<UWB_CONFIG_SECTOR_SIZE;at+=128)uwb_config_encode(flash+at,&old,at/128+1);
+  memcpy(backup,flash,sizeof(flash));
+  for(int fail=0;fail<=65;fail++) {
+   memcpy(flash,backup,sizeof(flash));budget=fail;bool ok=uwb_config_save(&store,&c,&gen);budget=-1;
+   assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,ok?&c:&old));
+  }
+ }
+}
 int main(void) {
+ experimental_journal();
  const unsigned counts[]={2,3,4,8};
  for(unsigned n=0;n<4;n++) {
   uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;

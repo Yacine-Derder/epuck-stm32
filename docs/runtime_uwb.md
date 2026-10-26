@@ -501,3 +501,28 @@ An enabled request is not evidence of an available range. External geometry is a
 later campaign stage. Current firmware scheduling remains1000ms/10,50,500ms spacing;
 the core clock's explicit100..2000ms test cases are not a claim of generalized RF
 schedule support yet.
+
+### Experimental numerical broadcast timing
+
+Opt-in `cfg set profile experimental` selects schedule profile3 with independently
+validated lead, processing, airtime and guard budgets. With RF OFF, set
+`tx_lead_us`, `rx_budget_us`, `airtime_us`, `guard_us` (100us steps), `slot_ms`
+(numerical, feasibility checked), `cycle_ms` (100..2000 step10) and
+`alr_alr_twr on/off`. Compatibility profiles retain10/50/500ms and1000ms cycles.
+Changing cycle updates an explicit estimator period; implicit median settings derive
+the schedule period. Roster edits retain profile3; restoring compatibility requires
+compatible timing first. `cfg roster show` prints timing budgets and fingerprint.
+These budgets are hardware-unverified. No TX is introduced in the passive RLR path.
+
+Schema8 retains the256-byte journal geometry: verified schedule32 at128,
+clock-config12 at160, explicit-clock flag at172, zero173..247, CRC248 and commit252
+last. Full numerical spacing is restored from the verified extension before alias
+validation; the old prefix slot tag has no full numerical representation. Public
+128-byte decoding rejects extended records. Schemas1..7 keep their original layout
+and policy. Interrupted append/rotation tests cover all word boundaries.
+
+Clock type10 v2 publishes actual period and capture age; optional diagnostics still
+require samples/telemetry enabled. Type8/vector and9/raw quality marker3 identifies
+experimental numeric timing, with version3 RF envelopes and schedule fingerprint
+checks. Older unmarked records retain compatibility timing restrictions. Update
+ALRs, STM32 and ESP32 together before a later authorized experimental activation.

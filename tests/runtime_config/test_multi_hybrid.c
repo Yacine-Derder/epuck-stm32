@@ -20,7 +20,7 @@ static void fitted_clock_runtime(void) {
    tick=10000+cycle*1000+slot*10;status=DWT_INT_RXFCG_BIT_MASK;mul_hybrid_radio_process();
    if(!slot) {
     bool diagnostic=false;
-    for(unsigned i=0;i<count;i++){mulTelemetry_t value;assert(mulTelemetryDecode(telemetry[(tail+i)%TLM_CAPACITY],&value));if(value.type==mulTlmClock){diagnostic=true;assert(value.clock.method==1&&value.clock.referenceSequence==cycle&&value.clock.referenceTx==mulDecodeTimestamp(frame+29)&&value.clock.rawRx==rx);}}
+    for(unsigned i=0;i<count;i++){mulTelemetry_t value;assert(mulTelemetryDecode(telemetry[(tail+i)%TLM_CAPACITY],&value));if(value.type==mulTlmClock){diagnostic=true;assert(value.clock.version==2&&value.captureAgeMs==1&&value.transaction==1000);assert(value.clock.method==1&&value.clock.referenceSequence==cycle&&value.clock.referenceTx==mulDecodeTimestamp(frame+29)&&value.clock.rawRx==rx);}}
     assert(diagnostic);
    }
   }
@@ -32,6 +32,55 @@ static void fitted_clock_runtime(void) {
  assert(!active.schedule.profile&&active.clock.estimator==1&&active.clock.window==30);
  command("on");assert(hybridReceiver.clockConfig.estimator==1&&hybridReceiver.clockConfig.window==30);
  command("off");command("cfg set clock_estimator median");persisted();
+}
+static void experimental_runtime(FILE *trace) {
+ const unsigned periods[]={100,200,500,1000,2000},spacing[]={2,3,5,7,17};
+ for(unsigned trial=0;trial<5;trial++) {
+  memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 0x8d");command("mode hybrid_static");command("off");
+  command("cfg roster set 0x84 0x85 0x86 0x87");command("cfg set profile experimental");
+  command("cfg set tx_lead_us 500");command("cfg set rx_budget_us 500");command("cfg set airtime_us 400");
+  command("cfg set alr_alr_twr off");char cmd[64];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",spacing[trial]);command(cmd);
+  snprintf(cmd,sizeof(cmd),"cfg set cycle_ms %u",periods[trial]);command(cmd);
+  command("cfg set clock_estimator regression");command("cfg set samples on");command("cfg set telemetry on");persisted();
+  uwb_runtime_init();assert(active.schedule.profile==3&&active.slot_ms==spacing[trial]);command("on");
+  assert(multiReceiver.clockConfig.periodMs==periods[trial]);unsigned tx=starts;
+  const char *blocked[]={"tx_lead_us 1000","rx_budget_us 1000","airtime_us 1000","guard_us 200","alr_alr_twr on","slot_ms 10","cycle_ms 1000","profile multi"};
+  unsigned writes=nvWrites;for(unsigned i=0;i<8;i++){snprintf(cmd,sizeof(cmd),"cfg set %s",blocked[i]);command(cmd);assert(nvWrites==writes);}
+  for(unsigned step=0;step<35;step++) {
+   uint32_t cycle=100+step,base=10000+step*periods[trial];int64_t t=(int64_t)step*periods[trial]*MS;
+   uint64_t reference=mulTimestampMask(MUL_TIMESTAMP_MASK-200*MS+t);
+   for(unsigned slot=0;slot<4;slot++) {
+    int64_t offset=(int64_t)slot*spacing[trial]*MS,origin=500000+scale(t,35000);
+    unsigned ageCycles=2000/periods[trial];
+    mulRelation_t relation={.version=2,.epoch=slot+1,.referenceSequence=cycle,.twrSequence=cycle-ageCycles,
+     .referenceOrigin=reference,.followerOrigin=mulTimestampMask(origin),.skewPpb=35000,
+     .originAgeMs=slot*spacing[trial]+1,.delayAgeMs=ageCycles*periods[trial]+slot*spacing[trial],.delayDtu=120,.maxAgeMs=6000,
+     .delayState=ageCycles<=1?mulPropagationFresh:mulPropagationReused,.available=true,.period10ms=periods[trial]/10};
+    uint64_t timestamp=slot?mulTimestampMask(origin+scale(offset+120,35000)):reference;
+    rxMarker=mulTimestampMask(800000+scale(t+(slot?offset+120+(slot%2?477:-477):0)+4000,15000));
+    size_t n=mulMultiBroadcastEncode(input,sizeof(input),&active.schedule,slot,cycle,timestamp,slot?&relation:NULL);assert(n);
+    length=n+2;tick=base+slot*spacing[trial];status=DWT_INT_RXFCG_BIT_MASK;
+    head=tail=count=wifiHead=wifiTail=wifiCount=0;
+    captureServiceDtu=step==10&&!slot?16*MS:638976;mul_hybrid_radio_process();captureServiceDtu=638976;
+    for(unsigned i=0;i<count;i++){const char *line=telemetry[(tail+i)%TLM_CAPACITY];mulTelemetry_t r;assert(mulTelemetryDecode(line,&r));
+     if(trace)fprintf(trace,"%s\n",line);
+     if(r.type==mulTlmClock)assert(r.transaction==periods[trial]&&r.captureAgeMs==(step==10?UINT16_MAX:1));
+     if(r.type==mulTlmMultiRx){assert(r.quality==3&&r.legacySlotMs==spacing[trial]);if(slot)assert(!memcmp(hybridFrames[1].frame,input,n));}
+    }
+   }
+   head=tail=count=wifiHead=wifiTail=wifiCount=0;tick=base+3*spacing[trial]+20;status=0;mul_hybrid_radio_process();
+   bool vector=false;
+   for(unsigned i=0;i<count;i++){const char *line=telemetry[(tail+i)%TLM_CAPACITY];mulTelemetry_t r;assert(mulTelemetryDecode(line,&r));
+    if(trace)fprintf(trace,"%s\n",line);
+    if(r.type==mulTlmVector){vector=true;assert(r.quality==3&&r.vector.periodMs==periods[trial]);
+     if(step==10)assert(!r.vector.validMask);
+     else if(step==9||step>=16)for(unsigned j=0;j<3;j++)assert(r.vector.values[j].status==mulDownlinkAvailable&&abs(r.vector.values[j].tdoaDtu-((j+1)%2?477:-477))<=3);
+    }
+   }
+   assert(vector);
+  }
+  assert(starts==tx);command("off");
+ }
 }
 int main(void) {
  FILE *trace=NULL;const char *tracePath=getenv("MUL_MULTI_TRACE");if(tracePath){trace=fopen(tracePath,"w");assert(trace);}
@@ -80,6 +129,8 @@ int main(void) {
   command("off");assert(!started&&!mockRadioActive);persisted();
  }
  fitted_clock_runtime();
+ FILE *experimental=NULL;const char *experimentalPath=getenv("MUL_TIMING_TRACE");if(experimentalPath){experimental=fopen(experimentalPath,"w");assert(experimental);}
+ experimental_runtime(experimental);if(experimental)fclose(experimental);
  if(trace)fclose(trace);
  puts("Multi RLR actual radio/queues/telemetry: N2/3/4/8, signed geometry/skews, partial vectors, native40/cycle32/uptime32 wrap, no-rate, Wi-Fi priority and zero TX passed");return 0;
 }

@@ -96,7 +96,9 @@ static const char *const help_config[]={
   "  - telemetry, wifi, samples: off | on; see help telemetry",
   "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
   "  - cfg roster show/set id0 id1 [..id7]; schedule changes require RF OFF",
-  "  - slot_ms: 10 | 50 | 500; reference-to-follower delay, independent of period",
+  "  - slot_ms: compat 10/50/500; experimental numerical; cycle_ms 100..2000",
+  "  - profile experimental: tx_lead_us, rx_budget_us, airtime_us, guard_us",
+  "  - alr_alr_twr: on/off; experimental budgets are hardware-unverified",
   "",
   "Persistence and calibration",
   "  - Settings are persistent; each changed field restarts UWB.",
@@ -355,6 +357,7 @@ static void display_output(void) {
     mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
     if(displayIndex==0)snprintf(text,sizeof(text),"SCHEDULE profile=%u count=%u slot_ms=%u cycle_ms=%u revision=%lu hash=%08lX",schedule.profile,schedule.count,schedule.slotMs,schedule.periodMs,(unsigned long)schedule.revision,(unsigned long)mulScheduleFingerprint(&schedule));
     else if(displayIndex<=schedule.count){unsigned slot=displayIndex-1;snprintf(text,sizeof(text),"ALR slot=%u id=0x%02X offset_ms=%u",slot,schedule.ids[slot],mulScheduleOffsetMs(&schedule,slot));}
+    else if(displayIndex==(unsigned)schedule.count+1&&schedule.profile==MUL_PROFILE_EXPERIMENTAL)snprintf(text,sizeof(text),"TIMING experimental=1 tx_lead_us=%u rx_budget_us=%u airtime_us=%u guard_us=%u alr_alr_twr=%u",schedule.txLeadUs,schedule.rxBudgetUs,schedule.airtimeUs,100u*schedule.guard100us,mulScheduleAlrRanging(&schedule));
     else {display=0;return;}
     if(usb_console_try_write(text))displayIndex++;
     return;
@@ -603,7 +606,7 @@ bool uwb_runtime_command(const char *line) {
       show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
-    if((!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
+    if((!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"tx_lead_us")||!strcmp(token[2],"rx_budget_us")||!strcmp(token[2],"airtime_us")||!strcmp(token[2],"guard_us")||!strcmp(token[2],"alr_alr_twr")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
     uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
     /* Preserve legacy cfg set mode auto-start semantics. Canonical mode above
      * changes only selection; explicit on/off is independent. */
