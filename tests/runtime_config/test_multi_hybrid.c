@@ -39,13 +39,13 @@ static void experimental_runtime(FILE *trace) {
   memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 0x8d");command("mode hybrid_static");command("off");
   command("cfg roster set 0x84 0x85 0x86 0x87");command("cfg set profile experimental");
   command("cfg set tx_lead_us 500");command("cfg set rx_budget_us 500");command("cfg set airtime_us 400");
-  command("cfg set alr_alr_twr off");char cmd[64];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",spacing[trial]);command(cmd);
+  command("cfg set alr_alr_twr off");command("cfg set twr_reply_ms 5");char cmd[64];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",spacing[trial]);command(cmd);
   snprintf(cmd,sizeof(cmd),"cfg set cycle_ms %u",periods[trial]);command(cmd);
   command("cfg set clock_estimator regression");command("cfg set samples on");command("cfg set telemetry on");persisted();
-  uwb_runtime_init();assert(active.schedule.profile==3&&active.slot_ms==spacing[trial]);command("on");
+  uwb_runtime_init();assert(active.schedule.profile==3&&active.slot_ms==spacing[trial]&&mulScheduleReplyMs(&active.schedule)==5);command("on");
   assert(multiReceiver.clockConfig.periodMs==periods[trial]);unsigned tx=starts;
-  const char *blocked[]={"tx_lead_us 1000","rx_budget_us 1000","airtime_us 1000","guard_us 200","alr_alr_twr on","slot_ms 10","cycle_ms 1000","profile multi"};
-  unsigned writes=nvWrites;for(unsigned i=0;i<8;i++){snprintf(cmd,sizeof(cmd),"cfg set %s",blocked[i]);command(cmd);assert(nvWrites==writes);}
+  const char *blocked[]={"tx_lead_us 1000","rx_budget_us 1000","airtime_us 1000","guard_us 200","alr_alr_twr on","slot_ms 10","cycle_ms 1000","profile multi","twr_reply_ms 10"};
+  unsigned writes=nvWrites;for(unsigned i=0;i<sizeof(blocked)/sizeof(blocked[0]);i++){snprintf(cmd,sizeof(cmd),"cfg set %s",blocked[i]);command(cmd);assert(nvWrites==writes);}
   for(unsigned step=0;step<35;step++) {
    uint32_t cycle=100+step,base=10000+step*periods[trial];int64_t t=(int64_t)step*periods[trial]*MS;
    uint64_t reference=mulTimestampMask(MUL_TIMESTAMP_MASK-200*MS+t);

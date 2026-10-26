@@ -526,3 +526,12 @@ require samples/telemetry enabled. Type8/vector and9/raw quality marker3 identif
 experimental numeric timing, with version3 RF envelopes and schedule fingerprint
 checks. Older unmarked records retain compatibility timing restrictions. Update
 ALRs, STM32 and ESP32 together before a later authorized experimental activation.
+
+Experimental AA reply timing is part of the same schedule fingerprint.
+`cfg set twr_reply_ms 20|10|5` is RF-OFF-only, defaults20, validates the configured
+lead/processing/airtime/guard budget when AA is enabled and persists in schema8
+without changing record size. AA toggles preserve the reply selector. Roster
+preview reports the interval. It configures the matching passive RLR schedule;
+it does not enable active RLR ranging. ALR firmware uses these candidates in its
+actual five-message state machine; fixed AA windows remain until planner integration.
+Older shared decoders reject newly assigned reply bits; update all participants.

@@ -136,13 +136,17 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
     }
     const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
   }
-  if(!strcmp(field,"cycle_ms")||!strcmp(field,"tx_lead_us")||!strcmp(field,"rx_budget_us")||!strcmp(field,"airtime_us")||!strcmp(field,"guard_us")||!strcmp(field,"alr_alr_twr")) {
+  if(!strcmp(field,"cycle_ms")||!strcmp(field,"tx_lead_us")||!strcmp(field,"rx_budget_us")||!strcmp(field,"airtime_us")||!strcmp(field,"guard_us")||!strcmp(field,"alr_alr_twr")||!strcmp(field,"twr_reply_ms")) {
     if(c->schedule.profile!=MUL_PROFILE_EXPERIMENTAL)return !strcmp(field,"cycle_ms")&&!strcmp(value,"1000")?NULL:"select experimental profile for timing budgets";
     uwb_config_t candidate=*c;uint32_t n;
     if(!strcmp(field,"alr_alr_twr")) {
-      if(!strcmp(value,"on"))candidate.schedule.rangingFlags=MUL_RANGING_ALR_ALR;
-      else if(!strcmp(value,"off"))candidate.schedule.rangingFlags=0;
+      if(!strcmp(value,"on"))candidate.schedule.rangingFlags|=MUL_RANGING_ALR_ALR;
+      else if(!strcmp(value,"off"))candidate.schedule.rangingFlags&=~MUL_RANGING_ALR_ALR;
       else return "alr_alr_twr: on/off";
+    }else if(!strcmp(field,"twr_reply_ms")) {
+      unsigned code=!strcmp(value,"20")?0:!strcmp(value,"10")?2:!strcmp(value,"5")?4:255;
+      if(code==255)return "twr_reply_ms:20/10/5";
+      candidate.schedule.rangingFlags=(candidate.schedule.rangingFlags&~MUL_RANGING_REPLY_MASK)|code;
     }else {
       if(!decimal(value,UINT16_MAX,&n))return "timing: decimal 0..65535";
       if(!strcmp(field,"cycle_ms")){candidate.schedule.periodMs=(uint16_t)n;if(candidate.clock.periodMs)candidate.clock.periodMs=(uint16_t)n;}

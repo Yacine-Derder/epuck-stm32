@@ -10,7 +10,8 @@ static void experimental_journal(void) {
   assert(!uwb_config_set(&c,"profile","experimental"));
   uwb_config_t before=c;assert(uwb_config_set(&c,"slot_ms","3")&&uwb_config_equal(&before,&c));
   assert(!uwb_config_set(&c,"tx_lead_us","1000"));assert(!uwb_config_set(&c,"rx_budget_us","500"));
-  assert(!uwb_config_set(&c,"slot_ms","3"));assert(!uwb_config_set(&c,"alr_alr_twr","off"));
+  assert(!uwb_config_set(&c,"slot_ms","3"));assert(!uwb_config_set(&c,"twr_reply_ms","5"));
+  assert(mulScheduleReplyMs(&c.schedule)==5);assert(!uwb_config_set(&c,"alr_alr_twr","off"));assert(mulScheduleReplyMs(&c.schedule)==5);
   if(explicit)assert(!uwb_config_set(&c,"clock_estimator","regression"));
   assert(!uwb_config_set(&c,"cycle_ms","200"));
   mulClockFitConfig_t clock;uwb_config_clock(&c,&clock);assert(clock.periodMs==200);
