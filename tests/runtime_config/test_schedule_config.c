@@ -12,6 +12,7 @@ int main(void) {
   assert(c.peer==old.peer&&c.calibration==old.calibration&&c.slot_ms==10);
   if(counts[n]==2){assert(uwb_config_equal(&c,&old));assert(!uwb_config_set(&c,"profile","multi"));}
   assert(c.schedule.profile==MUL_PROFILE_MULTI&&c.schedule.count==counts[n]);
+  if(n%2)assert(!uwb_config_set(&c,"clock_estimator","regression"));
   memcpy(backup,flash,sizeof(flash));
   for(int fail=0;fail<=64;fail++) {
    memcpy(flash,backup,sizeof(flash));budget=fail;bool ok=uwb_config_save(&store,&c,&gen);budget=-1;
@@ -31,5 +32,14 @@ int main(void) {
    assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,ok?&c:&old));
   }
  }
+ // Schema7 also carries explicit clock settings for an implicit legacy roster.
+ uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;c=old;
+ assert(!uwb_config_set(&c,"clock_estimator","regression"));assert(!uwb_config_set(&c,"clock_window","30"));
+ memset(flash,255,sizeof(flash));uint32_t gen=0;assert(uwb_config_save(&store,&old,&gen));memcpy(backup,flash,sizeof(flash));
+ for(int fail=0;fail<=64;fail++) {memcpy(flash,backup,sizeof(flash));budget=fail;bool ok=uwb_config_save(&store,&c,&gen);budget=-1;assert(uwb_config_load(&store,&loaded,&gen));assert(uwb_config_equal(&loaded,ok?&c:&old));}
+ memcpy(flash,backup,sizeof(flash));assert(uwb_config_save(&store,&c,&gen));assert(flash[260]==7);
+ assert(uwb_config_load(&store,&loaded,&gen)&&!loaded.schedule.profile&&loaded.clock.window==30);
+ flash[416]=2;uint32_t crc=uwb_config_crc(flash+256,248);for(unsigned i=0;i<4;i++)flash[504+i]=(uint8_t)(crc>>(8*i));
+ assert(uwb_config_load(&store,&loaded,&gen)&&uwb_config_equal(&loaded,&old)); // CRC-valid unknown clock version falls back.
  puts("Multi schedule journal: N2/3/4/8, legacy128/new256 mixed scan, all64-word append/rotation cuts, reboot/no-op, invalid roster and rollback passed");return 0;
 }

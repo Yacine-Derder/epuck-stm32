@@ -22,6 +22,20 @@ static struct {uint8_t frame[84],length;uint64_t rx;uint32_t age,observedMs;
  int32_t ci;int16_t coe;uint32_t status;bool coePresent;
 #endif
 } hybridFrames[3];
+static void publishClock(const mulClock_t *clock,const mulClockFit_t *fit,const mulClockFitConfig_t *config,
+ const mulTestPacket_t *packet,uint64_t rx,uint32_t now) {
+ if(!hybridConfig.samples)return; // Explicit research diagnostics; preserve default queue load.
+ bool same=fit->epoch==clock->epoch;unsigned status=mulClockMapStatus(clock,now);
+ mulTelemetry_t record={.type=mulTlmClock,.peer=packet->source[0],.exchange=clock->epoch,.uptimeMs=now,
+  .clock={.referenceTx=packet->txTimestamp,.rawRx=rx,.referenceSequence=packet->sequence,
+   .appliedPpb=clock->skewPpb,.fittedPpb=same?fit->skewPpb:0,.rmsDtu=same?fit->rmsDtu:0,
+   .rejected=fit->rejected,.fitSigmaPpb=same?fit->uncertaintyPpb:UINT32_MAX,.ageMs=now-clock->observedMs,
+   .reference=packet->source[0],.method=config->estimator,.window=config->window,.count=same?fit->count:0,
+   .inliers=same?fit->inliers:0,.status=(uint8_t)status,.ready=same&&fit->ready,
+   .applied=same&&fit->applied&&status==mulClockMapValid,
+   .fallback=same&&fit->ready?fit->fallback:mulClockFitWarmup,.compensated=same&&fit->compensated}};
+ uwb_runtime_publish(&record);
+}
 static void hybridRearm(void) {
  dwt_forcetrxoff();dwt_writesysstatuslo(HYBRID_RX_EVENTS|DWT_INT_TXFRS_BIT_MASK);
  hybridRetry=dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS;if(hybridRetry)hybridErrors++;
@@ -40,6 +54,7 @@ void mul_hybrid_radio_configure(const uwb_config_t *c) {
  hybridLastReport=HAL_GetTick();hybridRetry=false;hybridLastStatus=mulDownlinkNoRelation;
  memset(&multiReceiver,0,sizeof(multiReceiver));
  if(c->schedule.profile==MUL_PROFILE_MULTI)(void)mulMultiReceiverInit(&multiReceiver,&c->schedule,receiver,c->mode==5);
+ uwb_config_clock(c,&hybridReceiver.clockConfig);uwb_config_clock(c,&multiReceiver.clockConfig);
 }
 void mul_hybrid_radio_suspend(void) {
  multiReceiver.active=false;mulClockReset(&multiReceiver.rate);
@@ -61,7 +76,13 @@ void mul_hybrid_radio_status(char *line,size_t capacity) {
  (unsigned long)hybridReceiver.pairs,hybridLastStatus,mulObservationFresh(&hybridReceiver.observations[mulAlrReference],HAL_GetTick()),mulObservationFresh(&hybridReceiver.observations[mulAlrFollower],HAL_GetTick()),(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts,(unsigned long)hybridReceiver.diagnostics.reason[mulHybridScheduleMismatch]);
 }
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity) {
- if(hybridConfig.schedule.profile==MUL_PROFILE_MULTI){mul_hybrid_radio_status(line,capacity);return;}
+ if(page!=3&&hybridConfig.schedule.profile==MUL_PROFILE_MULTI){mul_hybrid_radio_status(line,capacity);return;}
+ if(page==3) {
+  const mulClockFit_t *fit=hybridConfig.schedule.profile?&multiReceiver.fit:&hybridReceiver.fit;
+  mulClockFitConfig_t config;uwb_config_clock(&hybridConfig,&config);
+  snprintf(line,capacity,"CLOCK method=%u window=%u n=%u inliers=%u ppb=%ld rms_dtu=%lu rejected=%lu fit_sigma_ppb=%lu ready=%u applied=%u fallback=%u age_ms=%lu mapping_status=%u compensate_requested=%u mapping_physical_bound=UNKNOWN",
+   config.estimator,config.window,fit->count,fit->inliers,(long)fit->skewPpb,(unsigned long)fit->rmsDtu,(unsigned long)fit->rejected,(unsigned long)fit->uncertaintyPpb,fit->ready,fit->applied,fit->fallback,(unsigned long)(HAL_GetTick()-(hybridConfig.schedule.profile?multiReceiver.rate.observedMs:hybridReceiver.rate.observedMs)),mulClockMapStatus(hybridConfig.schedule.profile?&multiReceiver.rate:&hybridReceiver.rate,HAL_GetTick()),config.compensate);return;
+ }
  const mulHybridDiagnostics_t *d=&hybridReceiver.diagnostics;
  if(page==0)snprintf(line,capacity,"MULH DIAG poll=%lu response=%lu final=%lu report=%lu result=%lu relations=%lu available=%lu last=%s type=0x%02X id=%lu stage=0x%02X",
  (unsigned long)d->twrFrames[0],(unsigned long)d->twrFrames[1],(unsigned long)d->twrFrames[2],(unsigned long)d->twrFrames[3],(unsigned long)d->twrFrames[4],
@@ -127,6 +148,7 @@ static void multiProcess(void) {
   mulMultiReceiveOutput_t out;
   if(shape&&mulMultiReceiverReceive(&multiReceiver,frame,bytes,rx,age,now,&out)) {
    if(out.cycleReady)publishVector(&out.completed);
+   if(!out.broadcast.slot)publishClock(&multiReceiver.rate,&multiReceiver.fit,&multiReceiver.clockConfig,&out.broadcast.packet,rx,now);
    unsigned index=out.broadcast.slot?1:0;
    memcpy(hybridFrames[index].frame,frame,bytes);hybridFrames[index].length=(uint8_t)bytes;
    hybridFrames[index].rx=rx;hybridFrames[index].age=age;hybridFrames[index].observedMs=now;
@@ -209,6 +231,7 @@ void mul_hybrid_radio_process(void) {
           .delayState=o->delayState,.powerFlags=o->powerFlags,.unknownComponents=o->unknownComponents}};
        uwb_runtime_publish(&record);
      }
+     if(out.broadcast&&frame[13]==hybridReceiver.network.addresses[0][0])publishClock(&hybridReceiver.rate,&hybridReceiver.fit,&hybridReceiver.clockConfig,&out.packet,rx,now);
      record=(mulTelemetry_t){.type=mulTlmHybridRx,.peer=frame[13],.remoteRadio=1,.transaction=out.packet.sequence,
        .exchange=out.broadcast?out.relation.epoch:0,.quality=out.associated?out.observation.status:255,.flags=mulTlmStampValid,
        .legacyLength=(uint8_t)bytes,.legacyRx=rx,.captureAgeMs=(uint16_t)age,.legacySlotMs=hybridConfig.slot_ms,

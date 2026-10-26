@@ -6,6 +6,33 @@
 #define main shared_multi_core_tests_not_invoked
 #include "../../ThirdParty/mul_core/tests/test_multi_receiver.c"
 #undef main
+static void fitted_clock_runtime(void) {
+ memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 0x8d");command("peer add 0x84");command("peer add 0x85");
+ command("mode hybrid_static");command("off");command("cfg roster set 0x84 0x85 0x86 0x87");
+ command("cfg set clock_estimator regression");command("cfg set clock_window 30");command("cfg set samples on");command("cfg set telemetry on");persisted();
+ assert(current.clock.estimator==1&&current.clock.window==30);uwb_runtime_init();assert(active.clock.window==30&&active.telemetry&&active.samples);
+ command("on");unsigned transmissions=starts,writes=nvWrites;
+ command("cfg set clock_estimator median");assert(nvWrites==writes&&current.clock.estimator==1);
+ for(unsigned cycle=0;cycle<45;cycle++) {
+  for(unsigned slot=0;slot<4;slot++) {
+   uint8_t frame[90];uint64_t rx;size_t n=packet(&active.schedule,slot,cycle,cycle,true,frame,&rx);
+   head=tail=count=wifiHead=wifiTail=wifiCount=0;memcpy(input,frame,n);length=n+2;rxMarker=rx;
+   tick=10000+cycle*1000+slot*10;status=DWT_INT_RXFCG_BIT_MASK;mul_hybrid_radio_process();
+   if(!slot) {
+    bool diagnostic=false;
+    for(unsigned i=0;i<count;i++){mulTelemetry_t value;assert(mulTelemetryDecode(telemetry[(tail+i)%TLM_CAPACITY],&value));if(value.type==mulTlmClock){diagnostic=true;assert(value.clock.method==1&&value.clock.referenceSequence==cycle&&value.clock.referenceTx==mulDecodeTimestamp(frame+29)&&value.clock.rawRx==rx);}}
+    assert(diagnostic);
+   }
+  }
+  tick=10000+cycle*1000+60;status=0;mul_hybrid_radio_process();
+ }
+ assert(multiReceiver.fit.ready&&multiReceiver.fit.count==30&&abs(multiReceiver.rate.skewPpb-15000)<=1&&starts==transmissions);
+ command("clock show");drain();assert(strstr(captured,"CLOCK method=1 window=30"));
+ command("off");command("cfg roster set 0x84 0x85");persisted();uwb_runtime_init();
+ assert(!active.schedule.profile&&active.clock.estimator==1&&active.clock.window==30);
+ command("on");assert(hybridReceiver.clockConfig.estimator==1&&hybridReceiver.clockConfig.window==30);
+ command("off");command("cfg set clock_estimator median");persisted();
+}
 int main(void) {
  FILE *trace=NULL;const char *tracePath=getenv("MUL_MULTI_TRACE");if(tracePath){trace=fopen(tracePath,"w");assert(trace);}
  const unsigned counts[]={2,3,4,8};
@@ -52,6 +79,7 @@ int main(void) {
   }
   command("off");assert(!started&&!mockRadioActive);persisted();
  }
+ fitted_clock_runtime();
  if(trace)fclose(trace);
  puts("Multi RLR actual radio/queues/telemetry: N2/3/4/8, signed geometry/skews, partial vectors, native40/cycle32/uptime32 wrap, no-rate, Wi-Fi priority and zero TX passed");return 0;
 }

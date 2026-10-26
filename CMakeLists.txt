@@ -71,6 +71,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/mul_ads_radio.c
     ThirdParty/mul_core/mul_hybrid.c
     ThirdParty/mul_core/mul_legacy_twr.c
+    ThirdParty/mul_core/mul_clock_fit.c
     ThirdParty/mul_core/mul_clock.c
     ThirdParty/mul_core/mul_relation.c
     ThirdParty/mul_core/mul_observation.c

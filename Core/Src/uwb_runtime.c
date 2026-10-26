@@ -394,7 +394,7 @@ static void display_output(void) {
   case 12:snprintf(text,sizeof(text),"Telemetry:          %s",onoff(c->telemetry));break;
   case 13:snprintf(text,sizeof(text),"Telemetry interval: %lu ms",(unsigned long)c->telemetry_ms);break;
   case 14:snprintf(text,sizeof(text),"Ranging samples:    %s",onoff(c->samples));break;
-  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
+  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
   case 22:snprintf(text,sizeof(text),"Protocol role:      %s",c->protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone");break;
@@ -499,7 +499,7 @@ bool uwb_runtime_command(const char *line) {
     if(!strcmp(token[1],"off")){rf_command(false);return true;}
     else {
       if(strcmp(token[1],"twr")&&strcmp(token[1],"beacon")&&strcmp(token[1],"listen")&&strcmp(token[1],"hybrid")&&strcmp(token[1],"hybrid_static")){reply("ERR unsupported mode; help config");return true;}
-      const char *error=uwb_config_set(&candidate,"mode",token[1]);candidate.protocol_role=current.protocol_role;if(error){reply("ERR configuration rejected");reply(error);return true;}
+      const char *error=uwb_config_set(&candidate,"mode",token[1]);candidate.protocol_role=candidate.mode>=4?UWB_PROTOCOL_RLR:current.protocol_role;if(error){reply("ERR configuration rejected");reply(error);return true;}
     }
     update(&candidate);return true;
   }
@@ -537,6 +537,11 @@ bool uwb_runtime_command(const char *line) {
     else {token[0]="tlm";token[1]="status";}nt=2;
   }
 
+  if(nt==2&&!strcmp(token[0],"clock")&&!strcmp(token[1],"show")) {
+    char text[384];if(started&&active.mode>=4)mul_hybrid_radio_diagnostics(3,text,sizeof(text));
+    else {mulClockFitConfig_t config;uwb_config_clock(&current,&config);snprintf(text,sizeof(text),"CLOCK saved method=%u window=%u compensate=%u period_ms=%u",config.estimator,config.window,config.compensate,config.periodMs);}
+    reply(text);return true;
+  }
   if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency"))) {
     if(!started||active.mode<4)reply("HYBRID inactive; mode hybrid/hybrid_static requires responder and enabled legacy ALR peers");
     else {
@@ -598,7 +603,7 @@ bool uwb_runtime_command(const char *line) {
       show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
-    if((!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
+    if((!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
     uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
     /* Preserve legacy cfg set mode auto-start semantics. Canonical mode above
      * changes only selection; explicit on/off is independent. */

@@ -458,3 +458,46 @@ for N2/3/4/8, independent skews, exact signed geometry, missing/invalid siblings
 no-rate policy and40/32-bit wrap. From epuck-esp32 run
 `python3 tools/verify_multi_replay.py /tmp/multi.uart` to replay those bytes through
 the real ESP owner, loopback TCP reconnect and compact JSONL. No hardware is used.
+
+## Selectable clock regression (software-first campaign)
+
+Median remains the default. With RF OFF:
+
+```
+off
+cfg set clock_estimator regression
+cfg set clock_window 24
+cfg set samples on
+clock show
+on
+```
+
+Window8..32; default24. `cfg set clock_estimator median` selects the baseline.
+The clock has a robust centered integer fit, outlier rejection and median fallback
+when its long-window frequency disagrees with the recent median during changing
+rate. `clock show` distinguishes a formed fit from an applied fit and reports
+residual RMS, rejected samples, mapping status/age and conditional fit scatter.
+Physical timing/geometry uncertainty remains UNKNOWN. Larger windows can lag real
+oscillator/motion changes; they are not unconditionally more accurate.
+
+`cfg set samples on` opts into additive UWB3 type10 raw clock diagnostics at each
+reference reception, in both legacy and multi receiver paths. Diagnostics are
+optional queue traffic; associated TDoA vectors keep essential priority. Raw
+reference TX/RX domains, sequence, applied/fitted frequency, fit readiness/application/
+fallback and uncertainty scope are preserved for offline replay. Default queue load
+is unchanged while samples is off. `clock show` remains available without streaming.
+
+Schema7 stores clock settings in a256-byte commit-last record, using the same
+reserved flash banks. Old schemas1..6 migrate read-only to implicit median defaults.
+The old128-byte and schema6 encodings remain used when no clock settings are
+explicitly configured. All64-word append/rotation cuts and CRC-valid malformed
+clock versions are tested. A downgrade to old firmware cannot read schema7; retain
+settings backups and a compatible revision set. No persistent flash erase is needed.
+
+Propagation compensation is optional in the shared estimator API. The LPS follower
+can supply its current epoch/age-bound inter-ALR TWR delay; STM32 currently has no
+external reference-to-RLR range provider and reports uncompensated observations.
+An enabled request is not evidence of an available range. External geometry is a
+later campaign stage. Current firmware scheduling remains1000ms/10,50,500ms spacing;
+the core clock's explicit100..2000ms test cases are not a claim of generalized RF
+schedule support yet.

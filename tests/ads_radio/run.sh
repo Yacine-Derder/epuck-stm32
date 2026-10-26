@@ -11,7 +11,7 @@ for role in 1 2; do
   -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
   -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
   tests/ads_radio/test.c ThirdParty/mul_core/mul_ads.c ThirdParty/mul_core/mul_core.c \
-  ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/radio"
+  ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c -lm -o "$work/radio"
  "$work/radio"
 done
 done
