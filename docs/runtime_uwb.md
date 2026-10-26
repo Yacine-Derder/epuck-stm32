@@ -551,3 +551,33 @@ are still required. The current STM32/ESP path cannot consume generated LPS RF4;
 use retained unselected profiles for compatibility until those pieces are wired.
 No RLR TX is introduced by a passive receiver API. Active ALR–RLR participation
 remains later work. No hardware was flashed or operated for this dependency update.
+
+
+### Independent generated-plan persistence (schema9)
+
+`plan init`, `plan show`, `plan use on|off`, `plan alrs ID ID ...`, `plan rlrs
+[ID ...]` and `plan set FIELD VALUE` now validate and persist generated plans with
+RF OFF. Fields match LPS: `aa|ar on|off`, `aa_millihz|ar_millihz`, `slot_ms`,
+`cycle_ms`, `lead_us`, `process_us`, `air_us`, `guard_us`, `reply_ms`,
+`util_percent`, and `revision`. Roster IDs accept decimal/hex; the preview pages
+show timing, per-pair targets, hash and cycle1 operation ownership. Invalid
+candidates and oversized values do not write flash. Existing flash safety gates
+and transactional rollback remain in force.
+
+The generated plan is independent of the retained schedule and estimator settings.
+Selection does not overwrite legacy aliases/timing. Deselecting restores that
+profile; retained schedule/roster edits require deselection. Estimator parameters
+remain editable and the effective estimator period derives from the selected plan.
+
+Schema9 remains256 bytes: retained schedule32 at128, retained estimator12 at160,
+explicit-estimator flag172, selected flag173, zero174..175, full plan64 at176,
+zero240..247, CRC248, commit252. Schema9 implies plan presence, including when
+unselected. Schemas1..8 retain prior decoding; public128-byte decode rejects9.
+Nested plan CRC/version validation supplements the outer record CRC. Journal
+append/rotation cuts preserve the previous committed record.
+
+**Generated RF activation is still refused.** This milestone connects storage,
+configuration and preview; RF4 radio selection and distinct raw/vector telemetry
+must be connected before removing that gate. A stored selected plan can reboot
+safely with RF OFF. The retained unselected hybrid path continues to operate.
+No hardware was flashed, reset or operated.

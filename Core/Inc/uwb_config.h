@@ -5,12 +5,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "mul_schedule.h"
+#include "mul_ranging_plan.h"
 #include "mul_clock_fit.h"
 /* Explicit little-endian wire schema; never persist a C structure. */
 #define UWB_CONFIG_VERSION 5u
 #define UWB_CONFIG_MULTI_VERSION 6u
 #define UWB_CONFIG_CLOCK_VERSION 7u
 #define UWB_CONFIG_TIMING_VERSION 8u
+#define UWB_CONFIG_PLAN_VERSION 9u
 #define UWB_CONFIG_MULTI_RECORD_SIZE 256u
 #define UWB_MAX_PEERS 8u
 #define UWB_PROTOCOL_STANDALONE 0u
@@ -29,7 +31,9 @@ typedef struct {
   uint32_t protocol_role; // Separate from ADS initiator/responder and identity metadata.
   uint32_t rf_enabled; // RF operation gate; mode selection is retained while off.
   mulClockFitConfig_t clock; // period0 means unchanged implicit median defaults.
-  mulSchedule_t schedule; // profile0 means unchanged implicit legacy pair.
+  mulSchedule_t schedule; // Retained broadcast profile; not shadowed by plan edits.
+  mulRangingPlan_t plan; // Independent generated configuration; present/selected below.
+  uint8_t plan_present,plan_selected;
   uint32_t slot_ms; // Persistent reference-to-follower delay; not the measurement period.
   uint32_t reference,follower; // Explicit legacy TDMA roster; separate from TWR role.
 } uwb_config_t;
@@ -40,6 +44,10 @@ const char *uwb_config_validate(const uwb_config_t *c);
 void uwb_config_clock(const uwb_config_t *c,mulClockFitConfig_t *clock);
 void uwb_config_schedule(const uwb_config_t *c,mulSchedule_t *schedule);
 const char *uwb_config_roster(uwb_config_t *c,const uint8_t *ids,unsigned count);
+/* Updates require RF OFF. Selection retains the original schedule/clock fields. */
+const char *uwb_config_plan_set(uwb_config_t *c,const mulRangingPlan_t *plan,bool selected);
+void uwb_config_effective_schedule(const uwb_config_t *c,mulSchedule_t *schedule);
+void uwb_config_effective_clock(const uwb_config_t *c,mulClockFitConfig_t *clock);
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b);
 /* Strict single-field candidate update; no mutation on rejection. Case-insensitive
  * fields/enum words, numeric aliases, decimal/0x IDs and signed decimal mm.

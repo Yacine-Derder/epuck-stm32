@@ -44,6 +44,7 @@ static const char *const help_commands[]={
   "  - cfg show                  Show current configuration",
   "  - cfg set <field> <value>    Change and save a setting",
   "  - cfg help                  List configuration options",
+  "  - plan show|init|use|set     Generated ranging plan (RF OFF edits)",
   "  - on / off                  Enable RF; retain selected mode",
   "  - mode / role / addr        Selection, passive role and address",
   "",
@@ -96,6 +97,11 @@ static const char *const help_config[]={
   "  - telemetry, wifi, samples: off | on; see help telemetry",
   "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
   "  - cfg roster show/set id0 id1 [..id7]; schedule changes require RF OFF",
+  "  - plan init/show/use on|off; alrs id0 id1 ...; rlrs [id ...]",
+  "  - plan set aa|ar on|off; aa_millihz|ar_millihz 0..10000",
+  "  - plan set slot_ms|cycle_ms|lead_us|process_us|air_us|guard_us N",
+  "  - plan set reply_ms 5|10|20; util_percent 10..80; revision N",
+  "  - Generated RF4 activation is pending; stored plans do not enable TX",
   "  - slot_ms: compat 10/50/500; experimental numerical; cycle_ms 100..2000",
   "  - profile experimental: tx_lead_us, rx_budget_us, airtime_us, guard_us",
   "  - alr_alr_twr: on/off; experimental budgets are hardware-unverified",
@@ -354,6 +360,23 @@ static void display_output(void) {
     return;
   }
   const uwb_config_t *c=&displayConfig;char text[320];
+  if(display==6) {
+    const mulRangingPlan_t *p=&c->plan;mulRangingBudget_t b;unsigned count=mulRangingPlanCount(p,1);
+    if(!c->plan_present) {if(displayIndex){display=0;return;}snprintf(text,sizeof(text),"PLAN absent; use plan init with RF OFF");}
+    else if(mulRangingPlanValidate(p,&b)){display=0;reply("ERR invalid plan");return;}
+    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4_activation=pending",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration);
+    else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs);
+    else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity);
+    else if(displayIndex<3u+p->broadcast.count)snprintf(text,sizeof(text),"PLAN ALR slot=%u id=%u",displayIndex-3,p->broadcast.ids[displayIndex-3]);
+    else if(displayIndex<3u+p->broadcast.count+p->rlrCount){unsigned i=displayIndex-3-p->broadcast.count;snprintf(text,sizeof(text),"PLAN RLR slot=%u id=%u",i,p->rlrs[i]);}
+    else {
+      unsigned index=displayIndex-3-p->broadcast.count-p->rlrCount;mulRangingOperation_t op;
+      if(index>=count||!mulRangingPlanOperation(p,1,index,&op)){display=0;return;}
+      snprintf(text,sizeof(text),"PLAN OP cycle=1 index=%u kind=%u initiator=%u responder=%u start_us=%lu poll_us=%lu end_us=%lu",index,op.kind,op.initiator,op.responder,(unsigned long)op.startUs,(unsigned long)op.pollUs,(unsigned long)op.endUs);
+    }
+    if(usb_console_try_write(text))displayIndex++;
+    return;
+  }
   if(display==5) {
     mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
     if(displayIndex==0)snprintf(text,sizeof(text),"SCHEDULE profile=%u count=%u slot_ms=%u cycle_ms=%u revision=%lu hash=%08lX",schedule.profile,schedule.count,schedule.slotMs,schedule.periodMs,(unsigned long)schedule.revision,(unsigned long)mulScheduleFingerprint(&schedule));
@@ -398,9 +421,10 @@ static void display_output(void) {
   case 12:snprintf(text,sizeof(text),"Telemetry:          %s",onoff(c->telemetry));break;
   case 13:snprintf(text,sizeof(text),"Telemetry interval: %lu ms",(unsigned long)c->telemetry_ms);break;
   case 14:snprintf(text,sizeof(text),"Ranging samples:    %s",onoff(c->samples));break;
-  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
+  case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->plan_present?UWB_CONFIG_PLAN_VERSION:c->schedule.profile==MUL_PROFILE_EXPERIMENTAL?UWB_CONFIG_TIMING_VERSION:c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
+  case 23:snprintf(text,sizeof(text),"Generated plan: present=%u selected=%u; PLAN SHOW for full configuration",c->plan_present,c->plan_selected);break;
   case 22:snprintf(text,sizeof(text),"Protocol role:      %s",c->protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone");break;
   case 21:snprintf(text,sizeof(text),"RF enabled:         %s; selected mode retained while off",onoff(c->rf_enabled));break;
   case 20:snprintf(text,sizeof(text),"Legacy TDMA roster: reference=0x%02lX follower=0x%02lX",(unsigned long)c->reference,(unsigned long)c->follower);break;
@@ -423,6 +447,52 @@ static bool number(const char *s,unsigned maximum,unsigned *out) {
     v=v*base+d;s++;n++;}
   if(!n)return false;
   *out=v;return true;
+}
+static void plan_command(unsigned nt,char **t) {
+ if(nt==2&&!strcmp(t[1],"show")){displayConfig=current;displayGeneration=generation;display=6;displayIndex=0;return;}
+ if(current.rf_enabled||started){reply("ERR plan edit requires RF OFF");return;}
+ mulRangingPlan_t p;bool selected=current.plan_selected;
+ if(nt==2&&!strcmp(t[1],"init")) {
+  if(current.plan_present){reply("ERR plan exists; use plan show/set/use");return;}
+  memset(&p,0,sizeof(p));uwb_config_schedule(&current,&p.broadcast);p.replyMs=mulScheduleReplyMs(&p.broadcast);
+  if(p.broadcast.profile!=MUL_PROFILE_EXPERIMENTAL)mulScheduleExperimental(&p.broadcast);
+  p.broadcast.rangingFlags=0;p.aaMilliHz=500;p.arMilliHz=2000;p.maxUtilization=70;
+ }else {
+  if(!current.plan_present){reply("ERR no plan; use plan init");return;}p=current.plan;
+  if(nt==3&&!strcmp(t[1],"use")) {
+   if(!strcmp(t[2],"on"))selected=true;else if(!strcmp(t[2],"off"))selected=false;else {reply("ERR plan use on/off");return;}
+  }else if(nt>=2&&(!strcmp(t[1],"alrs")||!strcmp(t[1],"rlrs"))) {
+   bool alrs=!strcmp(t[1],"alrs");unsigned n=nt-2;
+   if(n>8||(alrs&&n<2)){reply("ERR ALR2..8/RLR0..8 IDs");return;}
+   uint8_t *ids=alrs?p.broadcast.ids:p.rlrs;memset(ids,0,8);
+   for(unsigned i=0;i<n;i++){unsigned id;if(!number(t[i+2],254,&id)){reply("ERR plan ID: 0..254");return;}ids[i]=(uint8_t)id;}
+   if(alrs)p.broadcast.count=(uint8_t)n;else p.rlrCount=(uint8_t)n;
+  }else if(nt==4&&!strcmp(t[1],"set")) {
+   if(!strcmp(t[2],"aa")||!strcmp(t[2],"ar")) {
+    unsigned flag=!strcmp(t[2],"aa")?MUL_PLAN_AA:MUL_PLAN_AR;
+    if(!strcmp(t[3],"on"))p.enabled|=flag;else if(!strcmp(t[3],"off"))p.enabled&=~flag;else {reply("ERR plan class on/off");return;}
+   }else {
+    unsigned n;if(!number(t[3],UINT32_MAX,&n)){reply("ERR plan unsigned integer");return;}
+    if(!strcmp(t[2],"revision"))p.broadcast.revision=n;
+    else {
+     if(n>UINT16_MAX){reply("ERR plan field exceeds uint16");return;}
+     if(!strcmp(t[2],"aa_millihz"))p.aaMilliHz=n;
+     else if(!strcmp(t[2],"ar_millihz"))p.arMilliHz=n;
+     else if(!strcmp(t[2],"slot_ms"))p.broadcast.slotMs=n;
+     else if(!strcmp(t[2],"cycle_ms"))p.broadcast.periodMs=n;
+     else if(!strcmp(t[2],"lead_us"))p.broadcast.txLeadUs=n;
+     else if(!strcmp(t[2],"process_us"))p.broadcast.rxBudgetUs=n;
+     else if(!strcmp(t[2],"air_us"))p.broadcast.airtimeUs=n;
+     else if(!strcmp(t[2],"guard_us")){if(n<100||n>10000||n%100){reply("ERR guard_us100..10000 step100");return;}p.broadcast.guard100us=n/100;}
+     else if(!strcmp(t[2],"reply_ms")){if(n>255){reply("ERR reply_ms5/10/20");return;}p.replyMs=n;}
+     else if(!strcmp(t[2],"util_percent")){if(n>100){reply("ERR utilization10..80");return;}p.maxUtilization=n;}
+     else {reply("ERR unknown plan field; CFG HELP");return;}
+    }
+   }
+  }else {reply("ERR plan init/show/use/alrs/rlrs/set");return;}
+ }
+ uwb_config_t candidate=current;const char *error=uwb_config_plan_set(&candidate,&p,selected);
+ if(error)reply(error);else update(&candidate);
 }
 static void peer_command(unsigned nt,char **t) {
   if(nt==1||(nt==2&&!strcmp(t[1],"help"))) {
@@ -486,6 +556,7 @@ bool uwb_runtime_command(const char *line) {
   if(!nt) return false;
   /* Canonical UWB names are owned here, including syntax errors. They must not
    * fall through into the robot safety dispatcher. Legacy cfg stays available. */
+  if(!strcmp(token[0],"plan")){plan_command(nt,token);return true;}
   if(!strcmp(token[0],"status")) {
     if(nt!=1){reply("ERR status takes no arguments");return true;}
     char text[256];snprintf(text,sizeof(text),"UWB STATUS mode=%s addr=0x%02lX protocol_role=%s rf_enabled=%lu running=%u applied=%u durable=%u reference=0x%02lX follower=0x%02lX",

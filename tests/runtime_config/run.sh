@@ -4,7 +4,7 @@ cd "$(dirname "$0")/../.."
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 cc -std=c11 -Wall -Wextra -Werror -Wno-misleading-indentation -g -fsanitize=address,undefined -fno-pie -no-pie \
- -ICore/Inc -IThirdParty/mul_core tests/runtime_config/test_config.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c -lm -o "$work/config"
+ -ICore/Inc -IThirdParty/mul_core tests/runtime_config/test_config.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ranging_plan.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c -lm -o "$work/config"
 "$work/config"
 cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-pie -no-pie \
  -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
@@ -82,7 +82,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -g -
 "$work/commands"
 done
 cc -std=c11 -Wall -Wextra -Werror -Wno-misleading-indentation -g -fsanitize=address,undefined -fno-pie -no-pie \
- -ICore/Inc -IThirdParty/mul_core tests/runtime_config/test_schedule_config.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c Core/Src/uwb_config.c \
+ -ICore/Inc -IThirdParty/mul_core tests/runtime_config/test_schedule_config.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ranging_plan.c \
  ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/schedule_config"
 "$work/schedule_config"
 
@@ -101,3 +101,21 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-function -g -
  tests/runtime_config/test_multi_hybrid.c ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_plan_protocol.c ThirdParty/mul_core/mul_ranging_plan.c ThirdParty/mul_core/mul_multi_protocol.c ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ads.c \
  ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/multi_hybrid"
 "$work/multi_hybrid"
+
+cc -std=c11 -Wall -Wextra -Werror -Wno-misleading-indentation -g -fsanitize=address,undefined -fno-pie -no-pie \
+ -ICore/Inc -IThirdParty/mul_core tests/runtime_config/test_plan_config.c Core/Src/uwb_config.c \
+ ThirdParty/mul_core/mul_ranging_plan.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c \
+ ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/plan_config"
+"$work/plan_config"
+
+cc -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-function -g -fsanitize=address,undefined -fno-pie -no-pie \
+ -DMUL_PROP_MAX_AGE_MS=6000 -DMUL_UNIVERSAL=1 -DMUL_TWR_ROLE=2 -DMUL_UWB_ONLY=1 \
+ -Itests/phy_interop/stubs -ICore/Inc -IThirdParty/mul_core \
+ -IThirdParty/qorvo_dw3/driver -IThirdParty/qorvo_dw3/driver/dw3000 \
+ tests/runtime_config/test_plan_runtime.c Core/Src/uwb_config.c ThirdParty/mul_core/mul_ranging_plan.c \
+ ThirdParty/mul_core/mul_multi_receiver.c ThirdParty/mul_core/mul_plan_protocol.c ThirdParty/mul_core/mul_multi_protocol.c \
+ ThirdParty/mul_core/mul_hybrid.c ThirdParty/mul_core/mul_legacy_twr.c ThirdParty/mul_core/mul_clock_fit.c ThirdParty/mul_core/mul_clock.c \
+ ThirdParty/mul_core/mul_relation.c ThirdParty/mul_core/mul_observation.c ThirdParty/mul_core/mul_downlink.c ThirdParty/mul_core/mul_localization.c \
+ ThirdParty/mul_core/mul_telemetry.c ThirdParty/mul_core/mul_beacon.c ThirdParty/mul_core/mul_time.c ThirdParty/mul_core/mul_ads.c \
+ ThirdParty/mul_core/mul_core.c ThirdParty/mul_core/mul_common.c ThirdParty/mul_core/mul_schedule.c -lm -o "$work/plan_runtime"
+"$work/plan_runtime"

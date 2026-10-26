@@ -36,7 +36,20 @@ void uwb_config_schedule(const uwb_config_t *c,mulSchedule_t *schedule) {
  if(c->schedule.profile)*schedule=c->schedule;
  else mulScheduleLegacy(schedule,(uint8_t)c->reference,(uint8_t)c->follower,(uint16_t)c->slot_ms);
 }
+void uwb_config_effective_schedule(const uwb_config_t *c,mulSchedule_t *schedule) {
+ if(c->plan_present&&c->plan_selected)*schedule=c->plan.broadcast;else uwb_config_schedule(c,schedule);
+}
+void uwb_config_effective_clock(const uwb_config_t *c,mulClockFitConfig_t *clock) {
+ uwb_config_clock(c,clock);if(c->plan_present&&c->plan_selected)clock->periodMs=c->plan.broadcast.periodMs;
+}
+const char *uwb_config_plan_set(uwb_config_t *c,const mulRangingPlan_t *plan,bool selected) {
+ if(!c||!plan)return "missing plan/configuration";
+ if(c->rf_enabled)return "plan edit requires RF OFF";
+ uwb_config_t candidate=*c;candidate.plan=*plan;candidate.plan_present=1;candidate.plan_selected=selected;
+ const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+}
 const char *uwb_config_roster(uwb_config_t *c,const uint8_t *ids,unsigned count) {
+ if(c&&c->plan_selected)return "deselect plan before editing retained roster";
  if(!c||!ids||count<2||count>MUL_MAX_ALRS)return "ALR count: 2..8";
  uwb_config_t candidate=*c;mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
  schedule.count=(uint8_t)count;memset(schedule.ids,0,sizeof(schedule.ids));memcpy(schedule.ids,ids,count);
@@ -47,6 +60,16 @@ const char *uwb_config_roster(uwb_config_t *c,const uint8_t *ids,unsigned count)
  error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
 }
 const char *uwb_config_validate(const uwb_config_t *c) {
+  if(c->plan_present>1||c->plan_selected>1||(!c->plan_present&&c->plan_selected))return "invalid plan selection";
+  if(c->plan_present) {
+    const char *error=mulRangingPlanValidate(&c->plan,NULL);if(error)return error;
+    if(c->plan_selected) {
+      if(c->mode<4||c->protocol_role!=UWB_PROTOCOL_RLR)return "selected plan requires hybrid RLR mode";
+      if(c->node>254||mulScheduleIndex(&c->plan.broadcast,(uint8_t)c->node)>=0)return "plan RLR must be outside ALR roster";
+      // Persistence is connected before RF4 telemetry/radio activation. Fail closed.
+      if(c->rf_enabled)return "generated radio integration pending; RF stays OFF";
+    }
+  }
   mulClockFitConfig_t clock;uwb_config_clock(c,&clock);
   if(!mulClockFitConfigValid(&clock)||clock.periodMs!=(c->schedule.profile?c->schedule.periodMs:1000))return "clock configuration/period invalid";
   mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
@@ -91,6 +114,11 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   return NULL;
 }
 bool uwb_config_equal(const uwb_config_t *a,const uwb_config_t *b) {
+  if(a->plan_present!=b->plan_present||a->plan_selected!=b->plan_selected)return false;
+  if(a->plan_present) {
+    uint8_t ap[MUL_PLAN_BYTES],bp[MUL_PLAN_BYTES];
+    if(!mulRangingPlanEncode(ap,&a->plan)||!mulRangingPlanEncode(bp,&b->plan)||memcmp(ap,bp,sizeof(ap)))return false;
+  }
   uint32_t av[FIELDS],bv[FIELDS]; fields(a,av);fields(b,bv);return memcmp(&a->clock,&b->clock,sizeof(a->clock))==0 && memcmp(&a->schedule,&b->schedule,sizeof(a->schedule))==0 && a->slot_ms==b->slot_ms && a->protocol_role==b->protocol_role && a->rf_enabled==b->rf_enabled && a->reference==b->reference && a->follower==b->follower && memcmp(av,bv,sizeof(av))==0 && memcmp(a->peers,b->peers,sizeof(a->peers))==0;
 }
 static bool decimal(const char *value,uint32_t maximum,uint32_t *out) {
@@ -135,6 +163,10 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
       else return "clock_compensate: on/off";
     }
     const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+  }
+  if(c->plan_selected) {
+    static const char *retained[]={"cycle_ms","tx_lead_us","rx_budget_us","airtime_us","guard_us","alr_alr_twr","twr_reply_ms","schedule_revision","profile","slot_ms","reference","follower"};
+    for(unsigned i=0;i<sizeof(retained)/sizeof(*retained);i++)if(!strcmp(field,retained[i]))return "deselect plan before editing retained schedule";
   }
   if(!strcmp(field,"cycle_ms")||!strcmp(field,"tx_lead_us")||!strcmp(field,"rx_budget_us")||!strcmp(field,"airtime_us")||!strcmp(field,"guard_us")||!strcmp(field,"alr_alr_twr")||!strcmp(field,"twr_reply_ms")) {
     if(c->schedule.profile!=MUL_PROFILE_EXPERIMENTAL)return !strcmp(field,"cycle_ms")&&!strcmp(value,"1000")?NULL:"select experimental profile for timing budgets";
@@ -235,7 +267,7 @@ uint32_t uwb_config_crc(const uint8_t *data,size_t size) {
   return ~crc;
 }
 void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c,uint32_t generation) {
-  memset(out,0,UWB_CONFIG_RECORD_SIZE);put(out,MAGIC);put(out+4,c->schedule.profile==MUL_PROFILE_EXPERIMENTAL?UWB_CONFIG_TIMING_VERSION:c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION);put(out+8,(c->schedule.profile||c->clock.periodMs)?UWB_CONFIG_MULTI_RECORD_SIZE:UWB_CONFIG_RECORD_SIZE);put(out+12,generation);
+  memset(out,0,UWB_CONFIG_RECORD_SIZE);put(out,MAGIC);put(out+4,c->plan_present?UWB_CONFIG_PLAN_VERSION:c->schedule.profile==MUL_PROFILE_EXPERIMENTAL?UWB_CONFIG_TIMING_VERSION:c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION);put(out+8,(c->plan_present||c->schedule.profile||c->clock.periodMs)?UWB_CONFIG_MULTI_RECORD_SIZE:UWB_CONFIG_RECORD_SIZE);put(out+12,generation);
   uint32_t v[FIELDS];fields(c,v);for(unsigned i=0;i<FIELDS;i++) put(out+16+4*i,v[i]);
   /* v3 packs roster bytes; v4 adds RF enable in bit24 and protocol role in bits25..26 of the node word.
    * Record size, peer offsets, CRC and commit-last journal geometry stay fixed. */
@@ -244,7 +276,7 @@ void uwb_config_encode(uint8_t out[UWB_CONFIG_RECORD_SIZE],const uwb_config_t *c
   put(out+120,uwb_config_crc(out,120));put(out+124,COMMIT);
 }
 static bool decode_base(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,uint32_t *generation,const mulSchedule_t *schedule) {
-  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=4&&get(in+4)!=UWB_CONFIG_VERSION&&!(schedule&&(get(in+4)==UWB_CONFIG_MULTI_VERSION||get(in+4)==UWB_CONFIG_CLOCK_VERSION||get(in+4)==UWB_CONFIG_TIMING_VERSION)))||get(in+8)!=(schedule?UWB_CONFIG_MULTI_RECORD_SIZE:UWB_CONFIG_RECORD_SIZE)||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
+  if(get(in)!=MAGIC||(get(in+4)!=1&&get(in+4)!=2&&get(in+4)!=3&&get(in+4)!=4&&get(in+4)!=UWB_CONFIG_VERSION&&!(schedule&&(get(in+4)==UWB_CONFIG_MULTI_VERSION||get(in+4)==UWB_CONFIG_CLOCK_VERSION||get(in+4)==UWB_CONFIG_TIMING_VERSION||get(in+4)==UWB_CONFIG_PLAN_VERSION)))||get(in+8)!=(schedule?UWB_CONFIG_MULTI_RECORD_SIZE:UWB_CONFIG_RECORD_SIZE)||get(in+124)!=COMMIT||get(in+120)!=uwb_config_crc(in,120)) return false;
 
   uint32_t v[FIELDS];for(unsigned i=0;i<FIELDS;i++) v[i]=get(in+16+4*i);
   uwb_config_t candidate={0};assign(&candidate,v);
@@ -267,7 +299,7 @@ static bool decode_base(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c
   if(schedule&&schedule->profile>=MUL_PROFILE_MULTI)candidate.schedule=*schedule;
   // Schema8 prefix has only the old compact slot tag. Full numerical timing
   // belongs to the independently validated extension, never the packed alias.
-  if(get(in+4)==UWB_CONFIG_TIMING_VERSION)candidate.slot_ms=schedule->slotMs;
+  if(get(in+4)==UWB_CONFIG_TIMING_VERSION||get(in+4)==UWB_CONFIG_PLAN_VERSION)candidate.slot_ms=schedule->slotMs;
   if(uwb_config_validate(&candidate)) return false;
   *c=candidate;*generation=get(in+12);return true;
 }
@@ -275,21 +307,28 @@ bool uwb_config_decode(const uint8_t in[UWB_CONFIG_RECORD_SIZE],uwb_config_t *c,
  return decode_base(in,c,generation,NULL);
 }
 static bool decode_multi(const uint8_t in[UWB_CONFIG_MULTI_RECORD_SIZE],uwb_config_t *c,uint32_t *generation) {
+ bool planned=get(in+4)==UWB_CONFIG_PLAN_VERSION;
  bool experimental=get(in+4)==UWB_CONFIG_TIMING_VERSION;
- bool clock=get(in+4)==UWB_CONFIG_CLOCK_VERSION||experimental;
+ bool clock=get(in+4)==UWB_CONFIG_CLOCK_VERSION||experimental||planned;
  if((get(in+4)!=UWB_CONFIG_MULTI_VERSION&&!clock)||get(in+252)!=COMMIT||get(in+248)!=uwb_config_crc(in,248))return false;
- for(unsigned i=experimental?173:clock?172:160;i<248;i++)if(in[i])return false;
- if(experimental&&in[172]>1)return false;
+ for(unsigned i=planned?240:experimental?173:clock?172:160;i<248;i++)if(in[i])return false;
+ if((experimental||planned)&&in[172]>1)return false;
+ if(planned&&(in[173]>1||in[174]||in[175]))return false;
  mulSchedule_t schedule;uwb_config_t candidate;uint32_t gen;
  if(!mulScheduleDecode(in+128,&schedule)||
-    (experimental?schedule.profile!=MUL_PROFILE_EXPERIMENTAL:schedule.profile>MUL_PROFILE_MULTI)||
+    (experimental?schedule.profile!=MUL_PROFILE_EXPERIMENTAL:planned?false:schedule.profile>MUL_PROFILE_MULTI)||
     (!clock&&schedule.profile!=MUL_PROFILE_MULTI)||!decode_base(in,&candidate,&gen,&schedule))return false;
  if(clock) {
   mulClockFitConfig_t decoded;if(!mulClockFitConfigDecode(in+160,&decoded))return false;
-  if(experimental&&!in[172]) {
+  if((experimental||planned)&&!in[172]) {
    mulClockFitConfig_t defaults;uwb_config_clock(&candidate,&defaults);
    if(memcmp(&defaults,&decoded,sizeof(defaults)))return false;
   }else candidate.clock=decoded;
+  if(uwb_config_validate(&candidate))return false;
+ }
+ if(planned) {
+  if(!mulRangingPlanDecode(in+176,&candidate.plan))return false;
+  candidate.plan_present=1;candidate.plan_selected=in[173];
   if(uwb_config_validate(&candidate))return false;
  }
  *c=candidate;*generation=gen;return true;
@@ -308,7 +347,7 @@ static bool scan(const uwb_config_store_t *s,scan_t *result) {
    if(erased_record(record+UWB_CONFIG_RECORD_SIZE,UWB_CONFIG_RECORD_SIZE))result->large[bank]=at;
   }
   uwb_config_t c;uint32_t gen;bool valid=false;
-  if((get(record+4)==UWB_CONFIG_MULTI_VERSION||get(record+4)==UWB_CONFIG_CLOCK_VERSION||get(record+4)==UWB_CONFIG_TIMING_VERSION)&&at%UWB_CONFIG_MULTI_RECORD_SIZE==0) {
+  if((get(record+4)==UWB_CONFIG_MULTI_VERSION||get(record+4)==UWB_CONFIG_CLOCK_VERSION||get(record+4)==UWB_CONFIG_TIMING_VERSION||get(record+4)==UWB_CONFIG_PLAN_VERSION)&&at%UWB_CONFIG_MULTI_RECORD_SIZE==0) {
    if(!s->read(s->context,at+UWB_CONFIG_RECORD_SIZE,record+UWB_CONFIG_RECORD_SIZE,UWB_CONFIG_RECORD_SIZE))return false;
    valid=decode_multi(record,&c,&gen);
   } else valid=uwb_config_decode(record,&c,&gen);
@@ -325,7 +364,7 @@ bool uwb_config_load(const uwb_config_store_t *s,uwb_config_t *c,uint32_t *gener
 bool uwb_config_save(const uwb_config_store_t *s,const uwb_config_t *c,uint32_t *generation) {
  scan_t found;if(uwb_config_validate(c)||!scan(s,&found))return false;
  if(found.valid&&uwb_config_equal(c,&found.config)){*generation=found.generation;return true;}
- bool multi=c->schedule.profile!=0||c->clock.periodMs!=0;
+ bool multi=c->plan_present||c->schedule.profile!=0||c->clock.periodMs!=0;
  unsigned bank=found.valid?found.offset/UWB_CONFIG_SECTOR_SIZE:0;
  uint32_t at=multi?found.large[bank]:found.free[bank];
  if(at==UINT32_MAX) {
@@ -340,11 +379,14 @@ bool uwb_config_save(const uwb_config_store_t *s,const uwb_config_t *c,uint32_t 
  if(multi) {
   mulSchedule_t schedule;uwb_config_schedule(c,&schedule);
   if(!mulScheduleEncode(record+128,&schedule))return false;
-  if(c->clock.periodMs||schedule.profile==MUL_PROFILE_EXPERIMENTAL) {
+  if(c->plan_present||c->clock.periodMs||schedule.profile==MUL_PROFILE_EXPERIMENTAL) {
    mulClockFitConfig_t clock;uwb_config_clock(c,&clock);
    if(!mulClockFitConfigEncode(record+160,&clock))return false;
   }
-  if(schedule.profile==MUL_PROFILE_EXPERIMENTAL)record[172]=c->clock.periodMs?1:0;
+  if(c->plan_present||schedule.profile==MUL_PROFILE_EXPERIMENTAL)record[172]=c->clock.periodMs?1:0;
+  if(c->plan_present) {
+   record[173]=c->plan_selected;if(!mulRangingPlanEncode(record+176,&c->plan))return false;
+  }
   put(record+248,uwb_config_crc(record,248));put(record+252,COMMIT);
  }
  for(unsigned i=0;i<size;i+=4)if(!s->program(s->context,at+i,get(record+i)))return false;
