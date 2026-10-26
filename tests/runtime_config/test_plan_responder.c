@@ -55,7 +55,7 @@ static mulTwrPacket_t prepareRange(int32_t ppb,int32_t senderPpb) {
  receiverPpb=ppb;initiatorPpb=senderPpb;plan=(mulRangingPlan_t){.enabled=MUL_PLAN_AR,.replyMs=responderReplyMs,.maxUtilization=70,.arMilliHz=1000,.rlrCount=2,.rlrs={141,142}};
  mulScheduleLegacy(&plan.broadcast,32,33,10);mulScheduleExperimental(&plan.broadcast);plan.broadcast.rangingFlags=0;
  plan.broadcast.txLeadUs=500;plan.broadcast.rxBudgetUs=2000;plan.broadcast.airtimeUs=400;
- if(deliveryMode){plan.enabled|=MUL_PLAN_AA;plan.aaMilliHz=1000;}
+ if(deliveryMode){plan.enabled|=MUL_PLAN_AA;plan.aaMilliHz=1000;plan.policy=MUL_PLAN_FRESHNESS;plan.aaPriority=2;plan.arPriority=1;}
  assert(!mulRangingPlanValidate(&plan,NULL));mulClockReset(&receiverClock);
  for(unsigned i=0;i<6;i++) {
   int64_t physical=((int64_t)i-5)*1000*msDtu;mulTestPacket_t ref={.sequence=i,.txTimestamp=mulTimestampMask(900000+physical)};

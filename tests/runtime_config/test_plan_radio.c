@@ -12,6 +12,7 @@ int main(void) {
   command("plan init");command("plan set lead_us 1000");command("plan set process_us 500");command("plan set slot_ms 3");command("plan set reply_ms 5");
   const char *rosters[]={"plan alrs 32 33","plan alrs 32 33 34 35","plan alrs 32 33 34 35 36 37 38 39"};command(rosters[trial]);command("plan rlrs 141 142");
   char cmd[64];snprintf(cmd,sizeof(cmd),"plan set cycle_ms %u",periods[trial]);command(cmd);command("plan set aa on");
+  if(policy){command("plan set policy freshness");command("plan set aa_priority 7");command("plan set ar_priority 1");}
   command("cfg set clock_estimator regression");command("cfg set telemetry on");command("cfg set wifi on");command("cfg set samples on");command("plan use on");persisted();
   unsigned writes=nvWrites;uwb_runtime_init();assert(current.plan_selected&&!current.rf_enabled&&nvWrites==writes);command("on");
   writes=nvWrites;uwb_runtime_init();assert(started&&current.rf_enabled&&current.plan_selected&&nvWrites==writes);

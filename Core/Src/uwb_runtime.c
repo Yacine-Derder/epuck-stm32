@@ -101,6 +101,7 @@ static const char *const help_config[]={
   "  - plan set aa|ar on|off; aa_millihz|ar_millihz 0..10000",
   "  - plan set slot_ms|cycle_ms|lead_us|process_us|air_us|guard_us N",
   "  - plan set reply_ms 5|10|20; util_percent 10..80; revision N",
+  "  - plan set policy fair|freshness; aa_priority|ar_priority 0..255",
   "  - Generated plans receive RF4; AR replies only in assigned responder slots",
   "  - slot_ms: compat 10/50/500; experimental numerical; cycle_ms 100..2000",
   "  - profile experimental: tx_lead_us, rx_budget_us, airtime_us, guard_us",
@@ -364,9 +365,9 @@ static void display_output(void) {
     const mulRangingPlan_t *p=&c->plan;mulRangingBudget_t b;unsigned count=mulRangingPlanCount(p,1);
     if(!c->plan_present) {if(displayIndex){display=0;return;}snprintf(text,sizeof(text),"PLAN absent; use plan init with RF OFF");}
     else if(mulRangingPlanValidate(p,&b)){display=0;reply("ERR invalid plan");return;}
-    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=%s",c->plan_selected,MUL_PLAN_VERSION,(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration,(p->enabled&MUL_PLAN_AR)?"scheduled_AR":"passive");
+    else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=%s",c->plan_selected,mulRangingPlanVersion(p),(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration,(p->enabled&MUL_PLAN_AR)?"scheduled_AR":"passive");
     else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs);
-    else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity);
+    else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u policy=%u aa_priority=%u ar_priority=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity,p->policy,p->aaPriority,p->arPriority);
     else if(displayIndex<3u+p->broadcast.count)snprintf(text,sizeof(text),"PLAN ALR slot=%u id=%u",displayIndex-3,p->broadcast.ids[displayIndex-3]);
     else if(displayIndex<3u+p->broadcast.count+p->rlrCount){unsigned i=displayIndex-3-p->broadcast.count;snprintf(text,sizeof(text),"PLAN RLR slot=%u id=%u",i,p->rlrs[i]);}
     else {
@@ -471,6 +472,10 @@ static void plan_command(unsigned nt,char **t) {
    if(!strcmp(t[2],"aa")||!strcmp(t[2],"ar")) {
     unsigned flag=!strcmp(t[2],"aa")?MUL_PLAN_AA:MUL_PLAN_AR;
     if(!strcmp(t[3],"on"))p.enabled|=flag;else if(!strcmp(t[3],"off"))p.enabled&=~flag;else {reply("ERR plan class on/off");return;}
+   }else if(!strcmp(t[2],"policy")) {
+    if(!strcmp(t[3],"fair")){p.policy=MUL_PLAN_FAIR;p.aaPriority=p.arPriority=0;}
+    else if(!strcmp(t[3],"freshness"))p.policy=MUL_PLAN_FRESHNESS;
+    else {reply("ERR policy fair/freshness");return;}
    }else {
     unsigned n;if(!number(t[3],UINT32_MAX,&n)){reply("ERR plan unsigned integer");return;}
     if(!strcmp(t[2],"revision"))p.broadcast.revision=n;
@@ -478,6 +483,10 @@ static void plan_command(unsigned nt,char **t) {
      if(n>UINT16_MAX){reply("ERR plan field exceeds uint16");return;}
      if(!strcmp(t[2],"aa_millihz"))p.aaMilliHz=n;
      else if(!strcmp(t[2],"ar_millihz"))p.arMilliHz=n;
+     else if(!strcmp(t[2],"aa_priority")||!strcmp(t[2],"ar_priority")) {
+      if(n>255){reply("ERR priority0..255");return;}
+      if(!strcmp(t[2],"aa_priority"))p.aaPriority=n;else p.arPriority=n;
+     }
      else if(!strcmp(t[2],"slot_ms"))p.broadcast.slotMs=n;
      else if(!strcmp(t[2],"cycle_ms"))p.broadcast.periodMs=n;
      else if(!strcmp(t[2],"lead_us"))p.broadcast.txLeadUs=n;

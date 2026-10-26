@@ -31,7 +31,7 @@ int main(void) {
    assert(!uwb_config_set(&old,"profile","experimental"));assert(!uwb_config_set(&old,"tx_lead_us","1000"));
    assert(!uwb_config_set(&old,"rx_budget_us","500"));assert(!uwb_config_set(&old,"slot_ms","17"));assert(!uwb_config_set(&old,"alr_alr_twr","off"));assert(!uwb_config_set(&old,"cycle_ms","500"));
   }
-  c=old;mulRangingPlan_t p=plan();assert(!uwb_config_plan_set(&c,&p,selected));
+  c=old;mulRangingPlan_t p=plan();if(profile==2){p.policy=1;p.aaPriority=200;p.arPriority=1;}assert(!uwb_config_plan_set(&c,&p,selected));
   assert(c.reference==old.reference&&c.follower==old.follower&&c.slot_ms==old.slot_ms);
   assert(!memcmp(&c.schedule,&old.schedule,sizeof(c.schedule))&&!memcmp(&c.clock,&old.clock,sizeof(c.clock)));
   mulSchedule_t effective,retained;uwb_config_schedule(&c,&retained);uwb_config_effective_schedule(&c,&effective);

@@ -810,3 +810,13 @@ independent reference/initiator/RLR clocks,5/10/20ms replies, coalesced IRQs,
 late/stamp/hash/broadcast/rearm faults and reboot. ESP loopback delivery checks
 priority, reconnect and compact/debug records. No device was accessed; physical
 interoperability, deadlines and accuracy remain unvalidated.
+
+
+Shared core13fcdeb adds opt-in `plan set policy freshness`, `aa_priority` and
+`ar_priority`0..255 while RF OFF. Larger priority breaks equal virtual deadlines;
+requested per-pair rates are preserved. Plan codec3 binds these settings in the
+full fingerprint; fair restores codec2 and zeros priorities. Old codec2 decoders
+reject freshness plans. No journal/envelope size changed. Slots reconstruct from
+plan/cycle, not local packet-loss history; planned freshness is distinct from
+actual measurement age. Tests cover persisted codec3, power cuts/rotation, RF4
+broadcast reception, assigned AR replies and telemetry delivery.
