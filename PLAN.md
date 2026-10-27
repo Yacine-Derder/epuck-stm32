@@ -1,3 +1,30 @@
+# Current MUL software campaign — Stage F/G
+
+Canonical core506913dc676d0a3c0d43c48977ef11be2085aa34 adds the optional
+portable measured-input planar EKF and bounded delayed-observation replay.
+It is exported unchanged into this repository and ESP32. No EKF source is linked
+into STM32; execution and input abstraction live on ESP32/host, default disabled.
+The existing DATA/DATA2 commanded/phase counters remain unmodified and are not
+promoted to measured wheel odometry. A genuine measured-counter/time-alignment
+backend remains an explicitly documented external integration dependency.
+
+LPS remains ROS-agnostic and accepts timestamped noisy poses/covariance/validity
+over USB; Raspberry Pi/ROS/MCS ingestion/noise/forwarding is excluded. Generated
+plans, external/none propagation and ordinary NO_RATE remain unchanged. Full
+runtime/native tests, actual LPS pose frame delivery through the DW3000 adapter,
+Universal clean build and reserved-sector checks pass. Universal FLASH161244B,
+RAM39616B. The estimator does not add STM32 radio RAM, flash or FP work.
+
+The coordinated final experiment is prepared in the sibling LPS
+[operator campaign](../lps-node-firmware/docs/mul_experiment_campaign.md);
+[ESP filter/input/replay documentation](../epuck-esp32/docs/uwb_ekf.md) describes
+software execution, assumptions and remaining input dependency. No hardware was
+accessed/flashed/operated, no intermediate physical checkpoint was imposed, and
+no physical calibration or localization accuracy is established.
+
+The entries below are historical checkpoints; their pins/status do not override
+this current campaign or its authorization.
+
 # Current follow-up — onboard TDoA Wi-Fi telemetry
 
 Implemented/software tested; hardware validation pending. Each associated onboard
