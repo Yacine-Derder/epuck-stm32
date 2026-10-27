@@ -11,6 +11,7 @@ static int32_t receiverPpb,initiatorPpb;
 static bool deliveryMode,saturateResult,sawRange;
 static unsigned rawCount,rawTxCount;
 static mulTelemetry_t deliveredRange;
+static uint8_t lastRawFrame[90];
 static FILE *trace;
 static bool service(void) {
  bool handled=true;
@@ -25,7 +26,7 @@ static bool service(void) {
    const char *line=telemetry[(tail+i)%TLM_CAPACITY];mulTelemetry_t r;assert(mulTelemetryDecode(line,&r));
    if(trace)fprintf(trace,"%s\n",line);
    if(r.type==mulTlmPlanRange){sawRange=true;deliveredRange=r;}
-   if(r.type==mulTlmPlanRx){rawCount++;rawTxCount+=!!(r.flags&mulTlmTx);}
+   if(r.type==mulTlmPlanRx){rawCount++;rawTxCount+=!!(r.flags&mulTlmTx);if(r.legacyLength==90)memcpy(lastRawFrame,r.legacyFrame,90);}
   }
   head=tail=count=wifiHead=wifiTail=wifiCount=0;
  }else {
@@ -113,6 +114,36 @@ static void completion(bool coalesced,int32_t rlrRate,int32_t alrRate,uint8_t re
  assert(abs((int)result.rawTof-(int)flightDtu)<=1&&result.tof==result.rawTof&&!memcmp(result.stamps,p.stamps,sizeof(p.stamps)));
  assert(result.measuredMs<tick-15&&starts==sent+2);planClockOverride=false;
 }
+static void passiveAaCapture(void) {
+ FILE *rangeTrace=trace;trace=NULL; // Preserve the existing AR-only cross-platform fixture.
+ deliveryMode=true;
+ for(unsigned traceOn=0;traceOn<2;traceOn++) {
+  (void)prepareRange(-10000,150000);unsigned sent=starts;
+  mul_plan_radio_configure(&plan,141,&multiReceiver.rate,traceOn!=0);mul_plan_radio_reference(5,1);
+  unsigned aa=99;mulRangingOperation_t op;
+  for(unsigned i=0;i<mulRangingPlanCount(&plan,5);i++) {
+   assert(mulRangingPlanOperation(&plan,5,i,&op));if(op.kind==MUL_PLAN_AA){aa=i;break;}
+  }
+  assert(aa!=99);uint64_t stamps[6];
+  for(unsigned i=0;i<6;i++)stamps[i]=stamp(0,(int64_t)op.pollUs*msDtu/1000+(i/2)*plan.replyMs*msDtu+((i%2)?flightDtu:0));
+  for(unsigned type=mulTwrPoll;type<=mulTwrResult;type++) {
+   mulTwrPacket_t packet={.type=type,.id=5,.tof=type==mulTwrResult?2131:0};
+   unsigned used=type==mulTwrPoll?1:type==mulTwrResponse?3:type==mulTwrFinal?5:6;
+   memcpy(packet.stamps,stamps,used*sizeof(uint64_t));
+   packet.txTimestamp=type==mulTwrPoll?stamps[0]:type==mulTwrResponse?stamps[2]:type==mulTwrFinal?stamps[4]:stamp(0,(int64_t)op.pollUs*msDtu/1000+(type-mulTwrPoll)*plan.replyMs*msDtu);
+   assert(mulPlanTwrEncode(input,&plan,aa,&packet));length=92;
+   rxMarker=stamp(1,(int64_t)op.pollUs*msDtu/1000+(type-mulTwrPoll)*plan.replyMs*msDtu+flightDtu);
+   hardware((int64_t)op.pollUs*msDtu/1000+(type-mulTwrPoll)*plan.replyMs*msDtu+msDtu/10);
+   status=DWT_INT_RXFCG_BIT_MASK;assert(service());
+   assert(starts==sent&&!mul_plan_radio_busy()&&!sawRange&&!rawTxCount);
+   assert(rawCount==(traceOn?type-mulTwrPoll+1:0));
+   if(traceOn)assert(!memcmp(lastRawFrame,input,90));
+  }
+  mulTelemetry_t quality;assert(mul_plan_radio_quality(&quality));
+  assert(!quality.attempts&&!quality.completed&&!quality.radioErrors&&!quality.timeouts);
+ }
+ deliveryMode=false;trace=rangeTrace;
+}
 int main(void) {
  const char *path=getenv("MUL_AR_TRACE");if(path){trace=fopen(path,"w");assert(trace);}
  const uint8_t replies[]={5,10,20};
@@ -151,6 +182,7 @@ int main(void) {
   p=prepareRange(rates[i],-rates[i]);poll=physicalAt(0,p.stamps[0]);rxResult=DWT_ERROR;startResult=DWT_ERROR;deliver(&p,poll+flightDtu);
   assert(!mul_plan_radio_busy()&&!mockRadioActive);rxResult=startResult=DWT_SUCCESS;status=0;service();assert(mockRadioActive);
  }
+ passiveAaCapture();
  planClockOverride=false;if(trace)fclose(trace);
- puts("DW3000 planned responder: five messages, independent initiator/reference/RLR clocks, raw ToF, delayed512/antenna markers, coalesced IRQ, commit identity, no-retry, late SPI/stamp/deadline/hash/broadcast and rearm recovery passed");return 0;
+ puts("DW3000 planned responder: five messages, independent initiator/reference/RLR clocks, raw ToF, delayed512/antenna markers, coalesced IRQ, commit identity, no-retry, late SPI/stamp/deadline/hash/broadcast, rearm recovery and passive AA samples off/on byte-preserving zero-TX capture passed");return 0;
 }

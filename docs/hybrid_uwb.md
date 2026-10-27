@@ -836,3 +836,27 @@ frames and checks independent RLR clock reconstruction, external geometry's sign
 TDoA, unavailable none/stale inputs, raw-byte preservation, zero RLR TX and final
 telemetry. `MUL_POSE_TLM_TRACE` exports it for ESP `--geometry` loopback replay.
 This campaign does not implement ROS/MCS/Pi integration or operate any hardware.
+
+
+## Generated AA timeout investigation (passive RLR evidence)
+
+Both AA participants are LPS ALRs; the STM32 RLR must never answer their AA poll.
+The existing `samples on` raw capture, with an enabled AR engine, preserves
+90-byte AA POLL/RESPONSE/FINAL/REPORT/RESULT frames as optional UWB3 type12 RX
+records before classifying them as nonlocal AR traffic. Use raw/debug recording;
+compact logs omit native frames. This does not add an AA responder or change
+radio ownership, timing, PHY, RF-off admission, or the wire format. AA-only plans
+with AR disabled do not expose these90-byte frames through the AR capture path.
+
+Match plan hash, cycle, operation and source/destination against the two ALRs'
+[opt-in AA1 stage traces](../../lps-node-firmware/docs/mul_aa_diagnostics.md).
+The RLR's native40-bit RX timestamps belong to its own clock; they cannot be
+subtracted from ALR clocks without an explicit mapping. Seeing a packet on the
+RLR does not establish reception at either ALR. Expected nonlocal rejection
+counts are not PHY errors, AA attempts, or a success-rate denominator.
+
+Focused runtime tests now cover all five AA message types with samples off/on,
+byte-identical capture, zero RLR TX/no false AR result, and unchanged radio-error/
+timeout counts. The actual STM32 radio implementation is unchanged. Run
+`sh tests/runtime_config/run.sh` and build/check the existing Universal ELF.
+No device was flashed and no RF was started for this investigation.
