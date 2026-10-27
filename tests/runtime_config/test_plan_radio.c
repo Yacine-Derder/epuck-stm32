@@ -30,6 +30,7 @@ int main(void) {
      .referenceOrigin=reference,.followerOrigin=mulTimestampMask(origin),.skewPpb=35000,.originAgeMs=slot*3+1,
      .delayAgeMs=periods[trial]+slot*3,.delayDtu=120,.maxAgeMs=6000,.delayState=mulPropagationFresh,
      .available=true,.period10ms=periods[trial]/10};
+    if(policy){relation.version=3;relation.externalPose=1;relation.delayState=mulPropagationReused;}
     uint64_t tx=slot?mulTimestampMask(origin+scale(offset+120,35000)):reference;
     rxMarker=mulTimestampMask(800000+scale(t+(slot?offset+120+(slot%2?477:-477):0)+4000,15000));
     size_t n=mulPlanBroadcastEncode(input,sizeof(input),&active.plan,slot,cycle,tx,slot?&relation:NULL);assert(n);
@@ -52,7 +53,9 @@ int main(void) {
    tick=base+(counts[trial]-1)*3+20;status=0;mul_hybrid_radio_process();bool found=false;
    for(unsigned i=0;i<count;i++) {
     const char *line=telemetry[(tail+i)%TLM_CAPACITY];mulTelemetry_t r;assert(mulTelemetryDecode(line,&r));if(r.type!=mulTlmPlanVector)continue;
-    found=true;if(trace)fprintf(trace,"%s\n",line);assert(r.quality==4&&r.uptimeMs==base&&r.vector.fingerprint==hash&&r.vector.periodMs==periods[trial]&&r.vector.count==counts[trial]);
+    found=true;if(policy&&r.vector.sourceVersion)for(unsigned j=1;j<counts[trial];j++)assert(r.vector.values[j-1].source==((r.vector.seenMask&(1u<<j))?2:0));
+    if(trace)fprintf(trace,"%s\n",line);
+    assert(r.quality==4&&r.uptimeMs==base&&r.vector.fingerprint==hash&&r.vector.periodMs==periods[trial]&&r.vector.count==counts[trial]);
     bool wifi=false;for(unsigned j=0;j<wifiCount;j++)if(!strcmp(line,wifiQueue[(wifiTail+j)%TLM_CAPACITY]))wifi=true;assert(wifi);
     if(step==10)assert(r.vector.values[0].reason==mulMultiScheduleMismatch);
     else if(step==11)assert(!r.vector.validMask);

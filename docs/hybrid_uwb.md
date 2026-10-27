@@ -820,3 +820,19 @@ reject freshness plans. No journal/envelope size changed. Slots reconstruct from
 plan/cycle, not local packet-loss history; planned freshness is distinct from
 actual measurement age. Tests cover persisted codec3, power cuts/rotation, RF4
 broadcast reception, assigned AR replies and telemetry delivery.
+
+
+External geometry provenance is supported with canonical core f51877d. LPS
+accepts source-agnostic timestamped/covariant poses over USB and publishes relation
+subversion3 for external/none, keeping74/80-byte frame lengths. The STM32 receiver
+retains these identities in TDoA/vector source-aware payload subversions; it does
+not generate noise or replace unavailable external geometry with TWR. Ordinary
+hybrid NO_RATE and stationary opt-in remain unchanged. Older strict decoders
+reject the new relation/provenance markers. External fresh/reused state uses age,
+not an invented TWR transaction. No physical covariance bounds are asserted.
+
+The optional `MUL_POSE_FRAMES` host fixture consumes actual LPS native radio
+frames and checks independent RLR clock reconstruction, external geometry's signed
+TDoA, unavailable none/stale inputs, raw-byte preservation, zero RLR TX and final
+telemetry. `MUL_POSE_TLM_TRACE` exports it for ESP `--geometry` loopback replay.
+This campaign does not implement ROS/MCS/Pi integration or operate any hardware.

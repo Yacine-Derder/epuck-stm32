@@ -272,7 +272,7 @@ void mul_hybrid_radio_process(void) {
           .tdoaDtu=o->tdoaDtu,.rangeDifferenceMm=o->rangeDifferenceMm,.ratePpb=o->ratePpb,
           .status=o->status,.clockValid=o->clockValid,.rateState=o->rateState,.rx=o->receiverTimestamp,
           .delayAgeMs=o->delayAgeMs,.delayDtu=o->delayDtu,.clockAgeMs=o->clockAgeMs,
-          .delayState=o->delayState,.powerFlags=o->powerFlags,.unknownComponents=o->unknownComponents}};
+          .delaySource=o->delaySource,.delayState=o->delayState,.powerFlags=o->powerFlags,.unknownComponents=o->unknownComponents}};
        uwb_runtime_publish(&record);
      }
      if(out.broadcast&&frame[13]==hybridReceiver.network.addresses[0][0])publishClock(&hybridReceiver.rate,&hybridReceiver.fit,&hybridReceiver.clockConfig,&out.packet,rx,now,(uint16_t)age);

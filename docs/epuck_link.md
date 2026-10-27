@@ -167,3 +167,31 @@ deadlines, lost acknowledgements, USB disconnect and receive overflow.
 Wi-Fi transport and shared USB/Wi-Fi motor ownership are documented in
 [wifi_protocol.md](wifi_protocol.md). USB disconnection leaves a Wi-Fi-owned
 session running; STOP remains available from either source.
+
+
+## Stage F odometry provenance audit
+
+The current DATA parser accepts fields20/21 as signed32-bit integers; that wire
+width alone does not establish producer counter width or mechanical measurement.
+This document identifies these counters as commanded steps. The
+[GCtronic standard motor API](https://projects.gctronic.com/E-Puck/e-puck-library.pdf#page=358)
+(section7.75.2) describes step getters/setters in terms of motor phase changes.
+This supports treating phase/actuation counts separately from encoder-measured
+wheel motion; it does not prove which producer firmware is installed here.
+The producer implementation is not present in these STM32/ESP worktrees.
+
+Consequently fields20/21 must not be relabeled as measured wheel odometry or
+automatically drive the requested measured-step EKF. Raw counts remain available.
+A future measured input needs explicit provenance, counter width/reset epoch,
+source sample time and uncertainty/age semantics. Existing commanded motor speed
+fields are also unsuitable as measured prediction inputs.
+
+The DATA timestamp is accepted as unsigned16, so its wire coordinate wraps at
+65536ms. `received_at_ms` is local completion time, not source acquisition time.
+The accepted-record counter is local32-bit receive sequence, not a source epoch
+or sequence. DATA2 forwards that sequence, current coarse sample age, source
+16-bit timestamp and unchanged step integers. No boot identifier, physical
+encoder-valid flag or declared producer step-counter rollover width is conveyed.
+A modular16-bit timestamp delta is ambiguous after a sufficiently long gap or
+a reset; a source epoch and gap policy are required before EKF use. No source
+clock may be equated to UWB hardware time or STM32/ESP uptime implicitly.
