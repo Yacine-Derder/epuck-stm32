@@ -169,7 +169,7 @@ static void multiProcess(void) {
  if(multiReceiver.active&&(uint32_t)(now-multiReceiver.cycleStartMs)>=mulScheduleOffsetMs(&multiReceiver.schedule,multiReceiver.schedule.count-1)+MUL_DATA_GUARD_MS)
    mulReplayPrepare(&multiReceiver);
  #endif
- if(mulMultiReceiverPoll(&multiReceiver,now,&completed)){mulReplayComplete(&completed);publishVector(&completed);}
+ if(mulMultiReceiverPoll(&multiReceiver,now,&completed)){mulReplayComplete(&completed,now);publishVector(&completed);}
  uint32_t status=dwt_readsysstatuslo();
  bool consumed=mul_plan_radio_process(now,status);
  if(consumed) {
@@ -201,7 +201,7 @@ static void multiProcess(void) {
   }
  #endif
   if(shape&&mulMultiReceiverReceive(&multiReceiver,frame,bytes,rx,age,now,&out)) {
-   if(out.cycleReady){mulReplayComplete(&out.completed);publishVector(&out.completed);}
+   if(out.cycleReady){mulReplayComplete(&out.completed,now);publishVector(&out.completed);}
    mulReplayReceived(&multiReceiver,out.broadcast.slot,status);
    if(!out.broadcast.slot)mul_plan_radio_reference(out.broadcast.packet.sequence,(uint16_t)age);
    if(!out.broadcast.slot)publishClock(&multiReceiver.rate,&multiReceiver.fit,&multiReceiver.clockConfig,&out.broadcast.packet,rx,now,(uint16_t)age);

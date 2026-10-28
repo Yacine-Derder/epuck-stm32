@@ -22,8 +22,8 @@ void mulReplayReset(void);
 void mulReplayPrepare(const mulMultiReceiver_t *s);
 void mulReplayReceived(const mulMultiReceiver_t *s, unsigned slot,
                        uint32_t status);
-void mulReplayComplete(const mulMultiCycle_t *cycle);
-void mulReplayService(void);
+void mulReplayComplete(const mulMultiCycle_t *cycle, uint32_t now);
+void mulReplayService(uint32_t now);
 /* Owner-loop sink, shares the normal envelope/session/sequence and queues. */
 bool uwb_runtime_replay_emit(const uint8_t blob[MUL_REPLAY_BYTES], uint32_t id,
                              uint32_t dropped, unsigned part);
@@ -31,7 +31,7 @@ bool uwb_runtime_replay_emit(const uint8_t blob[MUL_REPLAY_BYTES], uint32_t id,
 #define mulReplayReset() ((void)0)
 #define mulReplayPrepare(s) ((void)0)
 #define mulReplayReceived(s, i, v) ((void)0)
-#define mulReplayComplete(c) ((void)0)
-#define mulReplayService() ((void)0)
+#define mulReplayComplete(c, now) ((void)0)
+#define mulReplayService(now) ((void)0)
 #endif
 #endif

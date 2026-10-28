@@ -33,7 +33,9 @@ static bool wifiEnabled,wifiWritable;
 static char wifiLast[MUL_TLM_LINE];
 static unsigned wifiSent;
 void esp_link_set_enabled(uint8_t enabled) {wifiEnabled=enabled;}
+#ifndef MUL_RUNTIME_WIFI_SINK
 uint8_t esp_link_telemetry(const char *line) {if(!wifiWritable)return 0;memcpy(wifiLast,line,MUL_TLM_LINE);wifiSent++;return 1;}
+#endif
 uint32_t esp_link_uart_errors(void) {return 0;}
 uint32_t esp_link_telemetry_dropped(void) {return 0;}
 void esp_link_reset_diagnostics(void) {}

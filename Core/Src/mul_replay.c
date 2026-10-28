@@ -341,8 +341,8 @@ bool mulReplayUnpack(const uint8_t in[MUL_REPLAY_BYTES], mulMultiReceiver_t *s,
 #if MUL_TDOA_REPLAY
 static uint8_t candidate[MUL_MAX_ALRS - 1][MUL_REPLAY_BYTES],
     queue[MUL_REPLAY_QUEUE][MUL_REPLAY_BYTES];
-static uint32_t statusAt[MUL_MAX_ALRS], ids[MUL_REPLAY_QUEUE], sequence,
-    dropped, observedCycle;
+static uint32_t statusAt[MUL_MAX_ALRS], ids[MUL_REPLAY_QUEUE],
+    queuedAt[MUL_REPLAY_QUEUE], sequence, dropped, observedCycle;
 static unsigned prepared, head, tail, count, part;
 void mulReplayReset(void) {
   dropped += count;
@@ -372,7 +372,19 @@ void mulReplayPrepare(const mulMultiReceiver_t *s) {
     prepared++;
   }
 }
-void mulReplayComplete(const mulMultiCycle_t *c) {
+/* Same one-second freshness bound as the downstream telemetry FIFOs. A
+ * disconnected owner must not retain ancient blobs and drop all current ones.
+ */
+static void expire(uint32_t now) {
+  while (count && (uint32_t)(now - queuedAt[tail]) >= 1000u) {
+    dropped++;
+    tail = (tail + 1) % MUL_REPLAY_QUEUE;
+    count--;
+    part = 0;
+  }
+}
+void mulReplayComplete(const mulMultiCycle_t *c, uint32_t now) {
+  expire(now);
   for (unsigned i = 0; i < prepared; i++) {
     uint32_t id = sequence++;
     if (candidate[i][4] != (uint8_t)c->cycle ||
@@ -397,12 +409,14 @@ void mulReplayComplete(const mulMultiCycle_t *c) {
     put(&p, v->reason, 1);
     put(&p, v->source, 1);
     ids[head] = id;
+    queuedAt[head] = now;
     head = (head + 1) % MUL_REPLAY_QUEUE;
     count++;
   }
   prepared = 0;
 }
-void mulReplayService(void) {
+void mulReplayService(uint32_t now) {
+  expire(now);
   if (count && uwb_runtime_replay_emit(queue[tail], ids[tail], dropped, part)) {
     if (++part == MUL_REPLAY_PARTS) {
       part = 0;

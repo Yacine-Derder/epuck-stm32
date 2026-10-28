@@ -457,7 +457,7 @@ static void display_output(void) {
 void uwb_runtime_task(void) {
   display_output();telemetry_task();
   if(initialized&&started) mul_ads_radio_process();
-  mulReplayService();
+  mulReplayService(HAL_GetTick());
 }
 static bool number(const char *s,unsigned maximum,unsigned *out) {
   if(!s||!*s)return false;

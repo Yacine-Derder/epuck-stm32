@@ -162,3 +162,6 @@ fi
 python3 tools/build_replay_host.py --fixture --sanitize --output "$work/replay"
 "$work/replay"
 python3 tools/build_replay_host.py --sanitize --output "$work/replay_native"
+
+python3 tools/build_replay_host.py --transport --sanitize --output "$work/replay_transport"
+"$work/replay_transport"
