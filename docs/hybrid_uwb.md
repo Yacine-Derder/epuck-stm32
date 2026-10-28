@@ -904,26 +904,21 @@ Reproducible build (no device access):
 
 ```sh
 cd ~/Documents/epuck-stm32
-cmake -S . -B build/ReplayTelemetry -G Ninja \
-  -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
-  -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
-  -DMUL_HYBRID_SLOT_MS=10 -DMUL_TDOA_REPLAY=ON
-cmake --build build/ReplayTelemetry
-python3 tests/runtime_config/check_elf.py build/ReplayTelemetry/EPuck_STM32.elf
+cmake --preset Universal
+cmake --build --preset Universal
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
 bash tests/runtime_config/run.sh
 python3 tools/build_replay_host.py --fixture --sanitize --output /tmp/mul-replay-fixture
 MUL_REPLAY_TRACE=/tmp/mul-replay.uart /tmp/mul-replay-fixture
 ```
 
-Using the same options with `-DMUL_TDOA_REPLAY=OFF` in `build/ReplayDisabled`
-provides the comparison image. Measured Release link usage: diagnostics ON
-FLASH 163828 B / RAM 44472 B; OFF FLASH 160620 B / RAM 39592 B. Additional static
-RAM is 4880 B, including seven prepare buffers (2688 B), four queued blobs
-(1536 B), math evidence and metadata. CCM usage is zero. The serializer's local
-stack frame is 488 B plus 32 B saved registers; the math wrapper adds a 64 B frame
-including saved registers. These are individual disassembled frames, not a runtime
-stack watermark or whole-call-chain bound. Both images stay below the reserved
-configuration sectors. Existing compiler warnings outside diagnostic code remain.
+`Universal` is the canonical Release build: MUL_UNIVERSAL=ON, MUL_UWB_ONLY=ON,
+MUL_HYBRID_SLOT_MS=10, MUL_TDOA_REPLAY=ON. Existing build directories remain intact;
+use this preset for future ordinary builds. Both estimators are included in one
+binary and selected persistently at runtime. Final resource figures are below.
+The serializer's individual stack frame was488 B plus32 B saved registers and
+its math wrapper64 B; these static frames are not runtime high-water measurements.
+No task stack reservation was reduced. Configuration-sector checks remain required.
 
 At one pair/second the extra UART traffic is at most 1244 B/s with CRLF framing
 (4 x 311), about 10.8% of a 115200-baud 8N1 link's 11520 B/s capacity, in addition
@@ -935,7 +930,7 @@ and stack high-water measurements remain a hardware checkpoint.
 
 Operator-only SWD programming follows the established procedure in
 `../epuck-esp32/docs/disconnect_diagnostics.md`, selecting
-`build/ReplayTelemetry/EPuck_STM32.elf` instead of the Debug image and preserving
+`build/Universal/EPuck_STM32.elf` instead of the Debug image and preserving
 configuration sectors. Build/update the ESP bridge too: older bridges reject type 15.
 See `../epuck-esp32/docs/uwb_logging.md` (replay diagnostics) for the complete wire
 schema, collector, replay validation, experiment metadata and hardware checks.
@@ -956,3 +951,49 @@ bursts even with replay instrumentation OFF. This is independent of the replay
 snapshot backlog defect; queue sizes, UART speed and admission priorities are
 unchanged. `dropped` in health combines USB/Wi-Fi/encode losses and must not be read
 as a Wi-Fi-only capture counter. See the collector guide's counter-scope table.
+
+
+### Median-5 / Kalman acceptance and resource limits
+
+Both consumers pin the canonical core at
+`5cb841f17859e84b300ff7b1c6fb462bccc6e1ae`; see `ThirdParty/mul_core/CLOCK.md`.
+The full committed package is exported, including its existing AA-delay codec4
+support. No timing setting is changed; zero delay preserves codec2/3 plan identity
+and the existing826414CC full-plan fixture. Never hand-edit a consumer snapshot.
+
+Final Universal link: FLASH166672/786432 B (619760 B free), static RAM including
+linker stack/heap reservations44168/131072 B (86904 B free), CCM0/65536 B.
+Clock-fit state is160 B instead of336 B, configuration8 B; one fit/config workspace
+is168 B. No stack reservation was reduced. State/covariance arithmetic is double
+with integer-relative timestamp phase; no absolute40-bit timestamp becomes a float.
+The M4 build also uses software double. Host numerical tests do not measure embedded
+worst-case latency or runtime stack high-water; inspect these before long RF runs.
+
+Host acceptance covers both models, signs, drift/nonlinearity, variable/missing
+samples, native40/uptime32 wrap, isolated outliers, frequency/epoch discontinuities,
+long outage/reacquisition, covariance failure, fallback and both-unavailable behavior.
+The runtime sanitizer suite retains flash-cut/migration, RF-OFF and config-sector
+checks. The original20-minute recording replays1190/1190 exact results with1137
+intermediate comparisons. Original NumPy R/q remain frozen:1184 receiver observations
+produce1179 exact integer applied rates, max state error1.43e-8; the exported STM
+core and canonical LPS core agree. Follower1194 real TX/RX pairs produce1188 exact
+rates, max error4.52e-9; coarse age is inferred1Hz cadence because serial logs lack
+MCU uptime. This is numerical equivalence, not follower accuracy validation.
+
+Replay snapshots/type15 use schema2 (same384-byte blob/four152-byte fragments);
+clock type10 uses version3 for Kalman/Median semantics. Raw timestamps, relation,
+applied rates and TDoA intermediates remain present. Old schemas still decode and
+replay their recorded rates. The actual paced STM/ESP/TCP/collector fixture verifies
+140 exact interior pairs with reconnect and explicit capture-boundary accounting.
+Update the ESP bridge/collector along with STM before collecting new diagnostics.
+
+Operator-only flashing: build with the Universal preset above, then use the existing
+ST-Link procedure with `build/Universal/EPuck_STM32.elf`; preserve configuration
+sectors. Follow `../epuck-esp32/docs/uwb_logging.md` for the exact programmer command
+and ESP update. For ALRs use `../lps-node-firmware/docs/mul_commands.md` and the
+unchanged `sudo make dfu` workflow. No hardware was accessed by these tests.
+Compare Median-5 then Kalman with RF-OFF selection, identical plan/geometry and
+calibration. Check warmup, epoch/outage recovery, fallback/status/age, unchanged
+slot/TWR behavior, telemetry completeness, deadline service and stack watermarks.
+A physical comparison is still required; receiver-only prototype RMSE differences
+were small and statistically inconclusive.

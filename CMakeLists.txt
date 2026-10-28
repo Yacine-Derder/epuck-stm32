@@ -203,7 +203,7 @@ if(MUL_HYBRID_FREQ_DIAG AND NOT MUL_UNIVERSAL)
 endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_HYBRID_FREQ_DIAG=$<BOOL:${MUL_HYBRID_FREQ_DIAG}>)
 
-option(MUL_TDOA_REPLAY "Bounded replay-complete diagnostics, no radio configuration changes" OFF)
+option(MUL_TDOA_REPLAY "Bounded replay-complete diagnostics, no radio configuration changes" ${MUL_UNIVERSAL})
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_TDOA_REPLAY=$<BOOL:${MUL_TDOA_REPLAY}>)
 
 if(MUL_TDOA_REPLAY)

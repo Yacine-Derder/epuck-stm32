@@ -26,7 +26,7 @@ int main(void) {
  ar.node=141;assert(!uwb_config_set(&ar,"rf_enabled","on"));
  for(unsigned profile=0;profile<3;profile++)for(unsigned selected=0;selected<2;selected++) {
   uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;old.mode=4;old.protocol_role=UWB_PROTOCOL_RLR;
-  if(profile)assert(!uwb_config_set(&old,"clock_estimator","regression"));
+  if(profile)assert(!uwb_config_set(&old,"clock_estimator","kalman"));
   if(profile==2) {
    assert(!uwb_config_set(&old,"profile","experimental"));assert(!uwb_config_set(&old,"tx_lead_us","1000"));
    assert(!uwb_config_set(&old,"rx_budget_us","500"));assert(!uwb_config_set(&old,"slot_ms","17"));assert(!uwb_config_set(&old,"alr_alr_twr","off"));assert(!uwb_config_set(&old,"cycle_ms","500"));

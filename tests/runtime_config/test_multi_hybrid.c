@@ -9,10 +9,10 @@
 static void fitted_clock_runtime(void) {
  memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 0x8d");command("peer add 0x84");command("peer add 0x85");
  command("mode hybrid_static");command("off");command("cfg roster set 0x84 0x85 0x86 0x87");
- command("cfg set clock_estimator regression");command("cfg set clock_window 30");command("cfg set samples on");command("cfg set telemetry on");persisted();
- assert(current.clock.estimator==1&&current.clock.window==30);uwb_runtime_init();assert(active.clock.window==30&&active.telemetry&&active.samples);
+ command("cfg set clock_estimator kalman");command("cfg set samples on");command("cfg set telemetry on");persisted();
+ assert(current.clock.estimator==2&&current.clock.window==5);uwb_runtime_init();assert(active.clock.window==5&&active.telemetry&&active.samples);
  command("on");unsigned transmissions=starts,writes=nvWrites;
- command("cfg set clock_estimator median");assert(nvWrites==writes&&current.clock.estimator==1);
+ command("cfg set clock_estimator median");assert(nvWrites==writes&&current.clock.estimator==2);
  for(unsigned cycle=0;cycle<45;cycle++) {
   for(unsigned slot=0;slot<4;slot++) {
    uint8_t frame[90];uint64_t rx;size_t n=packet(&active.schedule,slot,cycle,cycle,true,frame,&rx);
@@ -20,17 +20,17 @@ static void fitted_clock_runtime(void) {
    tick=10000+cycle*1000+slot*10;status=DWT_INT_RXFCG_BIT_MASK;mul_hybrid_radio_process();
    if(!slot) {
     bool diagnostic=false;
-    for(unsigned i=0;i<count;i++){mulTelemetry_t value;assert(mulTelemetryDecode(telemetry[(tail+i)%TLM_CAPACITY],&value));if(value.type==mulTlmClock){diagnostic=true;assert(value.clock.version==2&&value.captureAgeMs==1&&value.transaction==1000);assert(value.clock.method==1&&value.clock.referenceSequence==cycle&&value.clock.referenceTx==mulDecodeTimestamp(frame+29)&&value.clock.rawRx==rx);}}
+    for(unsigned i=0;i<count;i++){mulTelemetry_t value;assert(mulTelemetryDecode(telemetry[(tail+i)%TLM_CAPACITY],&value));if(value.type==mulTlmClock){diagnostic=true;assert(value.clock.version==3&&value.captureAgeMs==1&&value.transaction==1000);assert(value.clock.method==2&&value.clock.referenceSequence==cycle&&value.clock.referenceTx==mulDecodeTimestamp(frame+29)&&value.clock.rawRx==rx);}}
     assert(diagnostic);
    }
   }
   tick=10000+cycle*1000+60;status=0;mul_hybrid_radio_process();
  }
- assert(multiReceiver.fit.ready&&multiReceiver.fit.count==30&&abs(multiReceiver.rate.skewPpb-15000)<=1&&starts==transmissions);
- command("clock show");drain();assert(strstr(captured,"CLOCK method=1 window=30"));
+ assert(multiReceiver.fit.ready&&multiReceiver.fit.count==5&&abs(multiReceiver.rate.skewPpb-15000)<=1&&starts==transmissions);
+ command("clock show");drain();assert(strstr(captured,"CLOCK method=2 window=5"));
  command("off");command("cfg roster set 0x84 0x85");persisted();uwb_runtime_init();
- assert(!active.schedule.profile&&active.clock.estimator==1&&active.clock.window==30);
- command("on");assert(hybridReceiver.clockConfig.estimator==1&&hybridReceiver.clockConfig.window==30);
+ assert(!active.schedule.profile&&active.clock.estimator==2&&active.clock.window==5);
+ command("on");assert(hybridReceiver.clockConfig.estimator==2&&hybridReceiver.clockConfig.window==5);
  command("off");command("cfg set clock_estimator median");persisted();
 }
 static void experimental_runtime(FILE *trace) {
@@ -41,7 +41,7 @@ static void experimental_runtime(FILE *trace) {
   command("cfg set tx_lead_us 500");command("cfg set rx_budget_us 500");command("cfg set airtime_us 400");
   command("cfg set alr_alr_twr off");command("cfg set twr_reply_ms 5");char cmd[64];snprintf(cmd,sizeof(cmd),"cfg set slot_ms %u",spacing[trial]);command(cmd);
   snprintf(cmd,sizeof(cmd),"cfg set cycle_ms %u",periods[trial]);command(cmd);
-  command("cfg set clock_estimator regression");command("cfg set samples on");command("cfg set telemetry on");persisted();
+  command("cfg set clock_estimator kalman");command("cfg set samples on");command("cfg set telemetry on");persisted();
   uwb_runtime_init();assert(active.schedule.profile==3&&active.slot_ms==spacing[trial]&&mulScheduleReplyMs(&active.schedule)==5);command("on");
   assert(multiReceiver.clockConfig.periodMs==periods[trial]);unsigned tx=starts;
   const char *blocked[]={"tx_lead_us 1000","rx_budget_us 1000","airtime_us 1000","guard_us 200","alr_alr_twr on","slot_ms 10","cycle_ms 1000","profile multi","twr_reply_ms 10"};

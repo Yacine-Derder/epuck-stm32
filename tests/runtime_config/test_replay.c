@@ -19,7 +19,7 @@ static void drain_replay(void) {
 int main(void) {
  const char *path=getenv("MUL_REPLAY_TRACE");if(path){trace=fopen(path,"w");assert(trace);}
  memset(nv,255,sizeof nv);uwb_runtime_init();command("addr 141");command("mode hybrid_static");command("off");
- command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set process_us 5000");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");command("on");
+ command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set process_us 5000");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");if(getenv("MUL_REPLAY_KALMAN"))command("cfg set clock_estimator kalman");command("on");
  activePlan=&active.plan;unsigned transmissions=starts;
  for(unsigned step=0;step<45;step++) {
   uint32_t base=UINT32_MAX-10000+step*1000,cycle=UINT32_MAX-10+step;

@@ -247,7 +247,7 @@ bool uwb_runtime_replay_emit(const uint8_t blob[MUL_REPLAY_BYTES],uint32_t id,ui
  if(!active.telemetry||part>=MUL_REPLAY_PARTS)return false;
  // Leave two normal queue slots available; diagnostics never evict essential data.
  if(active.wifi?wifiCount>=TLM_CAPACITY-2:count>=TLM_CAPACITY-2)return false;
- uint8_t b[152]={0x4d,0x54,3,15,(uint8_t)active.node,255,2,(uint8_t)active.mode,2,0,1,1};
+ uint8_t b[152]={0x4d,0x54,3,15,(uint8_t)active.node,255,2,(uint8_t)active.mode,2,0,1,2};
  replayPut(b+12,telemetrySequence++,4);replayPut(b+16,telemetryEpoch,8);replayPut(b+24,id,4);replayPut(b+28,loss,4);
  replayPut(b+32,(uint32_t)blob[4]|(uint32_t)blob[5]<<8|(uint32_t)blob[6]<<16|(uint32_t)blob[7]<<24,4);replayPut(b+36,HAL_GetTick(),4);
  b[40]=(uint8_t)part;b[41]=MUL_REPLAY_PARTS;replayPut(b+42,MUL_REPLAY_BYTES,2);replayPut(b+44,mulReplayDigest(blob,MUL_REPLAY_BYTES),4);

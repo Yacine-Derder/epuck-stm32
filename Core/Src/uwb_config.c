@@ -153,13 +153,11 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(!strcmp(field,"clock_estimator")||!strcmp(field,"clock_window")||!strcmp(field,"clock_compensate")) {
     uwb_config_t candidate=*c;uwb_config_clock(c,&candidate.clock);
     if(!strcmp(field,"clock_estimator")) {
-      if(!strcmp(value,"median"))candidate.clock.estimator=0;
-      else if(!strcmp(value,"regression"))candidate.clock.estimator=1;
-      else return "clock_estimator: median/regression";
+      if(!strcmp(value,"median")||!strcmp(value,"median_5")||!strcmp(value,"MEDIAN_5"))candidate.clock.estimator=0;
+      else if(!strcmp(value,"kalman")||!strcmp(value,"KALMAN")||!strcmp(value,"kalman_3_state"))candidate.clock.estimator=2;
+      else return "clock_estimator: median_5/kalman";
     }else if(!strcmp(field,"clock_window")) {
-      unsigned n=0;for(const char *p=value;*p;p++){if(*p<'0'||*p>'9'||n>32)return "clock_window: 8..32";n=n*10+(*p-'0');}
-      if(n<8||n>32)return "clock_window: 8..32";
-      candidate.clock.window=(uint8_t)n;
+      return "clock_window retired; fixed Median-5";
     }else {
       if(!strcmp(value,"on"))candidate.clock.compensate=1;
       else if(!strcmp(value,"off"))candidate.clock.compensate=0;

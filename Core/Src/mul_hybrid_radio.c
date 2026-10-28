@@ -29,7 +29,7 @@ static void publishClock(const mulClock_t *clock,const mulClockFit_t *fit,const 
  if(!hybridConfig.samples)return; // Explicit research diagnostics; preserve default queue load.
  bool same=fit->epoch==clock->epoch;unsigned status=mulClockMapStatus(clock,now);
  mulTelemetry_t record={.type=mulTlmClock,.peer=packet->source[0],.exchange=clock->epoch,.uptimeMs=now,.captureAgeMs=captureAge,.transaction=config->periodMs,
-  .clock={.referenceTx=packet->txTimestamp,.rawRx=rx,.referenceSequence=packet->sequence,
+  .clock={.version=3,.referenceTx=packet->txTimestamp,.rawRx=rx,.referenceSequence=packet->sequence,
    .appliedPpb=clock->skewPpb,.fittedPpb=same?fit->skewPpb:0,.rmsDtu=same?fit->rmsDtu:0,
    .rejected=fit->rejected,.fitSigmaPpb=same?fit->uncertaintyPpb:UINT32_MAX,.ageMs=now-clock->observedMs,
    .reference=packet->source[0],.method=config->estimator,.window=config->window,.count=same?fit->count:0,

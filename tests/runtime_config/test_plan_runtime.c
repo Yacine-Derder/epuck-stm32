@@ -19,8 +19,9 @@ int main(void) {
  command("plan rlrs 32");command("plan alrs 32 32");command("plan set util_percent 100");
  command("plan set revision 4294967296");command("plan set aa_priority 256");command("plan set policy unknown");command("plan set revision -1");command("plan set guard_us 101");command("plan use maybe");
  assert(nvWrites==writes&&current.plan_selected&&!started);
- command("cfg set clock_window 30");assert(current.clock.window==30&&current.clock.periodMs==1000);
- mulClockFitConfig_t clock;uwb_config_effective_clock(&current,&clock);assert(clock.periodMs==200&&clock.window==30);
+ command("cfg set clock_estimator kalman");
+ assert(current.clock.window==5&&current.clock.periodMs==1000&&current.clock.estimator==2);
+ mulClockFitConfig_t clock;uwb_config_effective_clock(&current,&clock);assert(clock.periodMs==200&&clock.window==5);
  uwb_config_t before=current;writes=nvWrites;uwb_runtime_init();assert(nvWrites==writes&&uwb_config_equal(&current,&before)&&!started);
  captured[0]=0;command("plan show");drain();assert(strstr(captured,"PLAN selected=1 codec=3")&&strstr(captured,"PLAN OP cycle=1")&&strstr(captured,"id=142"));
  writes=nvWrites;usbReady=false;command("plan show");drain();assert(display==6&&displayIndex==0&&nvWrites==writes);usbReady=true;drain();assert(!display);

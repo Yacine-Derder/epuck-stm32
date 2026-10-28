@@ -116,7 +116,7 @@ bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
     return false;
   memset(out, 0, MUL_REPLAY_BYTES);
   uint8_t *p = out;
-  put(&p, 1, 1);
+  put(&p, 2, 1);
   put(&p, s->plan != NULL, 1);
   put(&p, slot, 1);
   put(&p, s->stationary, 1);
@@ -232,7 +232,7 @@ bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
 bool mulReplayUnpack(const uint8_t in[MUL_REPLAY_BYTES], mulMultiReceiver_t *s,
                      mulRangingPlan_t *plan, unsigned *slot, uint32_t *evalNow,
                      uint32_t status[2]) {
-  if (!in || !s || !plan || !slot || !evalNow || !status || in[0] != 1 ||
+  if (!in || !s || !plan || !slot || !evalNow || !status || (in[0] != 1 && in[0] != 2) ||
       in[1] > 1 || in[3] > 1 || in[10] > 1 || in[11])
     return false;
   memset(s, 0, sizeof(*s));

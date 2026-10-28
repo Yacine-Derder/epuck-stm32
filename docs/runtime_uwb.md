@@ -459,26 +459,39 @@ no-rate policy and40/32-bit wrap. From epuck-esp32 run
 `python3 tools/verify_multi_replay.py /tmp/multi.uart` to replay those bytes through
 the real ESP owner, loopback TCP reconnect and compact JSONL. No hardware is used.
 
-## Selectable clock regression (software-first campaign)
+## Selectable Median-5 / three-state Kalman
 
-Median remains the default. With RF OFF:
+The shared portable core provides Median-5 (selector0, default) and Kalman
+(selector2). Selector1 is retired. With RF OFF, configure through the existing
+console; successful commands save through the existing persistent workflow:
 
-```
+```text
 off
-cfg set clock_estimator regression
-cfg set clock_window 24
-cfg set samples on
+cfg set clock_estimator MEDIAN_5
 clock show
-on
 ```
 
-Window8..32; default24. `cfg set clock_estimator median` selects the baseline.
-The clock has a robust centered integer fit, outlier rejection and median fallback
-when its long-window frequency disagrees with the recent median during changing
-rate. `clock show` distinguishes a formed fit from an applied fit and reports
-residual RMS, rejected samples, mapping status/age and conditional fit scatter.
-Physical timing/geometry uncertainty remains UNKNOWN. Larger windows can lag real
-oscillator/motion changes; they are not unconditionally more accurate.
+Use `cfg set clock_estimator KALMAN` for the other method. Resume with `on` only
+when the operator is ready. No separate save or firmware rebuild is required.
+Old version1 clock settings, including regression, and unknown selectors migrate
+to Median-5; new clock codec2 fixes history to5. `clock_window` is retired and
+rejects writes. Other persistent configuration and flash-bank safety are unchanged.
+
+Median-5 independently validates five interval rates. Kalman uses integer-relative
+phase and double state/covariance with variable elapsed time, fixed R=1024/q=1,
+4-sigma Huber weighting and Joseph updates. It requires five intervals, consistent
+nonzero epoch, finite/PSD covariance, rate within±200000ppb, conditional rate
+sigma<=1000ppb and mapping age<=2000ms. The sigma ceiling reuses the existing
+median one-ppm stability scale; it is not a physical accuracy bound. Invalid KF
+falls back only to a valid independent median; otherwise mapping is unavailable.
+Long gaps reset; prediction does not refresh observation age. See the pinned
+[shared contract](../ThirdParty/mul_core/CLOCK.md) for exact resets and spike gates.
+No regression estimator remains in production. Reference ALRs do not run updates.
+
+Clock diagnostic version3 distinguishes selected and applied method, fallback,
+innovation, conditional uncertainty, validity/age and epoch/resets. Historical
+versions1/2 remain decodable. Conditional model uncertainty excludes geometry and
+calibration; it is not a measured accuracy bound.
 
 `cfg set samples on` opts into additive UWB3 type10 raw clock diagnostics at each
 reference reception, in both legacy and multi receiver paths. Diagnostics are
