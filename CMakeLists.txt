@@ -68,6 +68,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/uwb_config_flash.c
     Core/Src/uwb_runtime.c
     Core/Src/mul_plan_radio.c
+    Core/Src/mul_replay.c
     Core/Src/mul_hybrid_radio.c
     Core/Src/mul_ads_radio.c
     ThirdParty/mul_core/mul_hybrid.c
@@ -201,3 +202,6 @@ if(MUL_HYBRID_FREQ_DIAG AND NOT MUL_UNIVERSAL)
  message(FATAL_ERROR "MUL_HYBRID_FREQ_DIAG requires MUL_UNIVERSAL")
 endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_HYBRID_FREQ_DIAG=$<BOOL:${MUL_HYBRID_FREQ_DIAG}>)
+
+option(MUL_TDOA_REPLAY "Bounded replay-complete diagnostics, no radio configuration changes" OFF)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_TDOA_REPLAY=$<BOOL:${MUL_TDOA_REPLAY}>)

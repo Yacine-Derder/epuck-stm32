@@ -158,3 +158,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-unused-function -g -
 "$work/pose_radio"
 
 fi
+
+python3 tools/build_replay_host.py --fixture --sanitize --output "$work/replay"
+"$work/replay"
+python3 tools/build_replay_host.py --sanitize --output "$work/replay_native"

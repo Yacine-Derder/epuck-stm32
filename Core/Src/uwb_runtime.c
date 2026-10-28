@@ -8,6 +8,7 @@
 #include "main.h"
 #include "mul_ads_radio.h"
 #include "mul_hybrid_radio.h"
+#include "mul_replay.h"
 #include "deca_device_api.h"
 #include "epuck_link.h"
 #include "usb_console.h"
@@ -240,6 +241,24 @@ static void telemetry_enqueue(char queue[TLM_CAPACITY][TLM_LENGTH],bool essentia
   if(at)at[*h]=HAL_GetTick();
   *h=(*h+1)%TLM_CAPACITY;(*n)++;if(*n>*high)*high=*n;
 }
+#if MUL_TDOA_REPLAY
+static void replayPut(uint8_t *p,uint64_t v,unsigned n){for(unsigned i=0;i<n;i++)p[i]=(uint8_t)(v>>(8*i));}
+bool uwb_runtime_replay_emit(const uint8_t blob[MUL_REPLAY_BYTES],uint32_t id,uint32_t loss,unsigned part) {
+ if(!active.telemetry||part>=MUL_REPLAY_PARTS)return false;
+ // Leave two normal queue slots available; diagnostics never evict essential data.
+ if(active.wifi?wifiCount>=TLM_CAPACITY-2:count>=TLM_CAPACITY-2)return false;
+ uint8_t b[152]={0x4d,0x54,3,15,(uint8_t)active.node,255,2,(uint8_t)active.mode,2,0,1,1};
+ replayPut(b+12,telemetrySequence++,4);replayPut(b+16,telemetryEpoch,8);replayPut(b+24,id,4);replayPut(b+28,loss,4);
+ replayPut(b+32,(uint32_t)blob[4]|(uint32_t)blob[5]<<8|(uint32_t)blob[6]<<16|(uint32_t)blob[7]<<24,4);replayPut(b+36,HAL_GetTick(),4);
+ b[40]=(uint8_t)part;b[41]=MUL_REPLAY_PARTS;replayPut(b+42,MUL_REPLAY_BYTES,2);replayPut(b+44,mulReplayDigest(blob,MUL_REPLAY_BYTES),4);
+ unsigned at=part*MUL_REPLAY_PART_BYTES,n=MUL_REPLAY_BYTES-at;if(n>MUL_REPLAY_PART_BYTES)n=MUL_REPLAY_PART_BYTES;
+ b[48]=(uint8_t)n;b[49]=blob[2];memcpy(b+50,blob+at,n);replayPut(b+150,mulTelemetryCrc(b,150),2);
+ char line[MUL_TLM_LINE];memcpy(line,"UWB3 ",5);const char *hex="0123456789ABCDEF";for(unsigned i=0;i<152;i++){line[5+2*i]=hex[b[i]>>4];line[6+2*i]=hex[b[i]&15];}line[309]=0;
+ telemetry_enqueue(telemetry,telemetryEssential,NULL,&head,&tail,&count,&highWater,&dropped,line,false);
+ if(active.wifi)telemetry_enqueue(wifiQueue,wifiEssential,wifiQueuedAt,&wifiHead,&wifiTail,&wifiCount,&wifiHigh,&wifiDrops,line,false);
+ accepted++;return true;
+}
+#endif
 void uwb_runtime_publish(mulTelemetry_t *r) {
   if(!active.telemetry) return;
   r->sequence=telemetrySequence++;r->epoch=telemetryEpoch;
@@ -438,6 +457,7 @@ static void display_output(void) {
 void uwb_runtime_task(void) {
   display_output();telemetry_task();
   if(initialized&&started) mul_ads_radio_process();
+  mulReplayService();
 }
 static bool number(const char *s,unsigned maximum,unsigned *out) {
   if(!s||!*s)return false;

@@ -4,6 +4,7 @@
 #include "mul_hybrid.h"
 #include "mul_multi_receiver.h"
 #include "mul_plan_radio.h"
+#include "mul_replay.h"
 #include "qorvo_platform.h"
 #include "dw3000_deca_regs.h"
 #include "mul_timing.h"
@@ -42,6 +43,7 @@ static void hybridRearm(void) {
  hybridRetry=dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS;if(hybridRetry)hybridErrors++;
 }
 void mul_hybrid_radio_configure(const uwb_config_t *c) {
+ mulReplayReset();
  memset(hybridFrames,0,sizeof(hybridFrames));
 #if MUL_HYBRID_FREQ_DIAG
  /* Called with RX stopped by the universal radio owner. Diagnostic logging
@@ -163,7 +165,11 @@ static void publishPlanRecords(void) {
 }
 static void multiProcess(void) {
  uint32_t started=mul_timing_now(),now=HAL_GetTick();mulMultiCycle_t completed;
- if(mulMultiReceiverPoll(&multiReceiver,now,&completed))publishVector(&completed);
+ #if MUL_TDOA_REPLAY
+ if(multiReceiver.active&&(uint32_t)(now-multiReceiver.cycleStartMs)>=mulScheduleOffsetMs(&multiReceiver.schedule,multiReceiver.schedule.count-1)+MUL_DATA_GUARD_MS)
+   mulReplayPrepare(&multiReceiver);
+ #endif
+ if(mulMultiReceiverPoll(&multiReceiver,now,&completed)){mulReplayComplete(&completed);publishVector(&completed);}
  uint32_t status=dwt_readsysstatuslo();
  bool consumed=mul_plan_radio_process(now,status);
  if(consumed) {
@@ -187,8 +193,16 @@ static void multiProcess(void) {
   }
   hybridRearm(); // The single radio owner re-arms before codecs, math and telemetry.
   mulMultiReceiveOutput_t out;
+ #if MUL_TDOA_REPLAY
+  // Snapshot old-cycle inputs before Receive can finalize and begin the next.
+  if(shape&&multiReceiver.active) {
+   uint32_t cycle=0;for(unsigned i=0;i<4;i++)cycle|=(uint32_t)frame[25+i]<<(8*i);
+   if(cycle!=multiReceiver.cycle)mulReplayPrepare(&multiReceiver);
+  }
+ #endif
   if(shape&&mulMultiReceiverReceive(&multiReceiver,frame,bytes,rx,age,now,&out)) {
-   if(out.cycleReady)publishVector(&out.completed);
+   if(out.cycleReady){mulReplayComplete(&out.completed);publishVector(&out.completed);}
+   mulReplayReceived(&multiReceiver,out.broadcast.slot,status);
    if(!out.broadcast.slot)mul_plan_radio_reference(out.broadcast.packet.sequence,(uint16_t)age);
    if(!out.broadcast.slot)publishClock(&multiReceiver.rate,&multiReceiver.fit,&multiReceiver.clockConfig,&out.broadcast.packet,rx,now,(uint16_t)age);
    unsigned index=out.broadcast.slot?1:0;
