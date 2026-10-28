@@ -47,6 +47,14 @@ int main(void) {
  /* Snapshot pressure cannot block the radio owner or consume essential slots. */
  for(unsigned i=0;i<8;i++){multiReceiver.active=true;mulReplayPrepare(&multiReceiver);mulMultiCycle_t c;finish(&multiReceiver,&c);mulReplayComplete(&c,tick);}
  head=tail=count=wifiHead=wifiTail=wifiCount=0;mulReplayService(tick);assert(wifiCount==1);mulReplayService(tick);assert(wifiCount==2);mulReplayService(tick);assert(wifiCount==2);
+ /* Expiry across uint32 uptime wrap cannot publish stale tail fragments, and
+  * stale queued blobs cannot prevent admission of the next current cycle. */
+ mulReplayReset();tick=UINT32_MAX-20;multiReceiver.active=true;mulReplayPrepare(&multiReceiver);
+ mulMultiCycle_t wrapped;finish(&multiReceiver,&wrapped);mulReplayComplete(&wrapped,tick);
+ head=tail=count=wifiHead=wifiTail=wifiCount=0;mulReplayService(tick+999);assert(wifiCount==1);
+ mulReplayService(tick+1000);assert(wifiCount==1);
+ multiReceiver.active=true;mulReplayPrepare(&multiReceiver);finish(&multiReceiver,&wrapped);mulReplayComplete(&wrapped,tick+1001);
+ mulReplayService(tick+1001);assert(wifiCount==2);
 #endif
  if(trace)fclose(trace);
  printf("Replay: %u radio-driven cycles, exact state roundtrip, partial observations, relation/rate unavailable, resets, signed rate, wrap, bounded queue and zero additional TX passed\n",snapshots);

@@ -165,3 +165,6 @@ python3 tools/build_replay_host.py --sanitize --output "$work/replay_native"
 
 python3 tools/build_replay_host.py --transport --sanitize --output "$work/replay_transport"
 "$work/replay_transport"
+MUL_REPLAY_PHASE_MS=86 "$work/replay_transport"
+python3 tools/build_replay_host.py --transport --disabled --sanitize --output "$work/replay_transport_off"
+MUL_REPLAY_PHASE_MS=86 "$work/replay_transport_off"

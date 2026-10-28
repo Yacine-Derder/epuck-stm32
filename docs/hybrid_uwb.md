@@ -892,7 +892,10 @@ Serialization runs after the radio process returns: at most one existing-size
 UWB3 type-15 fragment per owner-loop iteration. Four fragments describe one
 384-byte pair snapshot. The FIFO holds four snapshots, drops new snapshots when
 full, advances diagnostic IDs for dropped snapshots, and reports cumulative loss
-on subsequent fragments. Two slots remain available in the selected normal output
+on subsequent fragments. Queued snapshots expire after one second, matching the
+downstream FIFO freshness policy, before admission and emission. Disconnected
+periods therefore cannot retain ancient blobs indefinitely and reject all fresh ones.
+The snapshot ID/drop counters remain cumulative across these purges. Two slots remain available in the selected normal output
 queue before another diagnostic fragment is admitted; diagnostics are optional and
 cannot displace essential results. Existing UART and ESP TTL/drop counters remain
 applicable. Disabling Wi-Fi does not authorize any radio activity.
@@ -914,8 +917,8 @@ MUL_REPLAY_TRACE=/tmp/mul-replay.uart /tmp/mul-replay-fixture
 
 Using the same options with `-DMUL_TDOA_REPLAY=OFF` in `build/ReplayDisabled`
 provides the comparison image. Measured Release link usage: diagnostics ON
-FLASH 163676 B / RAM 44456 B; OFF FLASH 160620 B / RAM 39592 B. Additional static
-RAM is 4864 B, including seven prepare buffers (2688 B), four queued blobs
+FLASH 163828 B / RAM 44472 B; OFF FLASH 160620 B / RAM 39592 B. Additional static
+RAM is 4880 B, including seven prepare buffers (2688 B), four queued blobs
 (1536 B), math evidence and metadata. CCM usage is zero. The serializer's local
 stack frame is 488 B plus 32 B saved registers; the math wrapper adds a 64 B frame
 including saved registers. These are individual disassembled frames, not a runtime
@@ -936,3 +939,20 @@ Operator-only SWD programming follows the established procedure in
 configuration sectors. Build/update the ESP bridge too: older bridges reject type 15.
 See `../epuck-esp32/docs/uwb_logging.md` (replay diagnostics) for the complete wire
 schema, collector, replay validation, experiment metadata and hardware checks.
+
+The sustained host fixture also exercises200 seconds of normal clock/beacon and
+passive AA trace traffic,60 seconds without an owner, a27 ms UART frame budget,
+queue overflow and snapshot expiry across uptime wrap. Run it without devices:
+
+```sh
+python3 tools/build_replay_host.py --transport --sanitize --output /tmp/replay-paced
+MUL_REPLAY_TRACE=/tmp/replay-paced.uart /tmp/replay-paced
+# Also reproduce the recorded status-report phase,86ms after reference:
+MUL_REPLAY_PHASE_MS=86 /tmp/replay-paced
+```
+
+Optional AA raw packets can be shed by the existing four-line Wi-Fi FIFO during
+bursts even with replay instrumentation OFF. This is independent of the replay
+snapshot backlog defect; queue sizes, UART speed and admission priorities are
+unchanged. `dropped` in health combines USB/Wi-Fi/encode losses and must not be read
+as a Wi-Fi-only capture counter. See the collector guide's counter-scope table.
