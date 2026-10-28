@@ -40,7 +40,7 @@ static void uartService(void) {
 int main(void) {
  const char *path=getenv("MUL_REPLAY_TRACE");if(path){trace=fopen(path,"w");assert(trace);}
  memset(nv,255,sizeof nv);uwb_runtime_init();command("addr 141");command("mode hybrid_static");command("off");
- command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set process_us 5000");command("plan set lead_us 1000");command("plan set revision 23");command("plan set aa_millihz 1000");command("plan set ar_millihz 50");command("plan set aa on");command("plan set ar on");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");command("on");
+ command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set lead_us 1000");command("plan set process_us 5000");command("plan set revision 23");command("plan set aa_millihz 1000");command("plan set ar_millihz 50");command("plan set aa on");command("plan set ar on");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");command("on");
  /* CRC equality alone does not bind the embedded broadcast schedule. */
  const char *expectedPlan="02031446020302000A00E803170000008485000000000000E8038813E8030100721434A9018D0000000000000000E803320000000000000000000000CC146482";
  uint8_t wire[64];assert(mulRangingPlanEncode(wire,&active.plan));
