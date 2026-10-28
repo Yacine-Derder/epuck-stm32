@@ -59,6 +59,56 @@ static void readObservation(const uint8_t **p, mulObservation_t *o) {
   o->remoteEpochKnown = (f >> 1) & 1;
   o->source.hasSequence = (f >> 2) & 1;
 }
+#if MUL_TDOA_REPLAY
+/* Link-time observation of the production return value. No equations or
+ * decisions are replaced; __real returns the result used by localization. */
+#include "mul_downlink.h"
+typedef struct {
+  uint8_t peer;
+  bool used;
+  uint32_t refSequence, folSequence, refGeneration, folGeneration;
+  uint64_t refRx, folRx;
+  int64_t values[5];
+} replayMath_t;
+static replayMath_t mathAt[MUL_MAX_ALRS - 1];
+mulDownlink_t __real_mulDownlinkComputeAtSlot(const mulNetwork_t *, uint16_t,
+                                              const mulRelation_t *,
+                                              mulPair_t *, const mulClock_t *,
+                                              uint32_t, uint32_t, bool);
+mulDownlink_t
+__wrap_mulDownlinkComputeAtSlot(const mulNetwork_t *network, uint16_t offset,
+                                const mulRelation_t *relation, mulPair_t *pair,
+                                const mulClock_t *rate, uint32_t now,
+                                uint32_t age, bool stationary) {
+  mulDownlink_t d = __real_mulDownlinkComputeAtSlot(
+      network, offset, relation, pair, rate, now, age, stationary);
+  replayMath_t *entry = NULL;
+  for (unsigned i = 0; i < MUL_MAX_ALRS - 1; i++)
+    if (mathAt[i].used && mathAt[i].peer == pair->follower.sourceClock[0]) {
+      entry = &mathAt[i];
+      break;
+    }
+  if (!entry)
+    for (unsigned i = 0; i < MUL_MAX_ALRS - 1; i++)
+      if (!mathAt[i].used) {
+        entry = &mathAt[i];
+        break;
+      }
+  if (entry)
+    *entry = (replayMath_t){.used = true,
+                            .peer = pair->follower.sourceClock[0],
+                            .refSequence = pair->reference.source.sequence,
+                            .folSequence = pair->follower.source.sequence,
+                            .refGeneration = pair->reference.generation,
+                            .folGeneration = pair->follower.generation,
+                            .refRx = pair->reference.source.rxTimestamp,
+                            .folRx = pair->follower.source.rxTimestamp,
+                            .values = {d.txSeparationRef, d.rawRxSeparationRef,
+                                       d.correctedRxSeparationRef, d.rawTdoaRef,
+                                       d.correctedTdoaRef}};
+  return d;
+}
+#endif
 bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
                    unsigned slot, const uint32_t status[MUL_MAX_ALRS]) {
   if (!out || !s || slot == 0 || slot >= s->schedule.count ||
@@ -73,7 +123,12 @@ bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
   put(&p, s->cycle, 4);
   put(&p, s->seenMask, 1);
   put(&p, s->schedule.count, 1);
-  put(&p, 0, 2);
+  bool sourceVersion = false;
+  for (unsigned i = 1; i < s->schedule.count; i++)
+    if ((s->seenMask & (1u << i)) && s->relations[i - 1].version == 3)
+      sourceVersion = true;
+  put(&p, sourceVersion, 1);
+  put(&p, 0, 1);
   put(&p, s->cycleStartMs, 4);
   if (s->plan) {
     if (!mulRangingPlanEncode(p, s->plan))
@@ -111,8 +166,6 @@ bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
   put(&p, c->hasBaseline, 1);
   put(&p, c->count, 1);
   put(&p, c->next, 1);
-  for (unsigned i = 0; i < MUL_CLOCK_HISTORY; i++)
-    put(&p, (uint32_t)c->history[i], 4);
   put(&p, c->periodMs, 2);
   put(&p, c->samples, 4);
   if (!mulClockFitConfigEncode(p, &s->clockConfig))
@@ -142,7 +195,28 @@ bool mulReplayPack(uint8_t out[MUL_REPLAY_BYTES], const mulMultiReceiver_t *s,
   put(&p, now, 4);
   put(&p, s->values[slot - 1].reason == mulMultiScheduleMismatch,
       1); // Admission outcome, before mathematical evaluation.
-  if ((unsigned)(p - out) > MUL_REPLAY_RESULT_AT)
+  bool mathValid = false;
+#if MUL_TDOA_REPLAY
+  for (unsigned i = 0; i < MUL_MAX_ALRS - 1; i++) {
+    const replayMath_t *m = &mathAt[i];
+    if ((s->seenMask & ((1u << slot) | 1u)) == ((1u << slot) | 1u) && m->used &&
+        m->peer == b->sourceClock[0] && m->refSequence == a->source.sequence &&
+        m->folSequence == b->source.sequence &&
+        m->refGeneration == a->generation &&
+        m->folGeneration == b->generation &&
+        m->refRx == a->source.rxTimestamp &&
+        m->folRx == b->source.rxTimestamp) {
+      for (unsigned j = 0; j < 5; j++)
+        put(&p, (uint64_t)m->values[j], 8);
+      mathValid = true;
+      break;
+    }
+  }
+#endif
+  if (!mathValid)
+    p += 40; /* zeroed, explicitly unavailable on admission rejection */
+  put(&p, mathValid, 1);
+  if ((unsigned)(p - out) != MUL_REPLAY_RESULT_AT)
     return false;
   p = out + MUL_REPLAY_RESULT_AT;
   const mulMultiValue_t *v = &s->values[slot - 1];
@@ -159,7 +233,7 @@ bool mulReplayUnpack(const uint8_t in[MUL_REPLAY_BYTES], mulMultiReceiver_t *s,
                      mulRangingPlan_t *plan, unsigned *slot, uint32_t *evalNow,
                      uint32_t status[2]) {
   if (!in || !s || !plan || !slot || !evalNow || !status || in[0] != 1 ||
-      in[1] > 1 || in[3] > 1 || in[10] || in[11])
+      in[1] > 1 || in[3] > 1 || in[10] > 1 || in[11])
     return false;
   memset(s, 0, sizeof(*s));
   const uint8_t *p = in + 1;
@@ -214,8 +288,6 @@ bool mulReplayUnpack(const uint8_t in[MUL_REPLAY_BYTES], mulMultiReceiver_t *s,
   c->hasBaseline = get(&p, 1);
   c->count = get(&p, 1);
   c->next = get(&p, 1);
-  for (unsigned i = 0; i < MUL_CLOCK_HISTORY; i++)
-    c->history[i] = signed32(get(&p, 4));
   c->periodMs = get(&p, 2);
   c->samples = get(&p, 4);
   if (!mulClockFitConfigDecode(p, &s->clockConfig))
@@ -244,9 +316,9 @@ bool mulReplayUnpack(const uint8_t in[MUL_REPLAY_BYTES], mulMultiReceiver_t *s,
   if (c->count > MUL_CLOCK_HISTORY || c->next >= MUL_CLOCK_HISTORY ||
       c->status > mulClockValid || mismatch > 1)
     return false;
-  while (p < in + MUL_REPLAY_RESULT_AT)
-    if (*p++)
-      return false;
+  p += 40;
+  if (get(&p, 1) > 1 || p != in + MUL_REPLAY_RESULT_AT)
+    return false;
   mulMultiValue_t *v = &s->values[*slot - 1];
   v->tdoaDtu = signed32(get(&p, 4));
   v->rangeDifferenceMm = signed32(get(&p, 4));
@@ -276,6 +348,7 @@ void mulReplayReset(void) {
   dropped += count;
   head = tail = count = part = prepared = 0;
   memset(statusAt, 0, sizeof(statusAt));
+  memset(mathAt, 0, sizeof(mathAt));
 }
 void mulReplayReceived(const mulMultiReceiver_t *s, unsigned slot,
                        uint32_t status) {

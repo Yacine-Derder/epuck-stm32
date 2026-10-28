@@ -16,13 +16,20 @@ int main(void) {
   else if((s.seenMask&(1u<<slot))&&!s.sources[slot].valid&&s.sources[slot].generation==UINT32_MAX)s.values[slot-1]=invalid(mulMultiSequence);
   else evaluate(&s,slot,now);
   mulMultiValue_t actual=s.values[slot-1];
-  actual.source=(s.seenMask&(1u<<slot))&&s.relations[slot-1].version==3?1+mulRelationSource(&s.relations[slot-1]):0;
+  actual.source=(s.seenMask&(1u<<slot))&&b[10]?1+mulRelationSource(&s.relations[slot-1]):0;
   bool match=actual.tdoaDtu==expected.tdoaDtu&&actual.rangeDifferenceMm==expected.rangeDifferenceMm&&actual.status==expected.status&&actual.clockValid==expected.clockValid&&actual.rateState==expected.rateState&&actual.reason==expected.reason&&actual.source==expected.source;
   printf("{\"cycle\":%"PRIu32",\"slot\":%u,\"match\":%s,\"dtu\":%"PRId32",\"mm\":%"PRId32",\"status\":%u,\"reason\":%u,\"dtu_match\":%s,\"mm_match\":%s,\"status_match\":%s",s.cycle,slot,match?"true":"false",actual.tdoaDtu,actual.rangeDifferenceMm,actual.status,actual.reason,actual.tdoaDtu==expected.tdoaDtu?"true":"false",actual.rangeDifferenceMm==expected.rangeDifferenceMm?"true":"false",actual.status==expected.status&&actual.reason==expected.reason?"true":"false");
   if((s.seenMask&((1u<<slot)|1u))==((1u<<slot)|1u)) {
    mulNetwork_t network;mulSchedulePair(&s.schedule,slot,&network);
    mulPair_t pair={.reference=s.sources[0],.follower=s.sources[slot],.rawArrivalDifferenceDtu=mulTimestampDifference(s.sources[slot].source.rxTimestamp,s.sources[0].source.rxTimestamp),.physicalBoundDtu=UINT64_MAX};
    mulDownlink_t d=mulDownlinkComputeAtSlot(&network,mulScheduleOffsetMs(&s.schedule,slot),&s.relations[slot-1],&pair,&s.rate,now,s.captureAge[slot],s.stationary);
+   bool intermediates=true;
+   const int64_t values[]={d.txSeparationRef,d.rawRxSeparationRef,d.correctedRxSeparationRef,d.rawTdoaRef,d.correctedTdoaRef};
+   if(b[367])for(unsigned j=0;j<5;j++) {
+    uint64_t wire=0;for(unsigned k=0;k<8;k++)wire|=(uint64_t)b[327+j*8+k]<<(k*8);
+    if(wire!=(uint64_t)values[j])intermediates=false;
+   }
+   printf(",\"intermediates_captured\":%s,\"intermediates_match\":%s",b[367]?"true":"false",intermediates?"true":"false");
    printf(",\"raw_arrival_local_dtu\":%"PRId64",\"tx_separation_ref_dtu\":%"PRId64",\"arrival_ref_dtu\":%"PRId64",\"corrected_arrival_ref_dtu\":%"PRId64",\"intermediate_status\":%u",pair.rawArrivalDifferenceDtu,d.txSeparationRef,d.rawRxSeparationRef,d.correctedRxSeparationRef,d.status);
   }
   puts("}");

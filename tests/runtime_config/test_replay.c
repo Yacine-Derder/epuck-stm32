@@ -29,9 +29,10 @@ int main(void) {
    length=n+2;rxMarker=rx;tick=base+slot*10;status=DWT_INT_RXFCG_BIT_MASK;
    if(step==16&&!slot)mulClockReset(&multiReceiver.rate);
    head=tail=count=wifiHead=wifiTail=wifiCount=0;
+   if(step==30&&slot)multiReceiver.rate.skewPpb=-15000;
    mul_hybrid_radio_process();
+   for(unsigned i=0;i<wifiCount;i++)if(trace)fprintf(trace,"%s\n",wifiQueue[(wifiTail+i)%TLM_CAPACITY]);
   }
-  if(step==17)multiReceiver.rate.skewPpb=-15000;
   uint8_t saved[MUL_REPLAY_BYTES];assert(mulReplayPack(saved,&multiReceiver,1,NULL));
   mulMultiReceiver_t decoded;mulRangingPlan_t plan;unsigned slot;uint32_t now,st[2];assert(mulReplayUnpack(saved,&decoded,&plan,&slot,&now,st));
   mulMultiValue_t expected=multiReceiver.values[0];evaluate(&decoded,1,now);
@@ -41,9 +42,12 @@ int main(void) {
   snapshots++;if(step%3==2)drain_replay();
  }
  drain_replay();assert(starts==transmissions);command("off");
+
+#if MUL_TDOA_REPLAY
  /* Snapshot pressure cannot block the radio owner or consume essential slots. */
  for(unsigned i=0;i<8;i++){multiReceiver.active=true;mulReplayPrepare(&multiReceiver);mulMultiCycle_t c;finish(&multiReceiver,&c);mulReplayComplete(&c);}
  head=tail=count=wifiHead=wifiTail=wifiCount=0;mulReplayService();assert(wifiCount==1);mulReplayService();assert(wifiCount==2);mulReplayService();assert(wifiCount==2);
+#endif
  if(trace)fclose(trace);
  printf("Replay: %u radio-driven cycles, exact state roundtrip, partial observations, relation/rate unavailable, resets, signed rate, wrap, bounded queue and zero additional TX passed\n",snapshots);
 }

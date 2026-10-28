@@ -205,3 +205,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_HYBRID_FREQ_DIAG=$<
 
 option(MUL_TDOA_REPLAY "Bounded replay-complete diagnostics, no radio configuration changes" OFF)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MUL_TDOA_REPLAY=$<BOOL:${MUL_TDOA_REPLAY}>)
+
+if(MUL_TDOA_REPLAY)
+ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,--wrap=mulDownlinkComputeAtSlot")
+endif()
