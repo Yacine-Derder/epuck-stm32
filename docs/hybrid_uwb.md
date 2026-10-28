@@ -860,3 +860,79 @@ byte-identical capture, zero RLR TX/no false AR result, and unchanged radio-erro
 timeout counts. The actual STM32 radio implementation is unchanged. Run
 `sh tests/runtime_config/run.sh` and build/check the existing Universal ELF.
 No device was flashed and no RF was started for this investigation.
+
+## Replay-complete receiver diagnostics (schema 1)
+
+`MUL_TDOA_REPLAY=ON` adds bounded diagnostics to the multi/generated-plan receiver
+path. It defaults OFF and does not select a radio mode, enable RF, change the
+stored plan, alter calibration, change the clock estimator, or modify UWB frames.
+The canonical core remains the verified `506913dc676d0a3c0d43c48977ef11be2085aa34`
+snapshot. The schema binds this calculation revision and the existing 6000 ms
+propagation-age build; bump the diagnostic schema when calculation semantics change.
+The old two-anchor compatibility path (schedule profile 0) is outside this feature.
+
+The owner already reads RX_FINFO, the hardware RX marker and SYS_TIME, then rearms
+before decoding. Diagnostics use those existing values: no extra radio SPI reads.
+Before a cycle can finish, `mulReplayPrepare()` copies each pair's exact observations,
+complete decoded relation, full local configuration, applied mapping, fit diagnostics,
+capture ages and existing RX status. After finish, `mulReplayComplete()` copies the
+original result. It handles both poll-time completion and completion inside the next
+cycle's Receive call. Missing observations are identified by the cycle's seen mask;
+old cached fields are never presented as observations received in that cycle.
+
+The diagnostic build uses GNU link wrapping of `mulDownlinkComputeAtSlot` to copy
+its actual returned intermediates. The wrapper calls the original function once
+and returns its result unchanged; no equations, validity branches, calibration or
+estimator logic are replaced. Math evidence is associated by source IDs, sequences,
+generations and RX markers. Admission failures before this function have no captured
+intermediates. `tools/replay_native.c` includes the same production receiver source
+and links the same production conversion sources for offline evaluation.
+
+Serialization runs after the radio process returns: at most one existing-size
+UWB3 type-15 fragment per owner-loop iteration. Four fragments describe one
+384-byte pair snapshot. The FIFO holds four snapshots, drops new snapshots when
+full, advances diagnostic IDs for dropped snapshots, and reports cumulative loss
+on subsequent fragments. Two slots remain available in the selected normal output
+queue before another diagnostic fragment is admitted; diagnostics are optional and
+cannot displace essential results. Existing UART and ESP TTL/drop counters remain
+applicable. Disabling Wi-Fi does not authorize any radio activity.
+
+Reproducible build (no device access):
+
+```sh
+cd ~/Documents/epuck-stm32
+cmake -S . -B build/ReplayTelemetry -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
+  -DCMAKE_BUILD_TYPE=Release -DMUL_UNIVERSAL=ON -DMUL_UWB_ONLY=ON \
+  -DMUL_HYBRID_SLOT_MS=10 -DMUL_TDOA_REPLAY=ON
+cmake --build build/ReplayTelemetry
+python3 tests/runtime_config/check_elf.py build/ReplayTelemetry/EPuck_STM32.elf
+bash tests/runtime_config/run.sh
+python3 tools/build_replay_host.py --fixture --sanitize --output /tmp/mul-replay-fixture
+MUL_REPLAY_TRACE=/tmp/mul-replay.uart /tmp/mul-replay-fixture
+```
+
+Using the same options with `-DMUL_TDOA_REPLAY=OFF` in `build/ReplayDisabled`
+provides the comparison image. Measured Release link usage: diagnostics ON
+FLASH 163676 B / RAM 44456 B; OFF FLASH 160620 B / RAM 39592 B. Additional static
+RAM is 4864 B, including seven prepare buffers (2688 B), four queued blobs
+(1536 B), math evidence and metadata. CCM usage is zero. The serializer's local
+stack frame is 488 B plus 32 B saved registers; the math wrapper adds a 64 B frame
+including saved registers. These are individual disassembled frames, not a runtime
+stack watermark or whole-call-chain bound. Both images stay below the reserved
+configuration sectors. Existing compiler warnings outside diagnostic code remain.
+
+At one pair/second the extra UART traffic is at most 1244 B/s with CRLF framing
+(4 x 311), about 10.8% of a 115200-baud 8N1 link's 11520 B/s capacity, in addition
+to existing telemetry. For seven pairs, snapshot storage cannot retain all pairs
+at once and bandwidth approaches the UART limit before existing records; inspect
+loss counters rather than assuming N8 capture completeness. No heap allocation,
+blocking I/O or JSON formatting occurs in the radio path. Physical service latency
+and stack high-water measurements remain a hardware checkpoint.
+
+Operator-only SWD programming follows the established procedure in
+`../epuck-esp32/docs/disconnect_diagnostics.md`, selecting
+`build/ReplayTelemetry/EPuck_STM32.elf` instead of the Debug image and preserving
+configuration sectors. Build/update the ESP bridge too: older bridges reject type 15.
+See `../epuck-esp32/docs/uwb_logging.md` (replay diagnostics) for the complete wire
+schema, collector, replay validation, experiment metadata and hardware checks.
