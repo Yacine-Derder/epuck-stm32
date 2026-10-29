@@ -18,6 +18,25 @@ static bool erase(void *ctx,unsigned bank) {
  if(budget>0)budget--;memset(flash+bank*UWB_CONFIG_SECTOR_SIZE,255,UWB_CONFIG_SECTOR_SIZE);erases++;return true;
 }
 static const uwb_config_store_t store={NULL,read_mem,program,erase};
+static void antenna_offsets(void){
+ uwb_config_t a,b,c;uwb_config_defaults(&a);a.calibration=1;a.correction_mm=123;
+ assert(a.tx_ant_dtu==16380&&a.rx_ant_dtu==16380);
+ b=a;assert(!uwb_config_set(&b,"antenna_offset_mm","-50"));
+ assert(b.tx_ant_dtu==16371&&b.rx_ant_dtu==16368&&!b.calibration&&b.correction_mm==123);
+ c=b;assert(!uwb_config_set(&b,"antenna_offset_mm","-50")&&uwb_config_equal(&b,&c));
+ const char *bad[]={"+","1x","1.5","2147483648","-2147483648","2147483647"};
+ for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++)assert(uwb_config_set(&b,"antenna_offset_mm",bad[i])&&uwb_config_equal(&b,&c));
+ assert(!uwb_config_set(&b,"antenna_offset_mm","+50")&&b.tx_ant_dtu==16389&&b.rx_ant_dtu==16392);
+ assert(!uwb_config_set(&b,"antenna_offset_mm","0")&&b.tx_ant_dtu==16380&&b.rx_ant_dtu==16380);
+ assert(!uwb_config_set(&b,"tx_ant_dtu","15000")&&!uwb_config_set(&b,"rx_ant_dtu","17000"));
+ memset(flash,255,sizeof(flash));uint32_t gen;
+ assert(uwb_config_save(&store,&b,&gen));assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&b,&c));
+ a=b;assert(!uwb_config_set(&b,"antenna_offset_mm","-50"));memcpy(backup,flash,sizeof(flash));
+ for(int fail=0;fail<=32;fail++){
+  memcpy(flash,backup,sizeof(flash));budget=fail;bool ok=uwb_config_save(&store,&b,&gen);budget=-1;
+  assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&c,ok?&b:&a));
+ }
+}
 int main(void) {
  uwb_config_t a,b,c;uwb_config_defaults(&a);assert(!uwb_config_validate(&a));uint32_t gen=0;
  assert(uwb_config_crc((const uint8_t *)"123456789",9)==0xCBF43926);
@@ -124,5 +143,6 @@ int main(void) {
  assert(uwb_config_save(&store,&b,&gen)&&gen==1024&&erases==eraseBefore);
  assert(uwb_config_save(&store,&a,&gen)&&gen==1025&&erases==eraseBefore+1);
  assert(uwb_config_load(&store,&c,&gen)&&uwb_config_equal(&c,&a));
+ antenna_offsets();
  printf("configuration CRC/schema/validation/calibration/journal/power-cut tests passed (%u erases)\n",erases);return 0;
 }

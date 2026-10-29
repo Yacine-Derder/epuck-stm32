@@ -645,3 +645,87 @@ initiator and RLR clocks, signed skews, separate/coalesced TX/RX, another RLR's
 assignment, late SPI, incorrect marker/hash, missing IRQ/deadline, stale TX status,
 broadcast priority after expiry and failed-RX recovery. Tests drive simulated
 registers; no hardware was programmed or operated.
+
+## Absolute hardware antenna offset in millimetres
+
+The immutable DWM3000 configuration defaults are TX16380/RX16380 DTU (the
+`UWB_ANTENNA_BASE_*_DTU` constants), independent of saved values. With RF OFF:
+
+```text
+off
+cfg set antenna_offset_mm -50
+cfg show saved
+```
+
+Positive offsets increase programmed delay, reducing measured range. Requests are
+absolute relative to those defaults, never added to the saved calibration.
+Repeating the same effective pair does not write flash. `+50` and `0` are accepted;
+malformed/noninteger input or a derived register outside0..65535 is rejected
+without changing either value. `on` resumes only when the operator is ready.
+
+The same shared integer helper as LPS computes
+`aggregate=round(mm*127795200/299792458)`,
+`txDelta=round(44*aggregate/100)`, `rxDelta=aggregate-txDelta`.
+Rounding is nearest with exact ties away from zero, including negative values.
+The44/56 split is an engineering assumption, not independently identified TX/RX
+calibration. No TWR/TDoA, clock, scheduling, power or packet mathematics changed.
+
+| Requested mm | Saved TX | Saved RX | Calculated equivalent mm |
+|---:|---:|---:|---:|
+| -50 |16371|16368|-49.264|
+| 0 |16380|16380|0.000|
+| +50 |16389|16392|49.264|
+
+Only existing TX/RX fields are persisted, together in the existing atomic
+configuration record. No field, schema version, migration write or reset was
+added. Existing manual `cfg set tx_ant_dtu N` / `cfg set rx_ant_dtu N` remain
+available. Upgrading firmware preserves any old manual pair.
+
+`cfg show saved` displays the original baseline alongside the existing saved
+register lines, `offset_mm=MANUAL/CUSTOM (not stored)` and a calculated
+`equivalent_mm` when the pair matches the44/56 model. A nonmatching manual pair
+shows `equivalent_mm=MANUAL/CUSTOM`. Integer DTU quantization maps multiple input
+millimetre values to the same pair (49 and50mm, for example). Therefore the
+requested offset cannot be reconstructed unambiguously after reboot. The signed
+0.001mm-resolution equivalent is derived from aggregate DTU, not a fabricated
+saved scalar and not a physical accuracy bound.
+
+ADS-only `correction_mm` and `cal show` are separate. Setting the hardware offset
+does not apply or enable ADS correction or alter its amount. As with existing
+manual antenna changes, an actual register change invalidates the ADS calibration
+enable flag; unchanged registers preserve it. This retains the existing safety
+policy rather than treating a new hardware delay as compatible with an old fit.
+
+Build/verify without devices:
+
+```sh
+cd ~/Documents/epuck-stm32
+cmake --preset Universal
+cmake --build --preset Universal
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
+bash tests/runtime_config/run.sh
+```
+
+The Universal image uses FLASH167768/786432 B (618664 B free), reserved/static
+RAM44168/131072 B (86904 B free), CCM0. Before this interface: FLASH166832 B and
+the same RAM. Persistent configuration sectors remain excluded from load segments.
+No task/interrupt-stack reservation changed.
+
+Operator-only programming using the established ST-Link setup, **not run by the
+assistant**:
+
+```sh
+cd ~/Documents/epuck-stm32
+source ~/.espressif/tools/activate_idf_v6.1.sh
+openocd -s "$OPENOCD_SCRIPTS" -f interface/stlink.cfg -f target/stm32f4x.cfg \
+  -c 'program build/Universal/EPuck_STM32.elf verify reset exit'
+```
+
+Record `cfg show saved` and `cal show` before programming. Follow the existing
+[hardware setup procedure](../../epuck-esp32/docs/disconnect_diagnostics.md),
+preserve configuration sectors and avoid mass erase. After programming, issue
+`off`, confirm RF stopped, and inspect both displays: prior saved registers and
+ADS amount must remain. If deliberately testing an offset, repeat it and reboot
+with RF OFF to check idempotence/persistence. Restore the previously recorded
+manual TX/RX pair and ADS settings if this was only an interface check. No physical
+calibration experiment was performed or is needed to verify the software interface.

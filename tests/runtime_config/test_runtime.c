@@ -163,6 +163,17 @@ int main(void) {
  command("CFG SET telemetry on");tick+=1000;uwb_runtime_task();assert(count&&wifiCount);
  unsigned lost=wifiDrops;tick+=1001;uwb_runtime_task();assert(wifiDrops>lost);
  command("CFG SET telemetry_format compact");command("CFG SET wifi off");assert(!wifiEnabled);persisted();
+ command("off");command("cfg set correction_mm 123");command("cfg set calibration on");
+ command("cfg set antenna_offset_mm -50");persisted();
+ assert(current.tx_ant_dtu==16371&&current.rx_ant_dtu==16368&&!current.calibration&&current.correction_mm==123);
+ beforeWrites=nvWrites;command("cfg set antenna_offset_mm -50");assert(nvWrites==beforeWrites);
+ uwb_runtime_init();assert(current.tx_ant_dtu==16371&&current.rx_ant_dtu==16368&&current.correction_mm==123);
+ captured[0]=0;command("cfg show saved");drain();
+ assert(strstr(captured,"offset_mm=MANUAL/CUSTOM")&&strstr(captured,"equivalent_mm=-49.264"));
+ command("mode twr");command("on");assert(started&&current.rf_enabled);beforeWrites=nvWrites;command("cfg set antenna_offset_mm +50");assert(nvWrites==beforeWrites&&current.tx_ant_dtu==16371);
+ command("off");command("cfg set antenna_offset_mm 0");persisted();assert(current.tx_ant_dtu==16380&&current.rx_ant_dtu==16380);
+ command("cfg set tx_ant_dtu 15000");command("cfg set rx_ant_dtu 17000");persisted();
+ captured[0]=0;command("cfg show saved");drain();assert(strstr(captured,"equivalent_mm=MANUAL/CUSTOM"));
  puts("same-binary immediate persistence/rollback/roles/8-bit IDs/help/old SAVE sequence/recovery tests passed");return 0;
 }
 

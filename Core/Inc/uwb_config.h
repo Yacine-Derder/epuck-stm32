@@ -8,6 +8,8 @@
 #include "mul_ranging_plan.h"
 #include "mul_clock_fit.h"
 /* Explicit little-endian wire schema; never persist a C structure. */
+#define UWB_ANTENNA_BASE_TX_DTU 16380u
+#define UWB_ANTENNA_BASE_RX_DTU 16380u
 #define UWB_CONFIG_VERSION 5u
 #define UWB_CONFIG_MULTI_VERSION 6u
 #define UWB_CONFIG_CLOCK_VERSION 7u

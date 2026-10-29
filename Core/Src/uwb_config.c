@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "uwb_config.h"
 #include "mul_common.h"
+#include "mul_antenna_offset.h"
 #include <limits.h>
 #include <math.h>
 #include <string.h>
@@ -27,7 +28,7 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
 }
 void uwb_config_defaults(uwb_config_t *c) {
   *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
-    .slot_ms=10,.reference=0x84,.follower=0x85,.tx_ant_dtu=16380,.rx_ant_dtu=16380,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
+    .slot_ms=10,.reference=0x84,.follower=0x85,.tx_ant_dtu=UWB_ANTENNA_BASE_TX_DTU,.rx_ant_dtu=UWB_ANTENNA_BASE_RX_DTU,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
 }
 void uwb_config_clock(const uwb_config_t *c,mulClockFitConfig_t *clock) {
  if(c->clock.periodMs)*clock=c->clock;else {mulClockFitDefaults(clock);if(c->schedule.profile)clock->periodMs=c->schedule.periodMs;}
@@ -143,6 +144,14 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
   if(field[f]||value[valueLength]) return "field/value too long";
   fieldLower[f]=valueLower[valueLength]=0;field=fieldLower;value=valueLower;
   if(!strcmp(field,"address"))field="node";
+  if(!strcmp(field,"antenna_offset_mm")) {
+    uint16_t tx,rx;
+    if(!mulAntennaOffsetParse(value,UWB_ANTENNA_BASE_TX_DTU,UWB_ANTENNA_BASE_RX_DTU,&tx,&rx))return "antenna_offset_mm: signed integer/register range";
+    uwb_config_t candidate=*c;candidate.tx_ant_dtu=tx;candidate.rx_ant_dtu=rx;
+    // Same hardware-delay safety policy as manual overrides; ADS amount is untouched.
+    if(tx!=c->tx_ant_dtu||rx!=c->rx_ant_dtu)candidate.calibration=0;
+    const char *error=uwb_config_validate(&candidate);if(!error)*c=candidate;return error;
+  }
   if(!strcmp(field,"rf_enabled")) {
     uwb_config_t candidate=*c;
     if(!strcmp(value,"on")||!strcmp(value,"1"))candidate.rf_enabled=1;

@@ -1,3 +1,4 @@
+#include "mul_antenna_offset.h"
 /* SPDX-License-Identifier: MIT */
 #include "uwb_runtime.h"
 #if MUL_UNIVERSAL
@@ -93,6 +94,7 @@ static const char *const help_config[]={
   "  - phy: mixed only; channel5, 6.8Mbps, code9, preamble128",
   "  - reference, follower: distinct legacy TDMA IDs 0..254",
   "  - tx_ant_dtu, rx_ant_dtu: 0..65535; hardware antenna delays",
+  "  - antenna_offset_mm: signed absolute baseline offset; requires RF OFF",
   "  - calibration: off | on; correction_mm: -10000..10000",
   "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
   "  - telemetry, wifi, samples: off | on; see help telemetry",
@@ -444,6 +446,13 @@ static void display_output(void) {
   case 15:snprintf(text,sizeof(text),"Schema version:     %u; saved settings loaded at boot: %s",c->plan_present?UWB_CONFIG_PLAN_VERSION:c->schedule.profile==MUL_PROFILE_EXPERIMENTAL?UWB_CONFIG_TIMING_VERSION:c->clock.periodMs?UWB_CONFIG_CLOCK_VERSION:c->schedule.profile?UWB_CONFIG_MULTI_VERSION:UWB_CONFIG_VERSION,displayBoot?"YES":"NO");break;
   case 16:snprintf(text,sizeof(text),"Configuration:      %s",displayState);break;
   case 18:snprintf(text,sizeof(text),"Wi-Fi UART telemetry: %s; format: compact v2",onoff(c->wifi));break;
+  case 24:{int32_t um;
+    if(mulAntennaOffsetEquivalentUm(UWB_ANTENNA_BASE_TX_DTU,UWB_ANTENNA_BASE_RX_DTU,c->tx_ant_dtu,c->rx_ant_dtu,&um)){
+      uint32_t magnitude=um<0?-um:um;
+      snprintf(text,sizeof(text),"Antenna baseline=%u/%u offset_mm=MANUAL/CUSTOM (not stored) equivalent_mm=%s%lu.%03lu",UWB_ANTENNA_BASE_TX_DTU,UWB_ANTENNA_BASE_RX_DTU,um<0?"-":"",(unsigned long)(magnitude/1000),(unsigned long)(magnitude%1000));
+    }else snprintf(text,sizeof(text),"Antenna baseline=%u/%u offset_mm=MANUAL/CUSTOM equivalent_mm=MANUAL/CUSTOM",UWB_ANTENNA_BASE_TX_DTU,UWB_ANTENNA_BASE_RX_DTU);
+    break;
+  }
   case 23:snprintf(text,sizeof(text),"Generated plan: present=%u selected=%u; PLAN SHOW for full configuration",c->plan_present,c->plan_selected);break;
   case 22:snprintf(text,sizeof(text),"Protocol role:      %s",c->protocol_role==UWB_PROTOCOL_RLR?"rlr":"standalone");break;
   case 21:snprintf(text,sizeof(text),"RF enabled:         %s; selected mode retained while off",onoff(c->rf_enabled));break;
@@ -708,7 +717,7 @@ bool uwb_runtime_command(const char *line) {
       show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
-    if((!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"tx_lead_us")||!strcmp(token[2],"rx_budget_us")||!strcmp(token[2],"airtime_us")||!strcmp(token[2],"guard_us")||!strcmp(token[2],"alr_alr_twr")||!strcmp(token[2],"twr_reply_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
+    if((!strcmp(token[2],"antenna_offset_mm")||!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"tx_lead_us")||!strcmp(token[2],"rx_budget_us")||!strcmp(token[2],"airtime_us")||!strcmp(token[2],"guard_us")||!strcmp(token[2],"alr_alr_twr")||!strcmp(token[2],"twr_reply_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}
     uwb_config_t candidate=current;uint32_t oldTx=current.tx_ant_dtu,oldRx=current.rx_ant_dtu;const char *error=uwb_config_set(&candidate,token[2],token[3]);
     /* Preserve legacy cfg set mode auto-start semantics. Canonical mode above
      * changes only selection; explicit on/off is independent. */
