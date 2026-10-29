@@ -643,7 +643,7 @@ bool uwb_runtime_command(const char *line) {
 
   if(nt==2&&!strcmp(token[0],"clock")&&!strcmp(token[1],"show")) {
     char text[384];if(started&&active.mode>=4)mul_hybrid_radio_diagnostics(3,text,sizeof(text));
-    else {mulClockFitConfig_t config;uwb_config_clock(&current,&config);snprintf(text,sizeof(text),"CLOCK saved method=%u window=%u compensate=%u period_ms=%u",config.estimator,config.window,config.compensate,config.periodMs);}
+    else {mulClockFitConfig_t config;uwb_config_clock(&current,&config);snprintf(text,sizeof(text),"CLOCK saved method=%u window=%u compensate=%u period_ms=%u max_delay_ms=%u",config.estimator,config.window,config.compensate,config.periodMs,MUL_PROP_MAX_AGE_MS);}
     reply(text);return true;
   }
   if(nt==2&&!strcmp(token[0],"hybrid")&&(!strcmp(token[1],"status")||!strcmp(token[1],"diag")||!strcmp(token[1],"frames")||!strcmp(token[1],"frequency")||!strcmp(token[1],"ar"))) {

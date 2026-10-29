@@ -28,6 +28,7 @@ static void fitted_clock_runtime(void) {
  }
  assert(multiReceiver.fit.ready&&multiReceiver.fit.count==5&&abs(multiReceiver.rate.skewPpb-15000)<=1&&starts==transmissions);
  command("clock show");drain();assert(strstr(captured,"CLOCK method=2 window=5"));
+ assert(strstr(captured,"resets=1 reset_reason=1 max_delay_ms=6000"));
  command("off");command("cfg roster set 0x84 0x85");persisted();uwb_runtime_init();
  assert(!active.schedule.profile&&active.clock.estimator==2&&active.clock.window==5);
  command("on");assert(hybridReceiver.clockConfig.estimator==2&&hybridReceiver.clockConfig.window==5);

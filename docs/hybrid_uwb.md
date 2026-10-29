@@ -956,12 +956,12 @@ as a Wi-Fi-only capture counter. See the collector guide's counter-scope table.
 ### Median-5 / Kalman acceptance and resource limits
 
 Both consumers pin the canonical core at
-`5cb841f17859e84b300ff7b1c6fb462bccc6e1ae`; see `ThirdParty/mul_core/CLOCK.md`.
+`bdfe0a10a41368efb5592466be266142e9938d09`; see `ThirdParty/mul_core/CLOCK.md`.
 The full committed package is exported, including its existing AA-delay codec4
 support. No timing setting is changed; zero delay preserves codec2/3 plan identity
 and the existing826414CC full-plan fixture. Never hand-edit a consumer snapshot.
 
-Final Universal link: FLASH166672/786432 B (619760 B free), static RAM including
+Final Universal link: FLASH166832/786432 B (619600 B free), static RAM including
 linker stack/heap reservations44168/131072 B (86904 B free), CCM0/65536 B.
 Clock-fit state is160 B instead of336 B, configuration8 B; one fit/config workspace
 is168 B. No stack reservation was reduced. State/covariance arithmetic is double
@@ -997,3 +997,14 @@ calibration. Check warmup, epoch/outage recovery, fallback/status/age, unchanged
 slot/TWR behavior, telemetry completeness, deadline service and stack watermarks.
 A physical comparison is still required; receiver-only prototype RMSE differences
 were small and statistically inconclusive.
+
+
+The stationary-reliability update retains the Universal preset and on-air formats.
+`clock show` now includes reset count/last reset reason and effective maximum
+propagation age6000ms. Its innovation field is labelled `innovation_dtu`, not RMS.
+The shared reset-reason field occupies existing padding; RAM remains44168 B.
+No STM32 antenna storage was added: existing tx_ant_dtu/rx_ant_dtu settings already
+persist and drive hardware registers. Follow the three-pair procedure in
+`../epuck-esp32/docs/uwb_logging.md`; do not duplicate hardware and ADS-additive
+calibration parameters. Last-reset reason codes match the LPS guide. Portable
+strict/v2 tests prove AR maintenance gaps do not require changing the RF schedule.
