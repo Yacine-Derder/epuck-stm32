@@ -28,7 +28,14 @@ static void fitted_clock_runtime(void) {
  }
  assert(multiReceiver.fit.ready&&multiReceiver.fit.count==5&&abs(multiReceiver.rate.skewPpb-15000)<=1&&starts==transmissions);
  command("clock show");drain();assert(strstr(captured,"CLOCK method=2 window=5"));
- assert(strstr(captured,"resets=1 reset_reason=1 max_delay_ms=6000"));
+ assert(strstr(captured,"resets=1 reset_reason=1 recovered=0 holdover=0 max_delay_ms=6000"));
+ unsigned priorResets=multiReceiver.fit.resets;uint64_t priorEpoch=multiReceiver.rate.epoch;
+ for(unsigned slot=0;slot<4;slot++){
+  uint8_t frame[90];uint64_t rx;size_t n=packet(&active.schedule,slot,48,48,true,frame,&rx);
+  head=tail=count=wifiHead=wifiTail=wifiCount=0;memcpy(input,frame,n);length=n+2;rxMarker=rx;
+  tick=10000+48000+slot*10;status=DWT_INT_RXFCG_BIT_MASK;mul_hybrid_radio_process();
+ }
+ assert(multiReceiver.fit.recovered&&multiReceiver.fit.applied&&multiReceiver.fit.resets==priorResets&&multiReceiver.rate.epoch==priorEpoch);
  command("off");command("cfg roster set 0x84 0x85");persisted();uwb_runtime_init();
  assert(!active.schedule.profile&&active.clock.estimator==2&&active.clock.window==5);
  command("on");assert(hybridReceiver.clockConfig.estimator==2&&hybridReceiver.clockConfig.window==5);

@@ -1008,3 +1008,29 @@ persist and drive hardware registers. Follow the three-pair procedure in
 `../epuck-esp32/docs/uwb_logging.md`; do not duplicate hardware and ADS-additive
 calibration parameters. Last-reset reason codes match the LPS guide. Portable
 strict/v2 tests prove AR maintenance gaps do not require changing the RF schedule.
+
+### Bounded Kalman reference-gap recovery
+
+The canonical core pin08db4d8 retains a previously ready same-epoch filter through
+validated1..6s reference intervals. Mapping remains limited to2s and requires a
+new real capture for recovery. Median history restarts after a long gap and is
+not made a ready fallback by retained KF state. The actual DW3000 adapter test
+skips three reference cycles and asserts retained epoch, no reset and immediate
+KF application on return. Long outages, implausible sequence/timestamps, coordinate
+changes and covariance/innovation failures remain guarded. Explicit OFF/ON still
+initializes the owner. No schedule, antenna, motor or persistent field changed.
+
+`clock show` reports `recovered` (retained gap history) and `holdover` (eligible
+latent model with a stale mapping). These do not override mapping status, age,
+applied flag or uncertainty. No telemetry schema changed. The last covariance
+shown during silence is not a measurement at the current time. Full behavior and
+October30 counterfactual results are in
+`../lps-node-firmware/portable/mul_core/CLOCK.md` and
+`../lps-node-firmware/docs/mul_experiment_campaign.md`.
+
+Universal build: FLASH168480/786432 B (617952 B free), RAM44168/131072 B (86904 B
+free), CCM0. No reserved stack changed. Exact logged-baseline replay remains
+separate from `tools/clock_recovery_native.c`, the deliberately re-estimating
+host-only oracle used by the ESP repository's comparison tool. That tool compiles
+old/new canonical cores with identical snapshots, retaining on-air follower
+relations and explicitly acknowledging cold-start/missing-record limitations.
