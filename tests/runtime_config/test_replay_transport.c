@@ -45,7 +45,7 @@ int main(void) {
  const char *expectedPlan="02031446020302000A00E803170000008485000000000000E8038813E8030100721434A9018D0000000000000000E803320000000000000000000000CC146482";
  uint8_t wire[64];assert(mulRangingPlanEncode(wire,&active.plan));
  for(unsigned i=0;i<sizeof(wire);i++){unsigned byte;assert(sscanf(expectedPlan+2*i,"%2x",&byte)==1&&wire[i]==byte);}
- assert(mulRangingPlanFingerprint(&active.plan)==0x826414ccu);
+ assert(mulRangingPlanFingerprint(&active.plan)==0x65321a17u);
  activePlan=&active.plan;unsigned transmissions=starts;
  const char *phase=getenv("MUL_REPLAY_PHASE_MS");if(phase)hybridLastReport=9000+(unsigned)atoi(phase);
  for(unsigned step=0;step<200;step++) {

@@ -1034,3 +1034,42 @@ separate from `tools/clock_recovery_native.c`, the deliberately re-estimating
 host-only oracle used by the ESP repository's comparison tool. That tool compiles
 old/new canonical cores with identical snapshots, retaining on-air follower
 relations and explicitly acknowledging cold-start/missing-record limitations.
+
+### RF5 semantic plan identity and stored-plan compatibility
+
+Canonical corecd51263 fixes RF4's CRC-codeword cancellation. It computes live plan
+identity over semantic bytes with the embedded schedule CRC zeroed, preserving
+stored codecs2/3/4 and all integrity checks. Old saved plans need no migration
+write, reset or erase. Live generated broadcasts/TWR use version5 and reject RF4;
+lengths, scheduling and mathematical conversion are unchanged.
+
+Replay serialization now emits schema3 (same384 bytes/four fragments), which the
+host uses to derive the corrected fingerprint. Native unpack retains schema1/2
+for historical baselines. The plan payload's trailing storage CRC is intentionally
+unchanged and must not be substituted for the RF5 fingerprint.
+
+For revision23 and the full stationary fixture (lead1000/process5000/air1000/
+guard100us,10ms slots,1000ms cycle,AA1000/AR50mHz,reply20,util70,fair,AA delay0),
+ALRs132/133 with RLR141 hash65321A17; adding ALR134 gives8D53EE37. Revision1 yields
+856AB19D and6D0B45BD. All participants must share the complete intended plan.
+
+Operator-only update, after recording saved settings and stopping RF/robots:
+
+```sh
+cd ~/Documents/epuck-stm32
+cmake --preset Universal
+cmake --build --preset Universal
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
+source ~/.espressif/tools/activate_idf_v6.1.sh
+openocd -s "$OPENOCD_SCRIPTS" -f interface/stlink.cfg -f target/stm32f4x.cfg \
+  -c 'program build/Universal/EPuck_STM32.elf verify reset exit'
+```
+
+The agent did not run the programmer command. Preserve configuration sectors;
+never mass erase. Update every participating ALR/RLR to RF5 and the ESP bridge/
+collector before resuming. Saved plans and antenna values remain; inspect `plan
+show` while OFF, then require matching full plans and new hashes. An old/new mixed
+radio group deliberately fails closed. See `../lps-node-firmware/docs/mul_commands.md`
+and `../epuck-esp32/docs/uwb_logging.md` for group deployment and historical replay.
+Universal link usage: FLASH168504/786432 B (617928 B free), RAM44168/131072 B
+(86904 B free), CCM0. Load segments remain below reserved configuration sectors.
