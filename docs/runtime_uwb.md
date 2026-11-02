@@ -765,3 +765,10 @@ responder exchange at20ms replies, duplicate/late/deadline rejection and unchang
 range/calibration metadata. `MUL_REPLAY_TDMA=1 MUL_REPLAY_KALMAN=1` selects the
 three-ALR200ms replay fixture, including partial vectors, clock resets and wrap;
 this is a host-only fixture switch, not a firmware or live configuration option.
+
+While RF is OFF, `plan use off` followed by `plan set policy fair` explicitly
+returns a TDMA plan to codec2 with zero AA/AR target rates and utilization70.
+It retains roster/timing and unrelated settings; restore desired legacy rates
+from the saved configuration before selecting it. This provides a safe reverse
+transition without treating budget10/window90 as target rates. Deselecting codec5
+alone does not make its stored bytes compatible with an older decoder.

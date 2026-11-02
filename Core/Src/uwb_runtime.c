@@ -511,7 +511,10 @@ static void plan_command(unsigned nt,char **t) {
     unsigned flag=!strcmp(t[2],"aa")?MUL_PLAN_AA:MUL_PLAN_AR;
     if(!strcmp(t[3],"on"))p.enabled|=flag;else if(!strcmp(t[3],"off"))p.enabled&=~flag;else {reply("ERR plan class on/off");return;}
    }else if(!strcmp(t[2],"policy")) {
-    if(!strcmp(t[3],"fair")){p.policy=MUL_PLAN_FAIR;p.aaPriority=p.arPriority=0;}
+    if(!strcmp(t[3],"fair")) {
+     if(p.policy==MUL_PLAN_TDMA){p.aaMilliHz=p.arMilliHz=0;p.maxUtilization=70;}
+     p.policy=MUL_PLAN_FAIR;p.aaPriority=p.arPriority=0;
+    }
     else if(!strcmp(t[3],"freshness"))p.policy=MUL_PLAN_FRESHNESS;
     else {reply("ERR policy fair/freshness");return;}
    }else {

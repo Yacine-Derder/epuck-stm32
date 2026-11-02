@@ -62,6 +62,9 @@ static void tdma_commands(void) {
  for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){command(bad[i]);assert(nvWrites==writes&&uwb_config_equal(&current,&before));}
  captured[0]=0;command("plan show");drain();assert(strstr(captured,"guard_us=85900")&&strstr(captured,"kalman_budget_ms=10")&&strstr(captured,"cycle=4 index=0"));
  command("on");assert(started&&current.plan_selected);writes=nvWrites;command("plan set kalman_budget_ms 20");assert(nvWrites==writes);command("off");
+ command("plan use off");command("plan set policy fair");persisted();
+ assert(!current.plan_selected&&mulRangingPlanVersion(&current.plan)==2&&!current.plan.aaMilliHz&&!current.plan.arMilliHz&&current.plan.maxUtilization==70);
+ before=current;uwb_runtime_init();assert(uwb_config_equal(&before,&current));
  puts("TDMA console: shared LPS55ADA235, four controls, first5 preview, RF-OFF/no-write rejection and EEPROM reboot passed");
 }
 int main(void) {
