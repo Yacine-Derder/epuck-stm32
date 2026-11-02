@@ -1073,3 +1073,77 @@ radio group deliberately fails closed. See `../lps-node-firmware/docs/mul_comman
 and `../epuck-esp32/docs/uwb_logging.md` for group deployment and historical replay.
 Universal link usage: FLASH168504/786432 B (617928 B free), RAM44168/131072 B
 (86904 B free), CCM0. Load segments remain below reserved configuration sectors.
+
+### Generated-plan AA start delay on STM32
+
+`plan set aa_start_delay_us N` now accepts an unsigned 32-bit delay in microseconds,
+subject to the canonical LPS planner's reservation/cycle-overlap validation. Edits
+require RF OFF and use the existing immediate, verified configuration journal;
+`plan show` includes `aa_start_delay_us` on its timing line. Nonzero delay selects
+plan codec4. Zero restores codec2 (fair policy) or codec3 (freshness policy), with
+the original zero-delay bytes and hash. No storage migration or default reset is
+needed. The existing shared receiver already supported codec4: only the STM32
+console setter/help/display were missing. RF5, the shared core, estimator,
+calibration and radio algorithms are unchanged.
+
+The delay shifts only AA operation windows (start, poll and end); AR windows and
+broadcast offsets remain unchanged. All radios must have the same complete plan,
+including delay and revision, or RF5 full-plan matching rejects packets. Codec4
+is a configuration version, not a new RF protocol. Existing RF5 LPS and ESP32
+firmware need no update for this STM32 console fix.
+
+Offline cross-platform golden fixture (not an assertion about live configuration):
+ALRs132/133/134, RLR141, revision1, slot5ms, cycle1000ms, reply20ms, AA/AR each
+1000mHz enabled, fair policy, utilization70%, lead1000us, process2000us,
+air1000us, guard100us. Compiling the same probe against canonical LPS and STM32
+shared planners gives:
+
+| AA delay (us) | Codec | Full RF5 fingerprint |
+| --- | --- | --- |
+| 0 | 2 | `32FC5019` |
+| 50000 | 4 | `552FF855` |
+| 70000 | 4 | `F804555D` |
+
+Different revisions/timing/rates/policies produce different expected hashes.
+Do not overwrite saved settings with this fixture. `plan set aa_start_delay_us
+50000` is the operator command for an intended 50ms delay; it is not run by the
+build or programmer. Read `plan show` before and after any separately authorized
+configuration edit and compare all fields against the ALRs.
+
+Offline validation:
+
+```sh
+cd ~/Documents/epuck-stm32
+python3 ThirdParty/mul_core/verify.py
+bash ThirdParty/mul_core/tests/run.sh
+bash tests/runtime_config/run.sh
+cmake --preset Universal
+cmake --build --preset Universal
+python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf
+```
+
+The runtime suite covers delay0/50000/70000 commands and hashes, malformed and
+overlapping delays, RF-OFF enforcement, unchanged Kalman/calibration settings,
+reboot/no-write behavior, failed-write rollback, and byte-identical return to
+codec2. Plan storage tests exercise codec4 at every append/rotation power-cut
+point. Actual adapter tests ingest codec4 RF5 broadcasts at multiple roster sizes,
+reject hash mismatches, and retain TDoA/queue behavior with stubbed hardware.
+These are software tests, not physical validation.
+
+Operator-only firmware update: keep RF OFF/robots stopped, record saved settings,
+and run the Universal build and ELF check above. Then use the existing ST-Link
+procedure (never mass erase or erase configuration sectors):
+
+```sh
+source ~/.espressif/tools/activate_idf_v6.1.sh
+openocd -s "$OPENOCD_SCRIPTS" -f interface/stlink.cfg -f target/stm32f4x.cfg \
+  -c 'program build/Universal/EPuck_STM32.elf verify reset exit'
+```
+
+Only the STM32 needs reflashing for this fix; retain its saved configuration and
+inspect `plan show` while OFF afterward. The programmer command resets the MCU;
+RF follows its saved enable state, so confirm saved RF OFF before programming.
+No hardware was accessed, flashed or physically validated by the agent.
+Universal memory usage: FLASH168652/786432 B, RAM44168/131072 B, CCM0; RAM and
+stack reservations are unchanged. The load segments stay below configuration
+sectors at0x080C0000.

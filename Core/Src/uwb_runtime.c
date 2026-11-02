@@ -103,6 +103,7 @@ static const char *const help_config[]={
   "  - plan init/show/use on|off; alrs id0 id1 ...; rlrs [id ...]",
   "  - plan set aa|ar on|off; aa_millihz|ar_millihz 0..10000",
   "  - plan set slot_ms|cycle_ms|lead_us|process_us|air_us|guard_us N",
+  "  - plan set aa_start_delay_us N (AA windows only; 0 restores codec2/3)",
   "  - plan set reply_ms 5|10|20; util_percent 10..80; revision N",
   "  - plan set policy fair|freshness; aa_priority|ar_priority 0..255",
   "  - Generated plans receive RF4; AR replies only in assigned responder slots",
@@ -387,7 +388,7 @@ static void display_output(void) {
     if(!c->plan_present) {if(displayIndex){display=0;return;}snprintf(text,sizeof(text),"PLAN absent; use plan init with RF OFF");}
     else if(mulRangingPlanValidate(p,&b)){display=0;reply("ERR invalid plan");return;}
     else if(displayIndex==0)snprintf(text,sizeof(text),"PLAN selected=%u codec=%u hash=%08lX generation=%lu RF4=%s",c->plan_selected,mulRangingPlanVersion(p),(unsigned long)mulRangingPlanFingerprint(p),(unsigned long)displayGeneration,(p->enabled&MUL_PLAN_AR)?"scheduled_AR":"passive");
-    else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs);
+    else if(displayIndex==1)snprintf(text,sizeof(text),"PLAN TIMING slot_ms=%u cycle_ms=%u lead_us=%u process_us=%u air_us=%u guard_us=%u reply_ms=%u aa_start_delay_us=%lu",p->broadcast.slotMs,p->broadcast.periodMs,p->broadcast.txLeadUs,p->broadcast.rxBudgetUs,p->broadcast.airtimeUs,100u*p->broadcast.guard100us,p->replyMs,(unsigned long)p->aaStartDelayUs);
     else if(displayIndex==2)snprintf(text,sizeof(text),"PLAN RATES aa=%u ar=%u aa_millihz=%u ar_millihz=%u utilization_percent=%u reservation_us=%lu capacity=%u policy=%u aa_priority=%u ar_priority=%u",!!(p->enabled&MUL_PLAN_AA),!!(p->enabled&MUL_PLAN_AR),p->aaMilliHz,p->arMilliHz,p->maxUtilization,(unsigned long)b.reservationUs,b.capacity,p->policy,p->aaPriority,p->arPriority);
     else if(displayIndex<3u+p->broadcast.count)snprintf(text,sizeof(text),"PLAN ALR slot=%u id=%u",displayIndex-3,p->broadcast.ids[displayIndex-3]);
     else if(displayIndex<3u+p->broadcast.count+p->rlrCount){unsigned i=displayIndex-3-p->broadcast.count;snprintf(text,sizeof(text),"PLAN RLR slot=%u id=%u",i,p->rlrs[i]);}
@@ -508,6 +509,7 @@ static void plan_command(unsigned nt,char **t) {
    }else {
     unsigned n;if(!number(t[3],UINT32_MAX,&n)){reply("ERR plan unsigned integer");return;}
     if(!strcmp(t[2],"revision"))p.broadcast.revision=n;
+    else if(!strcmp(t[2],"aa_start_delay_us"))p.aaStartDelayUs=n;
     else {
      if(n>UINT16_MAX){reply("ERR plan field exceeds uint16");return;}
      if(!strcmp(t[2],"aa_millihz"))p.aaMilliHz=n;
