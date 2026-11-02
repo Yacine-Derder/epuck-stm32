@@ -51,8 +51,21 @@ static void aa_delay_commands(void) {
  assert(strstr(captured,"codec=2 hash=32FC5019")&&strstr(captured,"aa_start_delay_us=0"));
  puts("AA delay console: LPS golden hashes, codec2/4, uint32 validation, AA-only placement, RF-OFF, persistence and write rollback passed");
 }
+static void tdma_commands(void) {
+ memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 141");command("mode hybrid_static");command("off");
+ command("plan init");command("plan set lead_us 1000");command("plan set process_us 2000");command("plan set slot_ms 5");
+ command("plan alrs 132 134 133");command("plan rlrs 141");command("plan set reply_ms 20");
+ command("plan mode tdma");command("plan set kalman_budget_ms 10");command("plan set twr_window_ms 90");command("plan set cycle_ms 200");command("plan use on");persisted();
+ assert(current.plan.policy==MUL_PLAN_TDMA&&mulRangingPlanFingerprint(&current.plan)==0x55ADA235);
+ uwb_config_t before=current;unsigned writes=nvWrites;uwb_runtime_init();assert(nvWrites==writes&&uwb_config_equal(&current,&before));
+ const char *bad[]={"plan set cycle_ms 100","plan set slot_ms 3","plan set twr_window_ms 87","plan set kalman_budget_ms 4","plan set ar_millihz 50"};
+ for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++){command(bad[i]);assert(nvWrites==writes&&uwb_config_equal(&current,&before));}
+ captured[0]=0;command("plan show");drain();assert(strstr(captured,"guard_us=85900")&&strstr(captured,"kalman_budget_ms=10")&&strstr(captured,"cycle=4 index=0"));
+ command("on");assert(started&&current.plan_selected);writes=nvWrites;command("plan set kalman_budget_ms 20");assert(nvWrites==writes);command("off");
+ puts("TDMA console: shared LPS55ADA235, four controls, first5 preview, RF-OFF/no-write rejection and EEPROM reboot passed");
+}
 int main(void) {
- aa_delay_commands();
+ aa_delay_commands();tdma_commands();
  memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 141");
  command("peer add 132");command("peer add 133");command("cfg set mode hybrid_static");
  assert(started);unsigned writes=nvWrites;command("plan init");assert(nvWrites==writes&&!current.plan_present);

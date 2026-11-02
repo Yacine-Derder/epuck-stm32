@@ -729,3 +729,39 @@ ADS amount must remain. If deliberately testing an offset, repeat it and reboot
 with RF OFF to check idempotence/persistence. Restore the previously recorded
 manual TX/RX pair and ADS settings if this was only an interface check. No physical
 calibration experiment was performed or is needed to verify the software interface.
+
+
+## Opt-in codec5 TDMA plan
+
+The shared planner is exported from canonical LPS revision `6dc04c7`. Firmware
+accepts existing codec2/3/4 plans unchanged and explicit codec5/policy2 TDMA. Boot
+never migrates a saved plan. RF remains RF5; the full fingerprint, cycle, source,
+pair and operation-index checks remain mandatory. The existing schema9 atomic
+configuration journal embeds the same64-byte plan. No new calibration parameter
+or configuration-sector address is introduced.
+
+With RF OFF, use `plan mode tdma` (or `plan init tdma` only when absent), then
+`plan set slot_ms 5`, `plan set kalman_budget_ms 10`, `plan set twr_window_ms 90`,
+`plan set cycle_ms 200`. Set ALR roster `132 134 133` and RLR roster `141` before
+conversion (or enable `plan set ar on` after adding RLRs). Preserve node/role/PHY
+and calibration. `plan show` exposes both budgets, remaining guard and the first
+five cycle-indexed pairs. Each successful command persists; malformed or RF-ON
+edits perform no writes. New firmware is required on all ALRs and the RLR; there
+is no safe mixed-plan fallback. ESP32 firmware needs no change.
+
+The complete low-level timing, exact command order, example hash **55ADA235**,
+old-plan rollback, build/flash instructions and physical acceptance procedure are
+in the [canonical TDMA guide](https://github.com/Yacine-Derder/lps-node-firmware/blob/master/docs/mul_tdma.md).
+The STM32 build remains `cmake --preset Universal` and
+`cmake --build --preset Universal`; run
+`python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf`
+before an operator programs load segments without mass-erasing configuration.
+No hardware validation or activation was performed by this campaign.
+
+Offline tests cover codec5 atomic EEPROM/flash persistence and interrupted writes,
+shared LPS golden identity and canonical pairs, actual DW3000 passive reception
+across counter wrap/loss,200ms variable-time-step clock acquisition, full AR
+responder exchange at20ms replies, duplicate/late/deadline rejection and unchanged
+range/calibration metadata. `MUL_REPLAY_TDMA=1 MUL_REPLAY_KALMAN=1` selects the
+three-ALR200ms replay fixture, including partial vectors, clock resets and wrap;
+this is a host-only fixture switch, not a firmware or live configuration option.

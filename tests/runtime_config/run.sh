@@ -161,6 +161,7 @@ fi
 
 python3 tools/build_replay_host.py --fixture --sanitize --output "$work/replay"
 "$work/replay"
+MUL_REPLAY_TDMA=1 MUL_REPLAY_KALMAN=1 "$work/replay"
 python3 tools/build_replay_host.py --sanitize --output "$work/replay_native"
 
 python3 tools/build_replay_host.py --transport --sanitize --output "$work/replay_transport"

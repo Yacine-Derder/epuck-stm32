@@ -8,7 +8,7 @@ static unsigned operation;
 static uint8_t responderReplyMs=5;
 static const int64_t msDtu=63897600,flightDtu=2131;
 static int32_t receiverPpb,initiatorPpb;
-static bool deliveryMode,saturateResult,sawRange;
+static bool tdmaMode,deliveryMode,saturateResult,sawRange;
 static unsigned rawCount,rawTxCount;
 static mulTelemetry_t deliveredRange;
 static uint8_t lastRawFrame[90];
@@ -57,12 +57,13 @@ static mulTwrPacket_t prepareRange(int32_t ppb,int32_t senderPpb) {
  mulScheduleLegacy(&plan.broadcast,32,33,10);mulScheduleExperimental(&plan.broadcast);plan.broadcast.rangingFlags=0;
  plan.broadcast.txLeadUs=500;plan.broadcast.rxBudgetUs=2000;plan.broadcast.airtimeUs=400;
  if(deliveryMode){plan.enabled|=MUL_PLAN_AA;plan.aaMilliHz=1000;plan.policy=MUL_PLAN_FRESHNESS;plan.aaPriority=2;plan.arPriority=1;}
+ if(tdmaMode){plan.rlrCount=1;plan.rlrs[1]=0;plan.broadcast.slotMs=5;plan.broadcast.periodMs=200;mulRangingPlanTdma(&plan);}
  assert(!mulRangingPlanValidate(&plan,NULL));mulClockReset(&receiverClock);
  for(unsigned i=0;i<6;i++) {
-  int64_t physical=((int64_t)i-5)*1000*msDtu;mulTestPacket_t ref={.sequence=i,.txTimestamp=mulTimestampMask(900000+physical)};
+  int64_t physical=((int64_t)i-5)*plan.broadcast.periodMs*msDtu;mulTestPacket_t ref={.sequence=i,.txTimestamp=mulTimestampMask(900000+physical)};
   const uint8_t address[8]={32,0,0,0,0,0,0xcf,0xbc};memcpy(ref.source,address,8);
   mulNetwork_t n;assert(mulNetworkInit(&n,32,33));
-  mulClockObserveNetwork(&n,&receiverClock,&ref,stamp(1,physical+flightDtu),i*1000,true);
+  mulClockObservePeriodNetwork(&n,&receiverClock,&ref,stamp(1,physical+flightDtu),5000+(i-5)*(unsigned)plan.broadcast.periodMs,true,plan.broadcast.periodMs);
  }
  assert(receiverClock.status==mulClockValid);mul_plan_radio_configure(&plan,141,&receiverClock,true);mul_plan_radio_reference(5,1);
  operation=99;mulRangingOperation_t op;
@@ -182,6 +183,7 @@ int main(void) {
   p=prepareRange(rates[i],-rates[i]);poll=physicalAt(0,p.stamps[0]);rxResult=DWT_ERROR;startResult=DWT_ERROR;deliver(&p,poll+flightDtu);
   assert(!mul_plan_radio_busy()&&!mockRadioActive);rxResult=startResult=DWT_SUCCESS;status=0;service();assert(mockRadioActive);
  }
+ tdmaMode=true;completion(false,-150000,35000,20);completion(true,150000,-45000,20);tdmaMode=false;
  passiveAaCapture();
  planClockOverride=false;if(trace)fclose(trace);
  puts("DW3000 planned responder: five messages, independent initiator/reference/RLR clocks, raw ToF, delayed512/antenna markers, coalesced IRQ, commit identity, no-retry, late SPI/stamp/deadline/hash/broadcast, rearm recovery and passive AA samples off/on byte-preserving zero-TX capture passed");return 0;

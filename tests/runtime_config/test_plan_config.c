@@ -24,7 +24,7 @@ int main(void) {
  assert(!uwb_config_plan_set(&ar,&assigned,true));uwb_config_t beforeAr=ar;
  assert(uwb_config_set(&ar,"rf_enabled","on")&&uwb_config_equal(&ar,&beforeAr));
  ar.node=141;assert(!uwb_config_set(&ar,"rf_enabled","on"));
- for(unsigned profile=0;profile<4;profile++)for(unsigned selected=0;selected<2;selected++) {
+ for(unsigned profile=0;profile<5;profile++)for(unsigned selected=0;selected<2;selected++) {
   uwb_config_t old,c,loaded;uwb_config_defaults(&old);old.node=141;old.mode=4;old.protocol_role=UWB_PROTOCOL_RLR;
   if(profile)assert(!uwb_config_set(&old,"clock_estimator","kalman"));
   if(profile==2) {
@@ -33,11 +33,12 @@ int main(void) {
   }
   c=old;mulRangingPlan_t p=plan();if(profile==2){p.policy=1;p.aaPriority=200;p.arPriority=1;}
   if(profile==3)p.aaStartDelayUs=50000;
-  assert(mulRangingPlanVersion(&p)==(profile==3?4:profile==2?3:2));assert(!uwb_config_plan_set(&c,&p,selected));
+  if(profile==4){p.broadcast.slotMs=5;mulRangingPlanTdma(&p);}
+  assert(mulRangingPlanVersion(&p)==(profile==4?5:profile==3?4:profile==2?3:2));assert(!uwb_config_plan_set(&c,&p,selected));
   assert(c.reference==old.reference&&c.follower==old.follower&&c.slot_ms==old.slot_ms);
   assert(!memcmp(&c.schedule,&old.schedule,sizeof(c.schedule))&&!memcmp(&c.clock,&old.clock,sizeof(c.clock)));
   mulSchedule_t effective,retained;uwb_config_schedule(&c,&retained);uwb_config_effective_schedule(&c,&effective);
-  assert(effective.slotMs==(selected?3:old.slot_ms));assert(effective.periodMs==(selected?200:profile==2?500:1000));
+  assert(effective.slotMs==(selected?p.broadcast.slotMs:old.slot_ms));assert(effective.periodMs==(selected?200:profile==2?500:1000));
   mulClockFitConfig_t clock;uwb_config_effective_clock(&c,&clock);assert(clock.periodMs==effective.periodMs);
   assert(effective.ids[0]==(selected?32:132));
   uwb_config_t before=c;
