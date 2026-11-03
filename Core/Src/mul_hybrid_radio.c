@@ -18,6 +18,9 @@ static uwb_config_t hybridConfig;
 static uint32_t hybridErrors,hybridTimeouts,hybridLastReport;
 static bool hybridRetry;
 static uint8_t hybridLastStatus;
+static mulLocalization_t humanObservation;
+static bool humanPending;
+static uint32_t humanDropped,humanFiltered,humanLastSummary;
 /* Fixed-size, on-demand evidence only: no automatic packet trace or heap. */
 static struct {uint8_t frame[84],length;uint64_t rx;uint32_t age,observedMs;
 #if MUL_HYBRID_FREQ_DIAG
@@ -43,7 +46,7 @@ static void hybridRearm(void) {
  hybridRetry=dwt_rxenable(DWT_START_RX_IMMEDIATE)!=DWT_SUCCESS;if(hybridRetry)hybridErrors++;
 }
 void mul_hybrid_radio_configure(const uwb_config_t *c) {
- mulReplayReset();
+ mulReplayReset();if(humanPending)humanFiltered++;humanPending=false;
  memset(hybridFrames,0,sizeof(hybridFrames));
 #if MUL_HYBRID_FREQ_DIAG
  /* Called with RX stopped by the universal radio owner. Diagnostic logging
@@ -83,6 +86,7 @@ void mul_hybrid_radio_status(char *line,size_t capacity) {
  (unsigned long)hybridReceiver.pairs,hybridLastStatus,mulObservationFresh(&hybridReceiver.observations[mulAlrReference],HAL_GetTick()),mulObservationFresh(&hybridReceiver.observations[mulAlrFollower],HAL_GetTick()),(unsigned long)hybridReceiver.twrCompleted,(unsigned long)hybridReceiver.twrRejected,(unsigned long)hybridReceiver.twrTimeouts,(unsigned long)hybridErrors,(unsigned long)hybridTimeouts,(unsigned long)hybridReceiver.diagnostics.reason[mulHybridScheduleMismatch]);
 }
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity) {
+ if(page==5){snprintf(line,capacity,"LOG level=%lu dropped=%lu filtered=%lu pending=%u",(unsigned long)uwb_runtime_active()->verbosity,(unsigned long)humanDropped,(unsigned long)humanFiltered,humanPending);return;}
  if(page==4&&hybridConfig.plan_selected) {
   mulTelemetry_t r;if(mul_plan_radio_quality(&r))snprintf(line,capacity,"AR enabled=%u active=%u pending=%u attempts=%lu completed=%lu aborted=%lu rejected=%lu late=%lu timeout=%lu radio=%lu result_drop=%lu raw_drop=%lu reset=%lu reason=%u op=%u stage=%u",
    r.planQuality.enabled,r.planQuality.active,r.planQuality.pending,(unsigned long)r.attempts,(unsigned long)r.completed,(unsigned long)r.aborted,(unsigned long)r.rejected,
@@ -296,9 +300,8 @@ void mul_hybrid_radio_process(void) {
        .referenceGeneration=out.referenceGeneration,.followerGeneration=out.followerGeneration,.ratePolicy=hybridConfig.mode==5,
        .radioErrors=hybridErrors};
      memcpy(record.legacyFrame,frame,bytes);uwb_runtime_publish(&record);
-     if(out.associated&&hybridConfig.verbosity&&!uwb_runtime_help_active()) {
-       char line[192];snprintf(line,sizeof(line),"MULH OBS ref=%lu fol=%lu status=%u clock=%u rate=%u tdoa_dtu=%ld range_diff_mm=%ld power=UNSUPPORTED uncertainty=UNKNOWN",
-       (unsigned long)out.observation.referenceSequence,(unsigned long)out.observation.followerSequence,out.observation.status,out.observation.clockValid,out.observation.rateState,(long)out.observation.tdoaDtu,(long)out.observation.rangeDifferenceMm);usb_console_write(line);
+     if(out.associated&&uwb_runtime_active()->verbosity>=2&&!uwb_runtime_help_active()){
+       if(humanPending)humanDropped++;else {humanObservation=out.observation;humanPending=true;}
      }
    } else if(!shape||!enabled) {
      hybridReceiver.rejected++;
@@ -310,8 +313,32 @@ void mul_hybrid_radio_process(void) {
    hybridLastReport=now;uint32_t t[4];mul_timing_snapshot(t);
    mulTelemetry_t r={.type=mulTlmSummary,.peer=0xff,.attempts=hybridReceiver.received,.completed=hybridReceiver.pairs,.rejected=hybridReceiver.rejected,
    .radioErrors=hybridErrors,.timeouts=hybridTimeouts,.spiCycles=t[0],.serviceCycles=t[1],.gapCycles=t[2],.clockHz=t[3]};uwb_runtime_publish(&r);
-   if(hybridConfig.verbosity&&!uwb_runtime_help_active()){char line[320];mul_hybrid_radio_status(line,sizeof(line));usb_console_write(line);}
+
  }
  mul_timing_service(started);
 }
+void mul_hybrid_radio_log_poll(void){
+ unsigned level=uwb_runtime_active()->verbosity;
+ if(humanPending&&(level<2||uwb_runtime_help_active())){humanPending=false;humanFiltered++;}
+ if(!level||uwb_runtime_help_active()||usb_console_write_slots()<=4)return;
+ uint32_t now=HAL_GetTick();
+ if(!humanPending&&(uint32_t)(now-humanLastSummary)<5000)return;
+ if(hybridConfig.plan_selected||hybridConfig.schedule.profile>=MUL_PROFILE_MULTI){
+  if(!multiReceiver.hasCycle||mul_plan_radio_busy())return;
+  uint32_t elapsed=now-multiReceiver.cycleStartMs;
+  unsigned end=mulScheduleOffsetMs(&multiReceiver.schedule,multiReceiver.schedule.count-1)+2;
+  if(hybridConfig.plan_selected){mulRangingOperation_t op;
+   unsigned n=mulRangingPlanCount(&hybridConfig.plan,multiReceiver.cycle);
+   for(unsigned i=0;i<n;i++)if(mulRangingPlanOperation(&hybridConfig.plan,multiReceiver.cycle,i,&op)&&op.endUs/1000+2>end)end=op.endUs/1000+2;
+  }
+  if(elapsed<end||elapsed+20>=multiReceiver.schedule.periodMs)return;
+ }
+ char line[318]; // USB console reserves CRLF and NUL in its320-byte slot.
+ if(humanPending){const mulLocalization_t *o=&humanObservation;
+  snprintf(line,sizeof(line),"MULH OBS ref=%lu fol=%lu status=%u clock=%u rate=%u tdoa_dtu=%ld range_diff_mm=%ld power=UNSUPPORTED uncertainty=UNKNOWN",
+   (unsigned long)o->referenceSequence,(unsigned long)o->followerSequence,o->status,o->clockValid,o->rateState,(long)o->tdoaDtu,(long)o->rangeDifferenceMm);
+  if(usb_console_try_write(line))humanPending=false;
+ }else if((uint32_t)(now-humanLastSummary)>=5000){mul_hybrid_radio_status(line,sizeof(line));if(usb_console_try_write(line))humanLastSummary=now;}
+}
+
 #endif

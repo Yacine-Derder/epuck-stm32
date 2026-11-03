@@ -96,7 +96,7 @@ static const char *const help_config[]={
   "  - tx_ant_dtu, rx_ant_dtu: 0..65535; hardware antenna delays",
   "  - antenna_offset_mm: signed absolute baseline offset; requires RF OFF",
   "  - calibration: off | on; correction_mm: -10000..10000",
-  "  - verbosity: quiet | summary | full; full includes raw ADS timestamps",
+  "  - verbosity: quiet | normal | debug; debug includes raw ADS timestamps",
   "  - telemetry, wifi, samples: off | on; see help telemetry",
   "  - telemetry_ms: 1000..60000; telemetry_format: compact only",
   "  - cfg roster show/set id0 id1 [..id7]; schedule changes require RF OFF",
@@ -176,7 +176,7 @@ static const char *const help_telemetry[]={
   "  - cfg set telemetry_ms <ms> Set summary interval, 1000..60000ms",
   "  - cfg set samples on|off    Include detailed ADS/beacon samples",
   "  - cfg set telemetry_format compact  Existing wire-format setting",
-  "  - cfg set verbosity quiet|summary|full  Optional USB diagnostics",
+  "  - cfg set verbosity quiet|normal|debug  Optional USB diagnostics",
   "  - tlm status                Separate USB/Wi-Fi depths, drops and faults",
   "  - tlm next                  Retrieve one queued USB record, or empty",
   "",
@@ -322,11 +322,21 @@ static bool update(const uwb_config_t *candidate) {
   if(usb_console_write_slots()<8) {
     reply("ERR console busy; let output drain and retry; configuration unchanged");return false;
   }
+  uwb_config_t comparable=*candidate;comparable.verbosity=active.verbosity;
+  bool loggingOnly=applied&&uwb_config_equal(&comparable,&active);
+  if(loggingOnly&&started){
+    // A level change never restarts the radio, resets clocks/transport queues,
+    // rotates the session or programs flash during a radio deadline.
+    current.verbosity=active.verbosity=candidate->verbosity;
+    reply(savedValid&&durabilityKnown&&uwb_config_equal(&current,&saved)?
+      "CFG SAVED / ACTIVE (unchanged; no flash write)":"CFG ACTIVE verbosity; OFF to persist");
+    return true;
+  }
   error=epuck_link_flash_error();
   if(error) {reply(error);return false;} /* No active/saved mutation or radio stop. */
   display=0; /* Cancel a paged snapshot before replacing its live radio state. */
   uwb_config_t old=active;
-  if(!prepare(candidate)) {reply("ERR radio preflight failed; settings not changed");restore(&old);return false;}
+  if(!loggingOnly&&!prepare(candidate)) {reply("ERR radio preflight failed; settings not changed");restore(&old);return false;}
   uint32_t newGeneration;
   if(!uwb_config_save(uwb_runtime_store(),candidate,&newGeneration)) {
     /* A backend may report failure after a complete commit (e.g. verify read
@@ -336,15 +346,17 @@ static bool update(const uwb_config_t *candidate) {
       saved=found;generation=foundGeneration;savedValid=durabilityKnown=true;
       if(uwb_config_equal(&found,candidate)) {newGeneration=foundGeneration;goto committed;}
     } else durabilityKnown=false;
-    reply("ERR flash update failed; new setting not accepted; restoring previous radio");
+    reply(loggingOnly?"ERR verbosity not saved; previous level retained":"ERR flash update failed; new setting not accepted; restoring previous radio");
     if(!durabilityKnown) reply("ERR storage durability unconfirmed; inspect CFG SHOW/LOAD; no records erased for recovery");
-    restore(&old);return false;
+    if(!loggingOnly)restore(&old);
+    return false;
   }
 committed:
   saved=*candidate;generation=newGeneration;savedValid=durabilityKnown=true;
   /* A post-commit hardware fault is reported honestly: durable but radio off.
    * Retrying LOAD uses the same saved settings without another flash write. */
   current=*candidate;
+  if(loggingOnly){active=*candidate;reply("CFG SAVED / ACTIVE");return true;}
   if(!resume(candidate)) {applied=false;reply("ERR configuration SAVED but radio OFF; check hardware, retry CFG LOAD");return false;}
   dropped+=count;head=tail=count=0;wifiDrops+=wifiCount;wifiHead=wifiTail=wifiCount=0;
   esp_link_set_enabled((uint8_t)active.wifi);
@@ -364,7 +376,7 @@ void uwb_runtime_init(void) {
 }
 static const char *identity(uint32_t n) {return n==1?"ALR":n==2?"RLR":"Standalone";}
 static const char *onoff(uint32_t n) {return n?"ON":"OFF";}
-static const char *configVerbosity(uint32_t n) {return n==0?"Quiet":n==1?"Summary":"Full";}
+static const char *configVerbosity(uint32_t n) {return n==0?"Quiet":n==1?"Normal":"Debug";}
 static void show(const uwb_config_t *c,const char *label) {
   displayConfig=*c;displayState=label;displayBoot=loadedAtBoot;
   displayGeneration=generation;display=2;displayIndex=0;
@@ -470,6 +482,7 @@ void uwb_runtime_task(void) {
   display_output();telemetry_task();
   if(initialized&&started) mul_ads_radio_process();
   mulReplayService(HAL_GetTick());
+  if(initialized&&started&&active.mode>=4)mul_hybrid_radio_log_poll();
 }
 static bool number(const char *s,unsigned maximum,unsigned *out) {
   if(!s||!*s)return false;
@@ -678,7 +691,7 @@ bool uwb_runtime_command(const char *line) {
       char text[384];
       if(!strcmp(token[1],"ar")){mul_hybrid_radio_diagnostics(4,text,sizeof(text));reply(text);}
       else if(!strcmp(token[1],"status")){mul_hybrid_radio_status(text,sizeof(text));reply(text);}
-      else for(unsigned i=0;i<3;i++) {
+      else for(unsigned i=0;i<(!strcmp(token[1],"diag")?6u:3u);i++) {
         if(!strcmp(token[1],"diag"))mul_hybrid_radio_diagnostics(i,text,sizeof(text));
         else if(!strcmp(token[1],"frames"))mul_hybrid_radio_frame(i,text,sizeof(text));
         else if(!mul_hybrid_radio_frequency(i,text,sizeof(text)))break;
@@ -731,7 +744,7 @@ bool uwb_runtime_command(const char *line) {
       if(savedValid) show(&saved,durabilityKnown?"SAVED (last verified record)":"LAST VERIFIED SNAPSHOT; storage now UNCONFIRMED");
       else reply("CFG no valid saved configuration; factory defaults are separate");
     } else if(nt==2||!strcmp(token[2],"current")||!strcmp(token[2],"active"))
-      show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":"FACTORY DEFAULTS / ACTIVE (not saved)");
+      show(nt==3&&!strcmp(token[2],"active")?&active:&current,!durabilityKnown?"DURABILITY UNCONFIRMED":!applied?"RADIO OFF / runtime differs from requested settings":savedValid&&uwb_config_equal(&active,&saved)?"SAVED / ACTIVE":savedValid?"ACTIVE verbosity; OFF to persist":"FACTORY DEFAULTS / ACTIVE (not saved)");
     else reply("ERR SHOW accepts ACTIVE, SAVED, DEFAULTS");
   } else if(nt==4&&!strcmp(token[1],"set")) {
     if((!strcmp(token[2],"antenna_offset_mm")||!strncmp(token[2],"clock_",6)||!strcmp(token[2],"reference")||!strcmp(token[2],"follower")||!strcmp(token[2],"slot_ms")||!strcmp(token[2],"cycle_ms")||!strcmp(token[2],"tx_lead_us")||!strcmp(token[2],"rx_budget_us")||!strcmp(token[2],"airtime_us")||!strcmp(token[2],"guard_us")||!strcmp(token[2],"alr_alr_twr")||!strcmp(token[2],"twr_reply_ms")||!strcmp(token[2],"schedule_revision")||!strcmp(token[2],"profile"))&&(current.rf_enabled||started)){reply("ERR schedule change requires RF OFF");return true;}

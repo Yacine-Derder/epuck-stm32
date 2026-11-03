@@ -62,14 +62,14 @@ is an explicit hardware activation failure, not a successful update confirmation
 | tx_ant_dtu / rx_ant_dtu | 0..65535 DW timestamp units | 16380 each |
 | calibration | on, off | off |
 | correction_mm | Signed -10000..10000 mm | 0 |
-| verbosity | quiet, summary, full | full |
+| verbosity | quiet, normal, debug (summary/full aliases) | normal |
 | telemetry | on, off | off |
 | telemetry_ms | 1000..60000 ms | 1000 |
 | samples | on, off; optional range/event samples | off |
 | wifi | on, off; existing ESP32 UART3 bridge | off |
 | telemetry_format | compact (wire v2; reads v1 too) | compact |
 
-Every field persists automatically and restarts the radio when changed, using a
+Except verbosity (see below), fields persist automatically and restart the radio when changed, using a
 fresh hardware-RNG session and reset per-session counters. Identical values do
 not write flash or restart a healthy, already saved active radio. Numeric enums
 remain compatibility aliases, but SHOW uses words. No byte address is reserved:
@@ -772,3 +772,54 @@ It retains roster/timing and unrelated settings; restore desired legacy rates
 from the saved configuration before selecting it. This provides a safe reverse
 transition without treating budget10/window90 as target rates. Deselecting codec5
 alone does not make its stored bytes compatible with an older decoder.
+
+
+## Runtime verbosity (November3)
+
+`cfg set verbosity quiet|normal|debug` changes optional human output immediately.
+It reuses the existing0/1/2 persisted field: summary=normal, full=debug and numeric
+aliases remain accepted. New factory defaults are normal; existing saved2 is
+still debug. All existing schema versions preserve the stored value.
+
+While RF is running, a level-only change reports `CFG ACTIVE verbosity; OFF to
+persist`: no radio restart, new session, clock reset, flash write or machine queue
+clear occurs. To persist, request `off`, confirm saved OFF and inspect
+`cfg show saved`. Resetting before OFF restores the old saved level. Returning to
+the saved level cancels the pending change without writing. While already OFF,
+level-only changes commit through the existing journal/readback transaction,
+without radio preflight or telemetry queue clearing. Flash safety gates remain
+in force; the live RAM-only path performs no flash operation.
+
+Quiet disables optional human packet/summarized text; errors and control/safety
+replies remain. Normal retains concise standalone TWR results and a reception
+summary every5seconds when scheduling and console capacity permit. Debug also
+retains legacy detailed OBS lines. The latter are copied into one bounded pending
+record; formatting/output runs from main after receive/AR dispatch, not in the
+radio receive path. Overflow and level-change discards have separate boot counters
+in `hybrid diag` (`LOG dropped/filtered/pending`). No pending overwrite occurs.
+Normal/debug multi summaries wait until after every planned TWR reservation,
+with no active AR exchange and at least20ms before the next reference. A finalized
+vector does not prevent this idle-phase reporting. No busy-wait or SPI is added.
+Quiet retains `hybrid status`, `hybrid diag`, `hybrid ar`, `clock show`, and
+`tlm status` for reception, estimator, AR, queue and transport counts. No output
+under pressure is evidence of no errors; inspect counters and saved recordings.
+
+**All structured UWB measurements, raw packets, clock snapshots, replay, quality,
+health/drop reports and transport sequence accounting remain independent of
+verbosity.** Samples/telemetry/Wi-Fi controls are unchanged. Quiet does not cure a
+UART stream already saturated by those records. No ESP32 update is required.
+
+The sanitizer suite changes levels in flight in codec2/3/4/5, N2/4/8,
+100/200/1000ms real-adapter tests and checks receiver/clock, immutable config,
+radio ownership, session and complete machine queues are unchanged. Three45-cycle
+TDMA Kalman replay runs produce byte-identical complete structured UART files at
+quiet/normal/debug. Migration, reboot, interrupted storage, aliases and
+RF-live no-flash behavior are tested. `bash tests/runtime_config/run.sh` includes
+these checks and existing sustained UART-pressure/boundary/drop accounting.
+
+Build with `cmake --preset Universal` and `cmake --build --preset Universal`, then
+`python3 tests/runtime_config/check_elf.py build/Universal/EPuck_STM32.elf`.
+The linked image is171000Flash/44272RAM bytes; load segments stay below the
+configuration sectors. No stack reservation is reduced. See the LPS repository's
+`docs/mul_logging.md` for the common operator-only deployment and30-second
+four-robot55ADA235 validation procedure. No hardware was accessed for these checks.

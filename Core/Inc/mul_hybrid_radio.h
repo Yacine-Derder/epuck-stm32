@@ -12,6 +12,8 @@
 void mul_hybrid_radio_configure(const uwb_config_t *config);
 void mul_hybrid_radio_suspend(void);
 void mul_hybrid_radio_process(void);
+/* Main-loop optional human logging, outside receive/AR dispatch. */
+void mul_hybrid_radio_log_poll(void);
 void mul_hybrid_radio_status(char *line,size_t capacity);
 void mul_hybrid_radio_diagnostics(unsigned page,char *line,size_t capacity);
 void mul_hybrid_radio_frame(unsigned index,char *line,size_t capacity);

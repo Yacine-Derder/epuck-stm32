@@ -2,7 +2,7 @@
 #include "test_runtime.c"
 #include "hybrid_vectors.h"
 static void hybrid_frame(const uint8_t *frame,unsigned n,uint64_t rx) {
- memcpy(input,frame,n);length=n+2;rxMarker=mulTimestampMask(rx);status=DWT_INT_RXFCG_BIT_MASK;step();
+ memcpy(input,frame,n);length=n+2;rxMarker=mulTimestampMask(rx);status=DWT_INT_RXFCG_BIT_MASK;step();mul_hybrid_radio_log_poll();
 }
 static void twr_exchange(const uint8_t ref[8],bool loseResponse) {
  mul_hybrid_radio_configure(&active);
@@ -32,7 +32,7 @@ int main(void) {
  memset(nv,255,sizeof(nv));tick=0;uwb_runtime_init();command("CFG SET address 0x21");
  unsigned writes=nvWrites;command("CFG SET mode hybrid");assert(nvWrites==writes&&active.mode==0);
  command("CFG SET correction_mm -99");command("CFG SET calibration on");
- command("PEER ADD 0x84");command("PEER ADD 0x85");command("CFG SET verbosity summary");assert(active.peer==1&&active.calibration==1);
+ command("PEER ADD 0x84");command("PEER ADD 0x85");command("CFG SET verbosity debug");assert(active.peer==1&&active.calibration==1);
  command("CFG SET wifi on");command("CFG SET telemetry on");command("CFG SET mode hybrid");assert(active.mode==4&&config.calibration==1);persisted();
  unsigned transmitted=starts;uint8_t frame[84];mulTelemetry_t lastTdoa={0};
  const uint8_t ref[8]={0x84,0,0,0,0,0,0xcf,0xbc},fol[8]={0x85,0,0,0,0,0,0xcf,0xbc};

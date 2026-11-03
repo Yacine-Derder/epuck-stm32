@@ -35,6 +35,11 @@ int main(void) {
  memset(nv,255,sizeof nv);uwb_runtime_init();command("addr 141");command("mode hybrid_static");command("off");
  command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set process_us 5000");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");if(getenv("MUL_REPLAY_KALMAN"))command("cfg set clock_estimator kalman");if(tdma){command("plan set lead_us 1000");command("plan set process_us 2000");command("plan set slot_ms 5");command("plan alrs 132 134 133");command("plan mode tdma");command("plan set twr_window_ms 90");command("plan set cycle_ms 200");}
  command("on");
+ const char *verbosity=getenv("MUL_REPLAY_VERBOSITY");
+ if(verbosity){assert(strlen(verbosity)==1&&verbosity[0]>='0'&&verbosity[0]<='2');
+  char commandLine[32];snprintf(commandLine,sizeof(commandLine),"cfg set verbosity %s",verbosity);command(commandLine);
+  assert(active.verbosity==(unsigned)(verbosity[0]-'0'));
+ }
  assert(!tdma||(current.plan.policy==MUL_PLAN_TDMA&&current.plan.broadcast.count==3&&current.plan.broadcast.periodMs==200));
  activePlan=&active.plan;unsigned transmissions=starts;
  for(unsigned step=0;step<45;step++) {
@@ -56,6 +61,7 @@ int main(void) {
   tick=base+31;status=0;head=tail=count=wifiHead=wifiTail=wifiCount=0;mul_hybrid_radio_process();
   for(unsigned i=0;i<wifiCount;i++)if(trace)fprintf(trace,"%s\n",wifiQueue[(wifiTail+i)%TLM_CAPACITY]);
   snapshots++;drain_replay();
+  if(tdma){tick=base+150;mul_hybrid_radio_log_poll();}
  }
  drain_replay();assert(starts==transmissions);command("off");
 

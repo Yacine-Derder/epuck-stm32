@@ -28,7 +28,7 @@ static void assign(uwb_config_t *c,const uint32_t *v) {
 }
 void uwb_config_defaults(uwb_config_t *c) {
   *c=(uwb_config_t){.node=0x00,.peer=0x01,.identity=0,.mode=0,.role=2,.interval_ms=1000,
-    .slot_ms=10,.reference=0x84,.follower=0x85,.tx_ant_dtu=UWB_ANTENNA_BASE_TX_DTU,.rx_ant_dtu=UWB_ANTENNA_BASE_RX_DTU,.verbosity=2,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
+    .slot_ms=10,.reference=0x84,.follower=0x85,.tx_ant_dtu=UWB_ANTENNA_BASE_TX_DTU,.rx_ant_dtu=UWB_ANTENNA_BASE_RX_DTU,.verbosity=1,.telemetry_ms=1000,.peer_count=1,.peers={{1,1,1000}}};
 }
 void uwb_config_clock(const uwb_config_t *c,mulClockFitConfig_t *clock) {
  if(c->clock.periodMs)*clock=c->clock;else {mulClockFitDefaults(clock);if(c->schedule.profile)clock->periodMs=c->schedule.periodMs;}
@@ -95,7 +95,7 @@ const char *uwb_config_validate(const uwb_config_t *c) {
   if(c->phy) return "phy: only mixed (channel5/6M8/code9) supported";
   if(c->tx_ant_dtu>65535||c->rx_ant_dtu>65535) return "antenna delay: 0..65535 DTU";
   if(c->calibration>1||c->correction_mm < -10000||c->correction_mm>10000) return "calibration: on/off; correction_mm: -10000..10000";
-  if(c->verbosity>2||c->telemetry>1||c->samples>1) return "verbosity: quiet/summary/full; telemetry/samples: on/off";
+  if(c->verbosity>2||c->telemetry>1||c->samples>1) return "verbosity: quiet/normal/debug; telemetry/samples: on/off";
   if(c->telemetry_ms<1000||c->telemetry_ms>60000) return "telemetry_ms: 1000..60000";
   if(c->wifi>1||c->telemetry_format) return "wifi: on/off; telemetry_format: compact";
   if(!c->peer_count||c->peer_count>UWB_MAX_PEERS) return "peer count: 1..8";
@@ -241,7 +241,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
     {2,"standalone","0"},{2,"alr","1"},{2,"rlr","2"},
     {3,"off","0"},{3,"twr","1"},{3,"beacon","2"},{3,"listen","3"},{3,"hybrid","4"},{3,"hybrid_static","5"},{4,"initiator","1"},{4,"responder","2"},
     {6,"mixed","0"},{9,"off","0"},{9,"on","1"},
-    {11,"quiet","0"},{11,"summary","1"},{11,"full","2"},
+    {11,"quiet","0"},{11,"normal","1"},{11,"debug","2"},{11,"summary","1"},{11,"full","2"},
     {12,"off","0"},{12,"on","1"},{14,"off","0"},{14,"on","1"},{15,"off","0"},{15,"on","1"},{16,"compact","0"}};
   for(unsigned i=0;i<sizeof(aliases)/sizeof(*aliases);i++)
     if(aliases[i].field==index && !strcmp(aliases[i].name,value)) {value=aliases[i].number;break;}
@@ -249,7 +249,7 @@ const char *uwb_config_set(uwb_config_t *c,const char *field,const char *value) 
      (value[0]<'0'||value[0]>'9')) {
     static const char *errors[]={"identity: standalone, alr, rlr","mode: off, twr, beacon, listen, hybrid, hybrid_static","role: initiator, responder"};
     if(index>=2&&index<=4) return errors[index-2];
-    return index==16?"telemetry_format: compact":index==6?"phy: mixed":index==11?"verbosity: quiet, summary, full":"value: on, off";
+    return index==16?"telemetry_format: compact":index==6?"phy: mixed":index==11?"verbosity: quiet, normal, debug (summary/full aliases)":"value: on, off";
   }
   const char *p=value;bool negative=false;unsigned base=10;
   if(index==10 && *p=='-') {negative=true;p++;}

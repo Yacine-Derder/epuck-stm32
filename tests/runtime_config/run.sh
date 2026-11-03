@@ -162,6 +162,12 @@ fi
 python3 tools/build_replay_host.py --fixture --sanitize --output "$work/replay"
 "$work/replay"
 MUL_REPLAY_TDMA=1 MUL_REPLAY_KALMAN=1 "$work/replay"
+for level in 0 1 2;do
+ MUL_REPLAY_TDMA=1 MUL_REPLAY_KALMAN=1 MUL_REPLAY_VERBOSITY=$level MUL_REPLAY_TRACE="$work/verbosity-$level.uart" "$work/replay"
+done
+cmp "$work/verbosity-0.uart" "$work/verbosity-1.uart"
+cmp "$work/verbosity-0.uart" "$work/verbosity-2.uart"
+printf '%s\n' 'TDMA quiet/normal/debug: complete structured UART/replay bytes identical'
 python3 tools/build_replay_host.py --sanitize --output "$work/replay_native"
 
 python3 tools/build_replay_host.py --transport --sanitize --output "$work/replay_transport"

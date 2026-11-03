@@ -43,7 +43,11 @@ int main(void) {
  uint8_t record[128];uwb_config_encode(record,&a,UINT32_MAX);
  assert(uwb_config_decode(record,&b,&gen)&&gen==UINT32_MAX&&uwb_config_equal(&a,&b));
  for(unsigned i=0;i<sizeof(record);i++) {record[i]^=1;assert(!uwb_config_decode(record,&b,&gen));record[i]^=1;}
- assert(a.slot_ms==10);
+ assert(a.slot_ms==10&&a.verbosity==1);
+ for(unsigned level=0;level<3;level++){
+  b=a;b.verbosity=level;uwb_config_encode(record,&b,1);
+  assert(uwb_config_decode(record,&c,&gen)&&c.verbosity==level&&uwb_config_equal(&b,&c));
+ }
  const char *slots[]={"10","50","500"};
  for(unsigned i=0;i<3;i++) {
   b=a;assert(!uwb_config_set(&b,"slot_ms",slots[i]));uwb_config_encode(record,&b,3);
@@ -51,7 +55,7 @@ int main(void) {
  }
  b=a;assert(uwb_config_set(&b,"slot_ms","20")&&uwb_config_equal(&b,&a));
  /* Schema4 migration preserves the old500ms timing and unrelated values. */
- b=a;b.slot_ms=500;uwb_config_encode(record,&b,4);record[4]=4;record[19]&=7;
+ b=a;b.slot_ms=500;b.verbosity=2;uwb_config_encode(record,&b,4);record[4]=4;record[19]&=7;
  uint32_t crc4=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(crc4>>(8*i));
  assert(uwb_config_decode(record,&c,&gen)&&uwb_config_equal(&b,&c));
  const char *bad[]={"","-1","+132","0x","0x100","0x86junk","4294967296"," 132","132 ","1e2"};
@@ -70,6 +74,9 @@ int main(void) {
  assert(!uwb_config_set(&b,"telemetry","ON")&&b.telemetry==1);
  assert(!uwb_config_set(&b,"calibration","OFF")&&!b.calibration);
  assert(!uwb_config_set(&b,"verbosity","summary")&&b.verbosity==1);
+ assert(!uwb_config_set(&b,"verbosity","normal")&&b.verbosity==1);
+ assert(!uwb_config_set(&b,"verbosity","debug")&&b.verbosity==2);
+ assert(!uwb_config_set(&b,"verbosity","full")&&b.verbosity==2);
  /* Existing v1 records retain old values; defaults change without a migration write. */
  c=a;c.node=0x86;c.peer=0x84;uwb_config_encode(record,&c,42);record[4]=1;record[17]=record[18]=record[19]=0;memset(record+76,0,44);
  uint32_t legacyCrc=uwb_config_crc(record,120);for(unsigned i=0;i<4;i++)record[120+i]=(uint8_t)(legacyCrc>>(8*i));

@@ -89,7 +89,7 @@ static void schedule(uint32_t now) {
 }
 void mul_ads_radio_configure(const uwb_config_t *c,uint64_t session) {config=*c;runtimeSession=session;}
 static bool initiator(void) {return config.role==1;}
-static unsigned verbosity(void) {return uwb_runtime_help_active()?0:(unsigned)config.verbosity;}
+static unsigned verbosity(void) {return uwb_runtime_help_active()?0:(unsigned)uwb_runtime_active()->verbosity;}
 #else
 static bool initiator(void) {return MUL_TWR_ROLE==1;}
 static unsigned verbosity(void) {return 2;}
@@ -255,8 +255,8 @@ void mul_ads_radio_process(void) {
   }
   char line[192];
   if(initiator() && state.completed!=completed) {
-    snprintf(line,sizeof(line),"MULH RESULT session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " tof_dtu=%.6f ratio=%.9f nominal_m=%.4f uncalibrated=1 range_valid=%u",(uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,state.tof,state.rateRatio,state.tof*(299792458.0/63897600000.0),(unsigned)state.rangeValid);
-    if(verbosity()) usb_console_write(line);
+    if(verbosity()) {snprintf(line,sizeof(line),"MULH RESULT session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " tof_dtu=%.6f ratio=%.9f nominal_m=%.4f uncalibrated=1 range_valid=%u",(uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,state.tof,state.rateRatio,state.tof*(299792458.0/63897600000.0),(unsigned)state.rangeValid);
+    usb_console_write(line);}
 #if MUL_UNIVERSAL
     double raw=state.tof*(299792458.0/63897600000.0),calibrated;
     uwb_config_t pairConfig=config;if(activePeer)pairConfig.calibration=0;
@@ -267,9 +267,9 @@ void mul_ads_radio_process(void) {
       peerRaw[activePeer]=rawMm;peerCal[activePeer]=calMm;peerFlags[activePeer]=flags;
       peerSuccess[activePeer]=now;peerRx[activePeer]=state.stamps[1];
     }
-    snprintf(line,sizeof(line),"MULH CAL session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu range_valid=%u",
+    if(verbosity()){snprintf(line,sizeof(line),"MULH CAL session=%08" PRIX32 "%08" PRIX32 " id=%" PRIu32 " raw_m=%.4f calibrated_m=%.4f calibration=%lu range_valid=%u",
       (uint32_t)(state.session>>32),(uint32_t)state.session,state.transaction,raw,calibrated,(unsigned long)pairConfig.calibration,(unsigned)valid);
-    if(verbosity())usb_console_write(line);
+    usb_console_write(line);}
     if(config.samples) {
       mulTelemetry_t r=telemetry_record(mulTlmRange);
       r.rawMm=rawMm;r.calMm=calMm;r.flags=flags;
@@ -280,7 +280,7 @@ void mul_ads_radio_process(void) {
     }
 #endif
   }
-  if((uint32_t)(now-lastReport)>=1000U) {
+  if(verbosity()&&(uint32_t)(now-lastReport)>=1000U) {
     lastReport=now;
     snprintf(line,sizeof(line),"MULH STAT attempt=%" PRIu32 " done=%" PRIu32 " abort=%" PRIu32 " reject=%" PRIu32 " invalid=%" PRIu32 " err=%" PRIu32 " to=%" PRIu32 " stage=%u session=%08" PRIX32 "%08" PRIX32 " bad_range=%" PRIu32,state.attempts,state.completed,state.aborted,state.rejected,invalid,errors,timeouts,state.stage,(uint32_t)(state.session>>32),(uint32_t)state.session,state.invalidRanges);
     if(verbosity()) {usb_console_write(line);mul_timing_report();}

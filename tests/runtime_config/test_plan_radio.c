@@ -39,10 +39,25 @@ int main(void) {
     uint64_t tx=slot?mulTimestampMask(origin+scale(offset+120,35000)):reference;
     rxMarker=mulTimestampMask(800000+scale(t+(slot?offset+120+(slot%2?477:-477):0)+4000,15000));
     size_t n=mulPlanBroadcastEncode(input,sizeof(input),&active.plan,slot,cycle,tx,slot?&relation:NULL);assert(n);
+    /* Change live levels in flight, preserving the complete production receiver,
+     * immutable adapter config, transport queues/sequence and radio ownership. */
+    mulMultiReceiver_t beforeReceiver=multiReceiver;uwb_config_t beforeConfig=hybridConfig;
+    unsigned beforeWrites=nvWrites,beforeAccepted=accepted;uint64_t beforeEpoch=telemetryEpoch;
+    char beforeUsb[sizeof(telemetry)],beforeWifi[sizeof(wifiQueue)];
+    memcpy(beforeUsb,telemetry,sizeof(beforeUsb));memcpy(beforeWifi,wifiQueue,sizeof(beforeWifi));
+    const char *levels[]={"cfg set verbosity quiet","cfg set verbosity normal","cfg set verbosity debug"};
+    command(levels[(step+slot)%3]);assert(active.verbosity==(step+slot)%3);
+    assert(!memcmp(&beforeReceiver,&multiReceiver,sizeof(beforeReceiver))&&!memcmp(&beforeConfig,&hybridConfig,sizeof(beforeConfig)));
+    assert(nvWrites==beforeWrites&&accepted==beforeAccepted&&telemetryEpoch==beforeEpoch&&starts==transmissions);
+    assert(!memcmp(beforeUsb,telemetry,sizeof(beforeUsb))&&!memcmp(beforeWifi,wifiQueue,sizeof(beforeWifi)));
     // A full-plan mismatch cannot pass solely because its broadcast schedule agrees.
     if(step==10&&slot==1)input[36]^=1;
     length=n+2;tick=base+slot*slotMs;status=DWT_INT_RXFCG_BIT_MASK;head=tail=count=wifiHead=wifiTail=wifiCount=0;
     captureServiceDtu=step==11&&!slot?16*MS:638976;mul_hybrid_radio_process();captureServiceDtu=638976;
+    unsigned queued=count,wifiQueued=wifiCount;size_t logBefore=strlen(captured);
+    if(policy==3)humanLastSummary=tick-5000; // Force summary eligibility inside broadcast phase.
+    mul_hybrid_radio_log_poll();assert(count==queued&&wifiCount==wifiQueued);
+    if(policy==3)assert(strlen(captured)==logBefore);
     bool rawFound=false;
     for(unsigned i=0;i<count;i++) {
      const char *line=telemetry[(tail+i)%TLM_CAPACITY];mulTelemetry_t r;assert(mulTelemetryDecode(line,&r));
@@ -69,6 +84,14 @@ int main(void) {
     else if(!policy)assert(!r.vector.validMask);
    }
    assert(found&&starts==transmissions);
+   if(policy==3){
+    // Finalizing a vector clears active; summaries must still run in idle slack.
+    assert(!multiReceiver.active&&multiReceiver.hasCycle);
+    mulRangingOperation_t op;assert(mulRangingPlanOperation(&active.plan,cycle,0,&op));
+    tick=base+op.endUs/1000+2;humanLastSummary=tick-5000;
+    command("cfg set verbosity normal");unsigned q=count,wq=wifiCount;size_t at=strlen(captured);
+    mul_hybrid_radio_log_poll();assert(strstr(captured+at,"MULTI passive="));assert(count==q&&wifiCount==wq);
+   }
   }
   command("off");command("plan use off");assert(!current.plan_selected&&!current.schedule.profile&&current.slot_ms==10);persisted();
  }

@@ -92,6 +92,24 @@ int main(void) {
   * are no-ops, not a maintenance ritual. */
  for(unsigned i=0;i<sizeof(oldSequence)/sizeof(*oldSequence);i++)command(oldSequence[i]);
  assert(savedValid&&started&&state.initiator&&active.node==0x84&&active.peer==0x86);persisted();
+ /* Runtime logging is RAM-only while RF is active: preserve session/radio,
+  * exact machine queues/sequences and flash, even when flash programming is unsafe. */
+ for(unsigned level=0;level<3;level++){
+  unsigned w=nvWrites,e=nvErases,s=starts,acceptedBefore=accepted;uint64_t epoch=telemetryEpoch;
+  mulAds_t radio=state;uint32_t savedLevel=saved.verbosity;
+  char usb[sizeof(telemetry)],wifi[sizeof(wifiQueue)];memcpy(usb,telemetry,sizeof(usb));memcpy(wifi,wifiQueue,sizeof(wifi));
+  uint8_t oldHead=head,oldTail=tail,oldCount=count,oldWifi=wifiCount;
+  const char *levels[]={"CFG SET verbosity quiet","CFG SET verbosity normal","CFG SET verbosity debug"};
+  flashSafe=false;command(levels[level]);flashSafe=true;
+  assert(active.verbosity==level&&current.verbosity==level&&saved.verbosity==savedLevel);
+  assert(nvWrites==w&&nvErases==e&&starts==s&&telemetryEpoch==epoch&&!memcmp(&radio,&state,sizeof(radio)));
+  assert(!memcmp(usb,telemetry,sizeof(usb))&&!memcmp(wifi,wifiQueue,sizeof(wifi)));
+  assert(head==oldHead&&tail==oldTail&&count==oldCount&&wifiCount==oldWifi&&accepted==acceptedBefore);
+ }
+ command("CFG SET verbosity quiet");assert(active.verbosity==0&&saved.verbosity==1);
+ command("OFF");assert(!started&&saved.verbosity==0);persisted();
+ uwb_runtime_init();assert(active.verbosity==0&&!started);
+ command("CFG SET verbosity normal");command("ON");assert(started);persisted();
  beforeWrites=nvWrites;uint64_t sessionBefore=state.session;
  command("CFG SAVE");command("CFG APPLY");command("CFG SET role initiator");assert(beforeWrites==nvWrites&&state.session==sessionBefore);
  /* Requested two-board addresses/readable values, case insensitive. */
