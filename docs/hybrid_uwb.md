@@ -1147,3 +1147,39 @@ No hardware was accessed, flashed or physically validated by the agent.
 Universal memory usage: FLASH168652/786432 B, RAM44168/131072 B, CCM0; RAM and
 stack reservations are unchanged. The load segments stay below configuration
 sectors at0x080C0000.
+
+## Reference restart recovery
+
+The MUL core is pinned to LPS `df823d3614e57a85a1ff10316cc5926fd461da2a`.
+The ALR bug was a scheduler rebase with an obsolete clock sequence retained by
+Kalman holdover. The STM32 audit found a related receiver vulnerability: ongoing
+follower cycles could keep the cycle-level rebase watchdog fresh while restarted
+reference sequences were rejected. Reference acceptance now uses its own baseline
+and two coherent sequence/TX/RX/uptime observations. Followers cannot rebase or
+block an accepted reference cycle.
+
+A confirmed restart invalidates rate/fit state, old cycle values and associations;
+retired follower models cannot advance the new cycle or become valid TDoA until a
+distinct nonzero follower epoch is seen. Unknown/zero epochs do not unlock an old
+model. The existing radio owner cancels AR on broadcast priority and rebinds its
+reservation to the new clock epoch in `mul_plan_radio_reference`; no radio protocol
+change was needed. Genuine continuous gaps retain the original Kalman holdover
+checks, with stale mappings still unavailable. See
+[shared recovery semantics and unavoidable RF5 ambiguity](../ThirdParty/mul_core/CLOCK.md#reference-restart-evidence-and-epoch-ownership).
+
+Offline verification includes the canonical ASan/UBSan suite, all nine native
+`tests/*/run.sh` suites, diagnostic coexistence simulation and Universal production
+build/ELF checks. The diagnostic test link now includes its existing clock-fit's
+libm dependency (`-lm`). The exact2359421F receiver regression covers median/Kalman,
+1/4/7/10s gaps, RF sequence reset and TX-clock reboot, running old followers,
+retired/zero models, invalid distances and eventual valid TDoA. Universal uses
+171992 B Flash and44344 B RAM; ELF load segments remain below the saved-config
+sectors. Board timing/stack watermarks and live recovery remain untested.
+
+Deploy the corrected ALR and STM32 firmware with RF stopped, preserving saved
+plans/antenna calibration. No ESP32 firmware update is needed; the host replay
+validator needs its matching source-hash compatibility update. Follow the
+[operator-only startup and1/5/10s OFF/ON procedure](../../lps-node-firmware/docs/mul_tdma.md#reference-offon-recovery-validation-operator-only).
+On RLR use `clock show` (ready/applied, mapping_status=2 and fresh age),
+`hybrid ar` (completed resumes), `hybrid status`, `hybrid diag` and `tlm status`;
+unavailable TDoA remains invalid rather than a retained numerical distance.
