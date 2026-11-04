@@ -1,6 +1,6 @@
 {
   "url": "https://github.com/Yacine-Derder/lps-node-firmware.git",
-  "revision": "97f45a7a39b02a24d7892d4532528c1533dc193e",
+  "revision": "9fe1ce4c5664f81d7204b93f1034f1e7b3f776cf",
   "path": "portable/mul_core",
   "sha256": {
     "CLOCK.md": "7d15a093c9497e765e65666bbc5c8f3ec7c00ff6262a258d0c8326f66912c78b",
@@ -40,8 +40,8 @@
     "mul_multi_receiver.h": "c4b607c6e7264e4ecc5a13cfcdf6fe9591a089bf20ed081886b72028c1ff6ff0",
     "mul_observation.c": "d11e7be4921586382f2a908ca832fd66ae753cf35813bc534e5ec596593639a0",
     "mul_observation.h": "87c9fa1ac1c52bc005425c40423e243455780b85b28b77b7b959babb9bffc24d",
-    "mul_plan_protocol.c": "8384a9d600c767e620c1f3fd52e4cd2ee8b4e39bc6b226e782a827a87a10af35",
-    "mul_plan_protocol.h": "e0faae501f060ff40300205a6ce8bdcce4dd12d16f14030d8b0faf0b3bece05e",
+    "mul_plan_protocol.c": "d009e7553c190f639dcddb03b2c4a94b1c20ce90c13db2c6e287c062d6156001",
+    "mul_plan_protocol.h": "3b2b66c77209fd512b580ac956b491e9c36b030fa033a0e2f7d302d8140a4894",
     "mul_plan_store.c": "c4e7b0311dea16a78d6ab5ded9dfa907605204966902ca0064e63caca18361fb",
     "mul_plan_store.h": "3c326e97ec279ad2374e840de0760be955c746c23d352b80eee046ce1834923a",
     "mul_pose.c": "1ddf03f3fb611da54a86b2d05a8b1a0b6aaaea2b04c73aca5b65a0ac24173422",
@@ -72,7 +72,7 @@
     "tests/test_multi_receiver.c": "2397930b3a390d372ad695274db1d58c27f248c7c7dd45f37e6d0cad4f8fb24b",
     "tests/test_multi_telemetry.c": "127f8ac802e4241119f5e87fd52138ebb245d9c2161e605c6bdfa995c56dc2b0",
     "tests/test_network.c": "6f098eeb98d63105c03835d211b5056efe87d0ceab10d66ee3f3871460fd9a21",
-    "tests/test_plan_protocol.c": "b279da4de6bc98e9d346760ca4ebbb5171c39c3ac543cb1342de1e4b559127fc",
+    "tests/test_plan_protocol.c": "4b4440ed6dad4001df69c123839d5528fecf0dd93ea034a72ec37044ef5de007",
     "tests/test_plan_store.c": "86a6b2885c87927ac233557c579437b5d4555296f403ce430a15dc839b064ddc",
     "tests/test_plan_telemetry.c": "9a97c79f3e9b9b8e3e442a3d8966b7230080395c92fcc1655b05c784b1e7d0c7",
     "tests/test_pose.c": "ef168166b0d8fc7c295b00a7f1296581c3b691f83043d114e656aa162eb646e1",
