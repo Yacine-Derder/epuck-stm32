@@ -67,7 +67,28 @@ static void tdma_commands(void) {
  before=current;uwb_runtime_init();assert(uwb_config_equal(&before,&current));
  puts("TDMA console: shared LPS55ADA235, four controls, first5 preview, RF-OFF/no-write rejection and EEPROM reboot passed");
 }
+static void ff_commands(void) {
+ memset(nv,255,sizeof nv);uwb_runtime_init();command("addr 141");command("mode hybrid_static");command("off");
+ command("plan init tdma");command("plan set lead_us 1000");command("plan set process_us 2000");command("plan set slot_ms 5");
+ command("plan set reply_ms 5");command("plan set twr_window_ms 30");command("plan set cycle_ms 100");
+ command("plan alrs 132 134 133 135");command("plan rlrs 141");command("plan set aa on");command("plan set ar on");
+ assert(!(current.plan.enabled&MUL_PLAN_FF));command("plan set ff on");command("plan use on");persisted();
+ assert(mulRangingPlanVersion(&current.plan)==6&&mulRangingPlanFingerprint(&current.plan)==0xec2b4b2a);
+ captured[0]=0;command("plan show");drain();
+ assert(strstr(captured,"ff=1")&&strstr(captured,"cycle=4 index=0 kind=4 initiator=133 responder=135"));
+ assert(strstr(captured,"cycle=9 index=0 kind=2 initiator=135 responder=141"));
+ uwb_config_t saved=current;uwb_runtime_init();assert(uwb_config_equal(&current,&saved));
+ command("on");assert(started);unsigned writes=nvWrites;command("plan set ff off");assert(writes==nvWrites);
+ command("off");command("plan set ar off");persisted();
+ for(unsigned cycle=0;cycle<6;cycle++) {
+  mulRangingOperation_t op;assert(mulRangingPlanOperation(&current.plan,cycle,0,&op));
+  assert(op.kind!=MUL_PLAN_AR&&op.responder!=141);
+ }
+ command("on");assert(started);command("off");command("plan set ff off");persisted();
+ assert(mulRangingPlanVersion(&current.plan)==5);
+}
 int main(void) {
+ ff_commands();
  aa_delay_commands();tdma_commands();
  memset(nv,255,sizeof(nv));uwb_runtime_init();command("addr 141");
  command("peer add 132");command("peer add 133");command("cfg set mode hybrid_static");

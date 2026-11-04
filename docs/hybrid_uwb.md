@@ -1183,3 +1183,44 @@ validator needs its matching source-hash compatibility update. Follow the
 On RLR use `clock show` (ready/applied, mapping_status=2 and fresh age),
 `hybrid ar` (completed resumes), `hybrid status`, `hybrid diag` and `tlm status`;
 unavailable TDoA remains invalid rather than a retained numerical distance.
+
+## Opt-in complete follower TWR graph
+
+The shared core now pins published LPS `97f45a7a39b02a24d7892d4532528c1533dc193e`.
+Codec6 adds an explicit `plan set ff on` capability; saved codecs2..5 and the
+FF-off TDMA schedule/fingerprint remain unchanged. Every node must understand
+codec6 and agree on the full plan before RF ON. No RF5 packet, UWB3 telemetry,
+TDoA calculation, reference epoch rule or configuration-sector layout changes.
+The RLR remains an AR responder only: overheard FF packets cannot select it.
+
+For ALRs `[132,134,133,135]`, RLR `[141]`,100ms cycle,5ms slot,10ms Kalman budget,
+5ms reply and30ms reservation, require codec6/hash **EC2B4B2A**. The preview now
+shows the entire ten-cycle rotation: three AA, all three FF, then four AR.
+The command is RF-OFF-only and persists in the existing schema9 journal. Its
+64-word append/rotation cut tests include codec6; reboot and RF-on/no-write
+checks pass. The actual DW3000 receiver tests also inject all five FF message
+types and require zero TX and unchanged clock/TDoA state.
+
+Use the [complete operator commands, rollback and physical acceptance procedure](../../lps-node-firmware/docs/mul_tdma.md#four-alr-operator-configuration).
+STM32 commands are the same without the ALR's leading colon; retain RLR141's
+existing address, `hybrid_static` mode, antenna calibration and independent legacy
+profile. The guide also specifies four-ALR provisioning and RF startup order.
+Do not mass erase or overwrite saved configuration sectors. No devices were
+accessed or flashed during this work.
+
+`plan set ar off` is already a compatible optional six-pair inter-ALR schedule;
+with FF on it still requires codec6 and matching fingerprints everywhere. Native
+median/Kalman replay with AR both on and off retains100ms broadcasts and all three
+RLR TDoA pairs. No planner extension is needed; leave AR on for the requested
+initial ten-pair deployment. Future PC geometry uses AA+FF only; AR is diagnostic.
+ALR `MR1` serial records and their offline JSONL exporter are documented in the
+same guide. No new ALR networking path or ESP32 firmware is required.
+
+Offline Universal Release build: Flash172420/786432 B, main RAM44344/131072 B,
+CCM0; ELF load segments remain below configuration sectors at0x080C0000. All nine
+native suites and coexistence simulations pass. The full runtime suite exercises
+both estimators, four-ALR100ms codec6 replay, retained legacy profiles, bounded
+queues and intentional UART-loss stress. The sibling ESP host replay update is
+required to validate codec6 fingerprints; existing ESP transport is unchanged.
+Timing, stack high-water, physical ranging and actual sustained telemetry delivery
+still require operator measurements.
