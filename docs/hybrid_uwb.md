@@ -1227,14 +1227,15 @@ still require operator measurements.
 
 ## RF5 turnaround core compatibility
 
-The shared core pins published LPS main `9fe1ce4c5664f81d7204b93f1034f1e7b3f776cf`.
+The shared core pins published LPS main `5522a1d9dae03a62e9330150e653ec26fb79db36`.
 It adds prepared exchange identities for the DW1000 ALR deadline path, with no
 RF5 bytes, plan fingerprints, schedule, clock mathematics or persistence change.
-The STM32 retains its full-plan codec entry points and AR radio owner; no new
-RLR behavior is selected. Updated native core tests compare prepared/full packet
+The STM32 retains its original full-plan codec source/early header rejection
+and AR radio owner; no new RLR behavior is selected. Updated native core tests
+compare prepared/full packet
 validation over3/4-ALR FF-off/on rotations, all five messages, wrap and one-bit
 mutations. Universal runtime/replay and reserved-sector ELF checks pass. Clean
-Universal Flash172540 B, RAM44344 B, CCM0. The matching LPS fix and its physical
+Universal Flash172436 B, RAM44344 B, CCM0. The matching LPS fix and its physical
 acceptance procedure are in the [turnaround investigation](../../lps-node-firmware/docs/mul_tdma.md#four-alr-twr-turnaround-investigation).
 Existing STM32 and ESP firmware remain wire-compatible; this vendor update is
 source synchronization, not a requirement to change a live RLR configuration.

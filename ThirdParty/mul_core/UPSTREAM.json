@@ -1,6 +1,6 @@
 {
   "url": "https://github.com/Yacine-Derder/lps-node-firmware.git",
-  "revision": "9fe1ce4c5664f81d7204b93f1034f1e7b3f776cf",
+  "revision": "5522a1d9dae03a62e9330150e653ec26fb79db36",
   "path": "portable/mul_core",
   "sha256": {
     "CLOCK.md": "7d15a093c9497e765e65666bbc5c8f3ec7c00ff6262a258d0c8326f66912c78b",
@@ -40,7 +40,7 @@
     "mul_multi_receiver.h": "c4b607c6e7264e4ecc5a13cfcdf6fe9591a089bf20ed081886b72028c1ff6ff0",
     "mul_observation.c": "d11e7be4921586382f2a908ca832fd66ae753cf35813bc534e5ec596593639a0",
     "mul_observation.h": "87c9fa1ac1c52bc005425c40423e243455780b85b28b77b7b959babb9bffc24d",
-    "mul_plan_protocol.c": "d009e7553c190f639dcddb03b2c4a94b1c20ce90c13db2c6e287c062d6156001",
+    "mul_plan_protocol.c": "f1960d4a2c338f0abeb3d6fe14934437403a7f0a56308117e0429f5d382094d4",
     "mul_plan_protocol.h": "3b2b66c77209fd512b580ac956b491e9c36b030fa033a0e2f7d302d8140a4894",
     "mul_plan_store.c": "c4e7b0311dea16a78d6ab5ded9dfa907605204966902ca0064e63caca18361fb",
     "mul_plan_store.h": "3c326e97ec279ad2374e840de0760be955c746c23d352b80eee046ce1834923a",
