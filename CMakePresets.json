@@ -39,7 +39,21 @@
             "inherits": "Universal",
             "cacheVariables": {
                 "MUL_ROBOT_EXPERIMENT": "ON",
-                "MUL_ROBOT_TELEMETRY_HZ": "10"
+                "MUL_ROBOT_TELEMETRY_HZ": "10",
+                "APP_ESP_BAUD": "921600",
+                "APP_ESP_DMA_RX": "ON"
+            }
+        },
+        {
+            "name": "RobotExperiment921600",
+            "inherits": "RobotExperiment"
+        },
+        {
+            "name": "RobotExperiment115200",
+            "inherits": "RobotExperiment",
+            "cacheVariables": {
+                "APP_ESP_BAUD": "115200",
+                "APP_ESP_DMA_RX": "OFF"
             }
         }
     ],
@@ -59,6 +73,14 @@
         {
             "name": "RobotExperiment",
             "configurePreset": "RobotExperiment"
+        },
+        {
+            "name": "RobotExperiment921600",
+            "configurePreset": "RobotExperiment921600"
+        },
+        {
+            "name": "RobotExperiment115200",
+            "configurePreset": "RobotExperiment115200"
         }
     ]
 }

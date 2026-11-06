@@ -19,7 +19,21 @@ static char esp_telemetry_line[310];
 static uint8_t esp_telemetry_pending;
 static uint32_t esp_telemetry_tick,esp_telemetry_drops;
 static volatile uint8_t esp_active, esp_fault, esp_tx_fault, esp_busy;
+#if APP_ESP_DMA_RX
+#define ESP_DMA_SIZE 2048U
+/* SRAM .bss, never CCM; F405 has no D-cache. DMA owns writes. */
+static uint8_t esp_dma_buffer[ESP_DMA_SIZE];
+static volatile uint32_t esp_dma_wraps, esp_dma_events;
+static uint32_t esp_dma_read, esp_dma_previous, esp_dma_poll_tick, esp_dma_oldest_tick;
+static uint32_t esp_dma_errors, esp_dma_restarts, esp_dma_start_failures;
+static uint8_t esp_dma_restart_needed;
+#else
 static uint8_t esp_byte;
+#endif
+static char esp_sensor_line[ESP_LINE];
+static uint8_t esp_sensor_pending, esp_uwb_streak;
+static uint32_t esp_sensor_coalesced, esp_sensor_sent, esp_tx_bytes;
+
 static volatile uint8_t esp_ring[ESP_RING];
 static volatile uint16_t esp_head, esp_tail;
 static uint32_t esp_received_tick[ESP_RING];
@@ -75,7 +89,7 @@ void esp_link_set_enabled(uint8_t enabled) {
   if(!enabled && esp_active) {
     esp_invalidate("telemetry_disabled");HAL_NVIC_DisableIRQ(USART3_IRQn);
     (void)HAL_UART_Abort(&huart3);esp_active=esp_busy=esp_valid=esp_hb_seen=0;
-    esp_qhead=esp_qtail=esp_count=0;esp_tail=esp_head;esp_telemetry_pending=0;
+    esp_qhead=esp_qtail=esp_count=0;esp_tail=esp_head;esp_telemetry_pending=esp_sensor_pending=0;
     esp_length=0;esp_cr=esp_discard=esp_fault=esp_tx_fault=0;
   }
   esp_requested=enabled;if(enabled)esp_link_init();
@@ -107,6 +121,14 @@ void esp_link_usb_status(void)
       esp_last_reason,(unsigned long)esp_last_hb_age);
   usb_console_write(text);
   esp_fault_status();
+  snprintf(text,sizeof(text),"[ESP] baud=%lu dma=%u sensor_sent=%lu sensor_coalesced=%lu tx_bytes=%lu",
+    (unsigned long)APP_ESP_BAUD,APP_ESP_DMA_RX,(unsigned long)esp_sensor_sent,(unsigned long)esp_sensor_coalesced,(unsigned long)esp_tx_bytes);
+  usb_console_write(text);
+#if APP_ESP_DMA_RX
+  snprintf(text,sizeof(text),"[ESP] dma_events=%lu dma_errors=%lu dma_restarts=%lu dma_start_failures=%lu ndtr=%lu",
+    (unsigned long)esp_dma_events,(unsigned long)esp_dma_errors,(unsigned long)esp_dma_restarts,(unsigned long)esp_dma_start_failures,(unsigned long)__HAL_DMA_GET_COUNTER(huart3.hdmarx));
+  usb_console_write(text);
+#endif
 }
 static void esp_invalidate(const char *reason)
 {
@@ -170,10 +192,70 @@ void esp_link_log(const char *text)
   }
   if (n > 4U) { record[n] = 0; (void)esp_enqueue(record, 0U); }
 }
+#if APP_ESP_DMA_RX
+void esp_link_rx_event(void *uart, uint16_t size)
+{
+  (void)size;
+  if (uart != &huart3) return;
+  ++esp_dma_events;
+  if (HAL_UARTEx_GetRxEventType(&huart3)==HAL_UART_RXEVENT_TC) ++esp_dma_wraps;
+}
+static uint32_t esp_start_dma(void)
+{
+  esp_dma_wraps=esp_dma_read=esp_dma_previous=0;
+  esp_dma_poll_tick=esp_dma_oldest_tick=HAL_GetTick();
+  uint32_t result=HAL_UARTEx_ReceiveToIdle_DMA(&huart3,esp_dma_buffer,ESP_DMA_SIZE);
+  if(result!=HAL_OK) ++esp_dma_start_failures;
+  return result;
+}
+static void esp_dma_poll(void)
+{
+  uint32_t now=HAL_GetTick(), producer=esp_dma_previous;
+  uint32_t mask=__get_PRIMASK();__disable_irq();
+  /* TC can be pending while NVIC is masked. Count that wrap once, without
+   * clearing the flag: the HAL callback will later commit it to wraps. */
+  for(unsigned attempt=0;attempt<3;attempt++) {
+    uint32_t pending=__HAL_DMA_GET_FLAG(huart3.hdmarx,DMA_FLAG_TCIF1_5)!=0;
+    uint32_t remaining=__HAL_DMA_GET_COUNTER(huart3.hdmarx);
+    if(remaining && remaining<=ESP_DMA_SIZE && pending==(__HAL_DMA_GET_FLAG(huart3.hdmarx,DMA_FLAG_TCIF1_5)!=0)) {
+      producer=(esp_dma_wraps+pending)*ESP_DMA_SIZE+ESP_DMA_SIZE-remaining;
+      break;
+    }
+  }
+  uint32_t unread=producer-esp_dma_read;
+  /* Half-buffer headroom prevents DMA overwriting bytes during the bounded
+   * copy. A long blackout with progress makes lost full wraps ambiguous. */
+  if(unread>ESP_DMA_SIZE/2U || (producer!=esp_dma_previous &&
+      (uint32_t)(now-esp_dma_poll_tick)>=(ESP_DMA_SIZE*10000ULL/APP_ESP_BAUD))) {
+    ++esp_rx_overflows;esp_fault|=ESP_FAULT_OVERFLOW;esp_dma_read=producer;
+  } else {
+    if(esp_dma_read==esp_dma_previous)esp_dma_oldest_tick=esp_dma_poll_tick;
+    for(unsigned budget=0;budget<128U && esp_dma_read!=producer;budget++) {
+      uint16_t next=(uint16_t)((esp_head+1U)%ESP_RING);
+      if(next==esp_tail) {++esp_rx_overflows;esp_fault|=ESP_FAULT_OVERFLOW;esp_dma_read=producer;break;}
+      esp_ring[esp_head]=esp_dma_buffer[esp_dma_read%ESP_DMA_SIZE];
+      esp_received_tick[esp_head]=esp_dma_oldest_tick;
+      esp_head=next;++esp_dma_read;
+    }
+  }
+  esp_dma_previous=producer;esp_dma_poll_tick=now;
+  __set_PRIMASK(mask);
+}
+#else
+void esp_link_rx_event(void *uart, uint16_t size) {(void)uart;(void)size;}
+#endif
 static void esp_restart(void)
 {
+#if APP_ESP_DMA_RX
+  if(esp_dma_restart_needed) {
+    /* Recovery only in task context; never abort/rearm DMA inside an IRQ. */
+    (void)HAL_UART_AbortReceive(&huart3);esp_dma_restart_needed=0;++esp_dma_restarts;
+  }
+  if(huart3.RxState==HAL_UART_STATE_READY)(void)esp_start_dma();
+#else
   if (huart3.RxState == HAL_UART_STATE_READY)
     (void)HAL_UART_Receive_IT(&huart3, &esp_byte, 1U);
+#endif
 }
 void esp_link_init(void)
 {
@@ -185,7 +267,11 @@ void esp_link_init(void)
   if (!esp_active) {
     __HAL_UART_CLEAR_OREFLAG(&huart3);
     HAL_NVIC_ClearPendingIRQ(USART3_IRQn);
+#if APP_ESP_DMA_RX
+    if (esp_start_dma() != HAL_OK) {
+#else
     if (HAL_UART_Receive_IT(&huart3, &esp_byte, 1U) != HAL_OK) {
+#endif
       __set_PRIMASK(mask);
       return;
     }
@@ -197,16 +283,17 @@ void esp_link_init(void)
 }
 uint8_t esp_link_rx_callback(void *uart)
 {
-  uint16_t next;
   if (uart != &huart3) return 0U;
   if (!esp_active) return 1U;
-  next = (uint16_t)((esp_head + 1U) % ESP_RING);
+#if !APP_ESP_DMA_RX
+  uint16_t next = (uint16_t)((esp_head + 1U) % ESP_RING);
   if (next == esp_tail) { ++esp_rx_overflows; esp_fault |= ESP_FAULT_OVERFLOW; }
   if (huart3.ErrorCode != HAL_UART_ERROR_NONE) {
     esp_fault |= ESP_FAULT_UART; esp_uart_error_bits=huart3.ErrorCode;
   }
   if (next != esp_tail && huart3.ErrorCode == HAL_UART_ERROR_NONE) { esp_ring[esp_head] = esp_byte; esp_received_tick[esp_head]=HAL_GetTick(); esp_head = next; }
   if (huart3.ErrorCode == HAL_UART_ERROR_NONE) esp_restart();
+#endif
   return 1U;
 }
 uint8_t esp_link_tx_callback(void *uart)
@@ -221,7 +308,12 @@ uint8_t esp_link_error_callback(void *uart)
   if (esp_active) {
     ++esp_uart_errors; esp_uart_error_bits=huart3.ErrorCode;
     esp_fault |= ESP_FAULT_UART;
+#if APP_ESP_DMA_RX
+    if(huart3.ErrorCode & HAL_UART_ERROR_DMA) ++esp_dma_errors;
+    esp_dma_restart_needed=1;
+#else
     __HAL_UART_CLEAR_OREFLAG(&huart3); esp_restart();
+#endif
   }
   return 1U;
 }
@@ -296,7 +388,9 @@ void esp_link_publish_sensor(void)
       (unsigned long)sample.accepted_records, (unsigned long)(HAL_GetTick()-sample.received_at_ms),
       sample.time_ms, sample.prox[0],sample.prox[1],sample.prox[2],sample.prox[3],sample.prox[4],sample.prox[5],sample.prox[6],sample.prox[7],
       sample.acc[0],sample.acc[1],sample.acc[2],(long)sample.steps_left,(long)sample.steps_right);
-    if (n > 0 && n < (int)sizeof(record) && esp_enqueue(record,0U)) {
+    if (n > 0 && n < (int)sizeof(record)-1) {
+      if(esp_sensor_pending)++esp_sensor_coalesced;
+      memcpy(esp_sensor_line,record,(size_t)n);esp_sensor_line[n]='\n';esp_sensor_line[n+1]=0;esp_sensor_pending=1;
       esp_sample_sequence=sample.accepted_records; esp_sample_tick=now; esp_sample_sent=1U;
     }
   }
@@ -310,7 +404,10 @@ void esp_link_task(void)
   if (!MUL_ROBOT_EXPERIMENT && esp_valid && esp_hb_seen && (uint32_t)(HAL_GetTick()-esp_hb_tick) >= 500U) {
     esp_invalidate("control_hb_timeout");
   }
-  mask = __get_PRIMASK(); __disable_irq(); esp_restart(); __set_PRIMASK(mask);
+  esp_restart();
+#if APP_ESP_DMA_RX
+  esp_dma_poll();
+#endif
   for (unsigned budget = 0U; budget < 128U; ++budget) {
     uint8_t byte, fault;
     uint32_t received_at;
@@ -321,7 +418,8 @@ void esp_link_task(void)
       esp_tail = esp_head; esp_fault = esp_tx_fault = 0U;
       esp_qhead = esp_qtail = esp_count = 0U;
       esp_length = 0U; esp_discard = 1U; esp_cr = 0U;
-      if(esp_telemetry_pending) {esp_telemetry_drops++;esp_telemetry_pending=0;}
+      if(esp_telemetry_pending || esp_sensor_pending) {esp_telemetry_drops++;esp_telemetry_pending=0;}
+      if(esp_sensor_pending){++esp_sensor_coalesced;esp_sensor_pending=0;}
     }
     if (fault || esp_tail == esp_head) {
       __set_PRIMASK(mask);
@@ -338,7 +436,7 @@ void esp_link_task(void)
    * The legacy FIFO mixed those classes, allowing continuous debug output to
    * starve the independent telemetry slot despite ample UART capacity. */
   unsigned selected=0;
-  if(esp_telemetry_pending) {
+  if(esp_telemetry_pending || esp_sensor_pending) {
     while(selected<esp_count&&!esp_queue_control[(esp_qtail+selected)%ESP_QUEUE])selected++;
   }
   if (!esp_busy && selected<esp_count) {
@@ -353,16 +451,25 @@ void esp_link_task(void)
       }
       esp_qhead=(uint8_t)((esp_qhead+ESP_QUEUE-1U)%ESP_QUEUE);
       }
+      esp_tx_bytes+=(uint32_t)strlen(esp_tx);
       --esp_count;control_sent=1;
     } else esp_busy=0U;
   }
   if(esp_telemetry_pending && (!esp_link_owner_alive(esp_session_id)||(uint32_t)(HAL_GetTick()-esp_telemetry_tick)>1000U)) {
     esp_telemetry_pending=0;esp_telemetry_drops++;
   }
-  if(!control_sent&&!esp_busy&&esp_telemetry_pending) {
-    memcpy(esp_tx,esp_telemetry_line,310);esp_tx[310]=0;esp_busy=1;
-    if(HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,310)==HAL_OK)esp_telemetry_pending=0;
-    else esp_busy=0;
+  /* At most three UWB records before a pending DATA2. Control still wins;
+   * LOG is lower priority than both. Each record completes without splicing. */
+  if(!control_sent && !esp_busy && (esp_telemetry_pending || esp_sensor_pending)) {
+    uint8_t sensor=esp_sensor_pending && (!esp_telemetry_pending || esp_uwb_streak>=3U);
+    if(sensor)snprintf(esp_tx,sizeof(esp_tx),"%s",esp_sensor_line);
+    else {memcpy(esp_tx,esp_telemetry_line,310);esp_tx[310]=0;}
+    esp_busy=1;uint16_t length=(uint16_t)strlen(esp_tx);
+    if(HAL_UART_Transmit_IT(&huart3,(uint8_t *)esp_tx,length)==HAL_OK) {
+      esp_tx_bytes+=length;
+      if(sensor){esp_sensor_pending=0;esp_uwb_streak=0;++esp_sensor_sent;}
+      else {esp_telemetry_pending=0;if(esp_uwb_streak<3U)++esp_uwb_streak;}
+    } else esp_busy=0;
   }
   uint32_t dropped=esp_log_drops;
   if (esp_count < ESP_QUEUE-4U) esp_log_drops=0U; else dropped=0U;
@@ -370,6 +477,7 @@ void esp_link_task(void)
   if (dropped) { snprintf(record,sizeof(record),"LOG dropped_records=%lu",(unsigned long)dropped); (void)esp_enqueue(record,0U); }
 }
 #else
+void esp_link_rx_event(void *uart,uint16_t size) {(void)uart;(void)size;}
 void esp_link_init(void) {}
 void esp_link_set_enabled(uint8_t enabled) {(void)enabled;}
 uint8_t esp_link_telemetry(const char *line) {(void)line;return 0;}
@@ -386,4 +494,11 @@ void esp_link_log(const char *text) { (void)text; }
 void esp_link_reply_to(const char *s,const char *text) { (void)s; (void)text; }
 void esp_link_session(char out[17]) { out[0]=0; }
 uint8_t esp_link_owner_alive(const char *s) { (void)s; return 0U; }
+#endif
+
+#if APP_ESP_DMA_RX
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *uart,uint16_t size)
+{
+  esp_link_rx_event(uart,size);
+}
 #endif

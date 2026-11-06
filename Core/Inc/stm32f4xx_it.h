@@ -59,6 +59,7 @@ void EXTI0_IRQHandler(void);
 void OTG_FS_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 void USART3_IRQHandler(void);
+void DMA1_Stream1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
 /* USER CODE END EFP */

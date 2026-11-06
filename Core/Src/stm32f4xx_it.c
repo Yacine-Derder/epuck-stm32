@@ -61,6 +61,10 @@ extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 /* USER CODE BEGIN EV */
 #if APP_ESP_ENABLED
 extern UART_HandleTypeDef huart3;
+#if APP_ESP_DMA_RX
+extern DMA_HandleTypeDef hdma_usart3_rx;
+void DMA1_Stream1_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_usart3_rx); }
+#endif
 #endif
 #if APP_EPUCK_ENABLED
 extern UART_HandleTypeDef huart1;

@@ -12,6 +12,7 @@ void esp_link_task(void);
 void esp_link_usb_status(void);
 void esp_link_publish_sensor(void);
 /* HAL callbacks delegate USART3 only; return 1 when handled. */
+void esp_link_rx_event(void *uart, uint16_t size);
 uint8_t esp_link_rx_callback(void *uart);
 uint8_t esp_link_tx_callback(void *uart);
 uint8_t esp_link_error_callback(void *uart);

@@ -40,7 +40,11 @@ static char test_id[17];
 static const char *id=test_id;
 static unsigned opens;
 static void wire(const char *s) {
+#if APP_ESP_DMA_RX
+ extern void mock_dma_feed(const char *s);mock_dma_feed(s);
+#else
  while(*s) { esp_byte=(uint8_t)*s++; huart3.ErrorCode=0; huart3.RxState=HAL_UART_STATE_READY; HAL_UART_RxCpltCallback(&huart3); }
+#endif
 }
 static void tasks(void) { esp_link_task(); epuck_link_task(); }
 static void cmd(const char *s) { char frame[128]; snprintf(frame,sizeof(frame),"CMD %s %s\n",id,s); wire(frame); tasks(); }
@@ -209,7 +213,7 @@ static void sensors(void) {
  strcpy(data,"DATA"); for(unsigned i=0;i<21;i++) { strcat(data," ");strcat(data,fields[i]); } assert(!accept_data(data));
  strcat(data," 0 1"); assert(!accept_data(data));
  strcpy(data,"DATA"); fields[0]="0"; for(unsigned i=0;i<22;i++) { strcat(data," ");strcat(data,fields[i]); }
- assert(accept_data(data)); assert(latest_sample.time_ms==0 && latest_sample.accepted_records==2 && esp_count==1); /* New raw sample retained; telemetry waits for next 1 Hz slot. */
+ assert(accept_data(data)); assert(latest_sample.time_ms==0 && latest_sample.accepted_records==2 && esp_sensor_pending && esp_count==0); /* New raw sample retained; telemetry waits for next 1 Hz slot. */
  for(unsigned i=0;i<310;i++) parse_byte(i<5?(uint8_t)"DATA "[i]:'X'); parse_byte('\n');
  assert(malformed_data==1 && latest_sample.accepted_records==2);
  for(char *p=data;*p;p++) parse_byte((uint8_t)*p); parse_byte('\r');parse_byte('\n');
