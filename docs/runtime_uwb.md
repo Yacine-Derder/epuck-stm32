@@ -1,5 +1,7 @@
 # Universal STM32/DWM3000 configuration
 
+> The opt-in [RobotExperiment configuration](robot_experiment.md) supports simultaneous UWB/motors/steps and supersedes the legacy external ARM/heartbeat restrictions only in that image.
+
 One UWB-only image supports both ADS-TWR roles and any distinct local/peer byte
 addresses. Each accepted SET validates the entire configuration, safely restarts
 UWB, saves and verifies it, then confirms `CFG SAVED / ACTIVE`. No normal APPLY,

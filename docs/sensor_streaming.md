@@ -1,5 +1,7 @@
 # Configurable e-puck sensor streaming
 
+> The opt-in [RobotExperiment configuration](robot_experiment.md) supports simultaneous UWB/motors/steps and supersedes the legacy external ARM/heartbeat restrictions only in that image.
+
 Normal streaming now defaults to1Hz with light-free DATA2 Wi-Fi telemetry.
 Use compatible STM32 and ESP32 bridge builds and the updated Python client;
 no dsPIC firmware update is needed. UWB-only experiments disable ESP entirely.

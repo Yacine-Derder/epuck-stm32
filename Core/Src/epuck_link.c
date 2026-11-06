@@ -566,6 +566,10 @@ static void motor_reply(const char *reply)
     acknowledged_left = acknowledged_right = 0;
   }
   snprintf(message, sizeof(message), "[MOTOR] %s", reply);
+#if MUL_ROBOT_EXPERIMENT
+  if (command == TX_MOVE)
+    snprintf(message,sizeof(message),"[MOTOR] OK M left=%d right=%d",acknowledged_left,acknowledged_right);
+#endif
   if (command == TX_STOP) {
     stop_notify(message);
     motor_stop_subscribers = 0U;

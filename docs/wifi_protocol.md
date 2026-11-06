@@ -1,5 +1,7 @@
 # Wi-Fi robot link protocol
 
+> The opt-in [RobotExperiment configuration](robot_experiment.md) supports simultaneous UWB/motors/steps and supersedes the legacy external ARM/heartbeat restrictions only in that image.
+
 Architecture: computer TCP/Wi-Fi → ESP32 UART1 → STM32 USART3 → e-puck
 USART1. The STM32 owns all robot parsing, motor ownership, acknowledgements
 and watchdog decisions. ESP32 only transports records. E-puck firmware is

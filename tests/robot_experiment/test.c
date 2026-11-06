@@ -38,6 +38,29 @@ int main(int argc,char **argv) {
   robot_busy=0;HAL_UART_TxCpltCallback(&huart1);tick+=150;tasks();
   assert(strcmp(robot_tx,"STOP\n")==0 && motor_state==MOTOR_LOST && !motor_count);
   robot_ack("OK STOP\n");tasks();assert(!motor_arm_pending && !motor_count);
+  cmd("M 7 8");robot_ack("OK ARM\n");robot_ack("BOOT reset\n");
+  assert(strcmp(robot_tx,"STOP\n")==0 && !motor_count && !motor_arm_pending);
+  robot_ack("OK STOP\n");
+ } else if(!strcmp(argv[1],"coexistence")) {
+  char radio[310];memset(radio,'0',309);memcpy(radio,"UWB3 ",5);radio[309]=0;
+  cmd("M 50 60");robot_ack("OK ARM\n");robot_ack("OK M\n");
+  unsigned offered=0;
+  for(tick=1;tick<=901;tick+=10) {
+   if(tick%100==1) {
+    latest_sample=(epuck_sensor_data_t){.valid=1,.accepted_records=tick,.received_at_ms=tick};
+    esp_link_log("optional debug");assert(esp_link_telemetry(radio));offered++;
+   }
+   tasks();
+   if(robot_busy) {assert(!strcmp(robot_tx,"HB\n"));robot_ack("OK HB\n");}
+   for(int k=0;k<16;k++)esp_link_task();
+  }
+  unsigned count=0;for(char *p=uart3_output;(p=strstr(p,"UWB3 "));p+=5)count++;
+  assert(count==offered && !esp_telemetry_drops && !uart_errors && motor_state==MOTOR_ARMED);
+  /* Optional FIFO saturation: UWB retains its independent slot ahead of DATA/LOG. */
+  for(unsigned i=0;i<ESP_QUEUE;i++)esp_link_log("optional flood");
+  assert(esp_link_telemetry(radio));size_t before=strlen(uart3_output);esp_link_task();
+  assert(strstr(uart3_output+before,"UWB3 ") && !esp_telemetry_pending);
+  printf("mock coexistence: %u/%u UWB records, no UART errors/drops\n",count,offered);
  } else if(!strcmp(argv[1],"rate")) {
   /* Ten seconds of actual new producer records. No cached interpolation. */
   unsigned expected=0;

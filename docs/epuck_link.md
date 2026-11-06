@@ -1,5 +1,7 @@
 # E-puck UART test and sensor streaming
 
+> The opt-in [RobotExperiment configuration](robot_experiment.md) supports simultaneous UWB/motors/steps and supersedes the legacy external ARM/heartbeat restrictions only in that image.
+
 Enable the module with `APP_EPUCK_ENABLED 1` in `Core/Inc/app_config.h`,
 then rebuild and flash. Set it to `0` to disable UART activity and module
 diagnostics. UWB uses its separate, unchanged `APP_UWB_ENABLED` switch.
