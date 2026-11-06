@@ -30,7 +30,12 @@ static void init(void) {
  assert(esp_valid && esp_link_owner_alive(id));uart3_output[0]=0;
 }
 int main(int argc,char **argv) {
- assert(argc==2);init();
+ assert(argc==2);
+ if(!strcmp(argv[1],"initfail")) {
+  epuck_link_init();mock_rx_fail=1;esp_link_set_enabled(1);assert(!esp_active && esp_dma_start_failures==1);
+  mock_rx_fail=0;esp_link_init();assert(esp_active && huart3.hdmarx==&dma);puts("DMA start failure and retry passed");return 0;
+ }
+ init();
  if(!strcmp(argv[1],"wrap")) {
   /* Fragmentation, concatenation, HT/IDLE duplicates, many wraps. */
   for(unsigned i=0;i<500;i++) {
@@ -53,15 +58,29 @@ int main(int argc,char **argv) {
   assert(!strcmp(robot_tx,"STOP\n"));robot_ack("OK STOP\n");
   assert(strstr(uart3_output,"OK STOP") && !esp_uart_errors);
  } else if(!strcmp(argv[1],"errors")) {
+  cmd("M 10 20");robot_ack("OK ARM\n");robot_ack("OK M\n");
   const unsigned errors[]={1,2,4,8,HAL_UART_ERROR_DMA};
   for(unsigned i=0;i<5;i++) {
    huart3.ErrorCode=errors[i];HAL_UART_ErrorCallback(&huart3);assert(esp_dma_restart_needed);
    unsigned restarts=esp_dma_restarts;tasks();assert(!esp_valid && esp_dma_restarts==restarts+1);
-   mock_dma_feed("\n");tasks();open_session();assert(esp_valid);
+   if(i==0){assert(!strcmp(robot_tx,"STOP\n"));robot_ack("OK STOP\n");}
+   mock_dma_feed("\n");tasks();open_session();assert(esp_valid && !motor_count && !motor_arm_pending);
   }
   assert(esp_dma_errors==1 && esp_uart_errors==5);
   /* Detect overwrite rather than parsing uncertain commands. */
   for(unsigned i=0;i<ESP_DMA_SIZE;i++)mock_dma_feed("X");tasks();assert(!esp_valid && esp_rx_overflows);
+  mock_dma_feed("\n");tasks();open_session();assert(esp_valid);
+ } else if(!strcmp(argv[1],"fairness")) {
+  char radio[310];memset(radio,'0',309);memcpy(radio,"UWB3 ",5);radio[309]=0;
+  unsigned sensors=0,uwb=0;uint32_t free_at=0;
+  for(tick=1;tick<=1000;tick++) {
+   if(!esp_telemetry_pending)assert(esp_link_telemetry(radio));
+   if(tick%100==1)latest_sample=(epuck_sensor_data_t){.valid=1,.accepted_records=tick,.received_at_ms=tick};
+   mock_tx3_busy=tick<free_at;esp_link_task();size_t n=strlen(uart3_output);
+   if(n){sensors+=strstr(uart3_output,"DATA2 ")!=NULL;uwb+=strstr(uart3_output,"UWB3 ")!=NULL;free_at=tick+(uint32_t)((n*10000ULL+APP_ESP_BAUD-1)/APP_ESP_BAUD);uart3_output[0]=0;}
+  }
+  assert(sensors==10 && uwb>200 && !esp_sensor_coalesced);
+  printf("continuously pending UWB: %u records plus%u new DATA2, no sensor starvation\n",uwb,sensors);
  } else if(!strcmp(argv[1],"sustained")) {
   const char *noise="CMD ffffffffffffffff MOTOR_STATUS\n";unsigned offset=0;
   unsigned uwb=0,sensors=0;uint64_t bytes=0,busy_until=0;

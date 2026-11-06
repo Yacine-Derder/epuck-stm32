@@ -1,5 +1,7 @@
 # Universal STM32/DWM3000 configuration
 
+> For the matching **921600 baud / DMA RX** images and current transport fixes, use [the UART upgrade guide](uart_921600.md). Earlier 115200 traffic figures below describe the previous image.
+
 > The opt-in [RobotExperiment configuration](robot_experiment.md) supports simultaneous UWB/motors/steps and supersedes the legacy external ARM/heartbeat restrictions only in that image.
 
 One UWB-only image supports both ADS-TWR roles and any distinct local/peer byte

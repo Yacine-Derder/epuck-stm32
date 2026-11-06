@@ -384,6 +384,12 @@ static void MX_USART3_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART3_Init 2 */
+#if APP_ESP_BAUD == 921600
+  /* Bundled HAL truncates USARTDIV to hundredths before fractional rounding,
+   * selecting45 at42MHz. Nearest oversampling16 divider46 reduces baud error.
+   * UART1 and the legacy115200 configuration are deliberately untouched. */
+  huart3.Instance->BRR = APP_ESP_BRR_NEAREST(HAL_RCC_GetPCLK1Freq(), APP_ESP_BAUD);
+#endif
 
   /* USER CODE END USART3_Init 2 */
 

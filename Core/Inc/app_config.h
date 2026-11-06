@@ -25,6 +25,7 @@
 #ifndef APP_ESP_BAUD
 #define APP_ESP_BAUD 115200U
 #endif
+#define APP_ESP_BRR_NEAREST(clock,baud) (((clock)+(baud)/2U)/(baud))
 #ifndef APP_ESP_DMA_RX
 #define APP_ESP_DMA_RX 0
 #endif

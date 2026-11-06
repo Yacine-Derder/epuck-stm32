@@ -121,12 +121,18 @@ void esp_link_usb_status(void)
       esp_last_reason,(unsigned long)esp_last_hb_age);
   usb_console_write(text);
   esp_fault_status();
+#if defined(STM32F405xx)
+  uint32_t clock=HAL_RCC_GetPCLK1Freq(), divider=huart3.Instance->BRR;
+  snprintf(text,sizeof(text),"[ESP] pclk1=%lu brr=%lu actual_baud=%lu (oversampling16)",
+    (unsigned long)clock,(unsigned long)divider,(unsigned long)(divider?clock/divider:0));
+  usb_console_write(text);
+#endif
   snprintf(text,sizeof(text),"[ESP] baud=%lu dma=%u sensor_sent=%lu sensor_coalesced=%lu tx_bytes=%lu",
     (unsigned long)APP_ESP_BAUD,APP_ESP_DMA_RX,(unsigned long)esp_sensor_sent,(unsigned long)esp_sensor_coalesced,(unsigned long)esp_tx_bytes);
   usb_console_write(text);
 #if APP_ESP_DMA_RX
   snprintf(text,sizeof(text),"[ESP] dma_events=%lu dma_errors=%lu dma_restarts=%lu dma_start_failures=%lu ndtr=%lu",
-    (unsigned long)esp_dma_events,(unsigned long)esp_dma_errors,(unsigned long)esp_dma_restarts,(unsigned long)esp_dma_start_failures,(unsigned long)__HAL_DMA_GET_COUNTER(huart3.hdmarx));
+    (unsigned long)esp_dma_events,(unsigned long)esp_dma_errors,(unsigned long)esp_dma_restarts,(unsigned long)esp_dma_start_failures,(unsigned long)(huart3.hdmarx?__HAL_DMA_GET_COUNTER(huart3.hdmarx):0U));
   usb_console_write(text);
 #endif
 }

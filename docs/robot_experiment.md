@@ -1,5 +1,7 @@
 # RLR 141 combined UWB / motor experiment
 
+> For the matching **921600 baud / DMA RX** images and current transport fixes, use [the UART upgrade guide](uart_921600.md). Earlier 115200 traffic figures below describe the previous image.
+
 This opt-in configuration keeps the Universal RF policy (`MUL_UNIVERSAL=ON`,
 `MUL_UWB_ONLY=ON`) and adds `MUL_ROBOT_EXPERIMENT=ON`. The ordinary Universal
 preset still prohibits movement and forces STREAM 0. No dsPIC or ALR source,
