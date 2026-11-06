@@ -33,6 +33,14 @@
                 "MUL_HYBRID_SLOT_MS": "10",
                 "MUL_TDOA_REPLAY": "ON"
             }
+        },
+        {
+            "name": "RobotExperiment",
+            "inherits": "Universal",
+            "cacheVariables": {
+                "MUL_ROBOT_EXPERIMENT": "ON",
+                "MUL_ROBOT_TELEMETRY_HZ": "10"
+            }
         }
     ],
     "buildPresets": [
@@ -47,6 +55,10 @@
         {
             "name": "Universal",
             "configurePreset": "Universal"
+        },
+        {
+            "name": "RobotExperiment",
+            "configurePreset": "RobotExperiment"
         }
     ]
 }

@@ -141,9 +141,9 @@ static void esp_invalidate(const char *reason)
 void esp_link_session(char out[17]) { memcpy(out, esp_session_id, 17U); }
 uint8_t esp_link_owner_alive(const char *session)
 {
-  return esp_active && !esp_fault && !esp_tx_fault && esp_valid && esp_hb_seen &&
+  return esp_active && !esp_fault && !esp_tx_fault && esp_valid &&
       strcmp(session, esp_session_id) == 0 &&
-      (uint32_t)(HAL_GetTick() - esp_hb_tick) < 500U;
+      (MUL_ROBOT_EXPERIMENT || (esp_hb_seen && (uint32_t)(HAL_GetTick() - esp_hb_tick) < 500U));
 }
 void esp_link_reply_to(const char *session, const char *text)
 {
@@ -307,7 +307,7 @@ void esp_link_task(void)
   char record[64];
   uint32_t mask;
   if (!esp_active) return;
-  if (esp_valid && esp_hb_seen && (uint32_t)(HAL_GetTick()-esp_hb_tick) >= 500U) {
+  if (!MUL_ROBOT_EXPERIMENT && esp_valid && esp_hb_seen && (uint32_t)(HAL_GetTick()-esp_hb_tick) >= 500U) {
     esp_invalidate("control_hb_timeout");
   }
   mask = __get_PRIMASK(); __disable_irq(); esp_restart(); __set_PRIMASK(mask);

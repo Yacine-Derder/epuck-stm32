@@ -316,7 +316,7 @@ static void stream_receive(const char *reply)
 
 static void stream_task(uint32_t now)
 {
-#if MUL_UWB_ONLY
+#if MUL_UWB_ONLY && !MUL_ROBOT_EXPERIMENT
   /* The only permitted value is zero: idempotent stop retries cannot confirm
    * a different period. Normal mode retains its strict ordered ACK fence. */
   if (stream_wait && !stream_ack_seen && (uint32_t)(now-stream_sent_tick)>=STREAM_RETRY_MS) {
@@ -434,6 +434,8 @@ const char *epuck_link_flash_error(void)
     return "ERR configuration rejected: STOP unconfirmed; issue STOP, wait OK STOP; inspect MOTOR_STATUS/LINK_STATUS";
   epuck_stream_status_t status;
   epuck_link_get_stream_status(&status);
+  if (MUL_ROBOT_EXPERIMENT && stream_desired != 0U)
+    return "ERR configuration requires STREAM 0 and confirmed STOP; restore STREAM after saving";
   if (!status.confirmed || status.acknowledged_ms != 0U)
     return "ERR configuration rejected: STREAM 0 unconfirmed; wait/check STREAM_STATUS and UART1 peer power/cabling";
   return NULL;
@@ -486,7 +488,7 @@ static void motor_receive_lost(void)
 {
   owner_context();
   if (motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING) {
-    motor_stop("[MOTOR] session lost: UART receive loss; explicit ARM required", 1U);
+    motor_stop("[MOTOR] session lost: UART receive loss; send a new movement command after OK STOP", 1U);
   }
 }
 
@@ -498,21 +500,21 @@ static void motor_check_deadlines(uint32_t now)
     memcpy(output_session, motor_ack_session, 17U);
   }
   if ((motor_state == MOTOR_ARMED || motor_state == MOTOR_ARMING) && !owner_available()) {
-    motor_stop("[MOTOR] owner connection/CONTROL_HB lost; explicit ARM required", 1U);
+    motor_stop("[MOTOR] owner connection/CONTROL_HB lost; send a new movement command after OK STOP", 1U);
   }
   if (motor_wait != TX_IDLE &&
       (uint32_t)(now - motor_wait_tick) >= MOTOR_ACK_TIMEOUT_MS) {
     uint8_t stopping = (motor_wait == TX_STOP);
     motor_wait = TX_IDLE;
     if (!stopping || motor_state != MOTOR_LOST) {
-      motor_stop("[MOTOR] session lost: ACK timeout; explicit ARM required", 1U);
+      motor_stop("[MOTOR] session lost: ACK timeout; send a new movement command after OK STOP", 1U);
     } else {
       motor_stop_pending = 1U; /* Retry STOP, never ARM or movement. */
     }
-  } else if (motor_state == MOTOR_ARMED &&
+  } else if (!MUL_ROBOT_EXPERIMENT && motor_state == MOTOR_ARMED &&
              ((uint32_t)(now - motor_last_ack) >= MOTOR_SESSION_TIMEOUT_MS ||
               (uint32_t)(now - motor_last_keepalive) >= MOTOR_SESSION_TIMEOUT_MS)) {
-    motor_stop("[MOTOR] session lost: heartbeat deadline; explicit ARM required", 1U);
+    motor_stop("[MOTOR] session lost: heartbeat deadline; send a new movement command after OK STOP", 1U);
   }
 }
 
@@ -533,13 +535,14 @@ static void motor_reply(const char *reply)
   else if (strcmp(reply, "OK M") == 0) command = TX_MOVE;
   else if (strcmp(reply, "OK HB") == 0) command = TX_HB;
   else if (strcmp(reply, "OK STOP") == 0) command = TX_STOP;
+  else if (strncmp(reply, "BOOT ", 5U) == 0) { motor_receive_lost(); return; }
   else if (strncmp(reply, "ERR ", 4U) != 0) return;
 
   snprintf(motor_latest_ack, sizeof(motor_latest_ack), "%.63s", reply);
   if (strncmp(reply, "ERR ", 4U) == 0) {
     snprintf(message, sizeof(message), "[MOTOR] %.100s", reply);
     if (motor_wait == TX_STOP) stop_notify(message); else command_reply(message);
-    motor_stop("[MOTOR] peer error; explicit ARM required", 1U);
+    motor_stop("[MOTOR] peer error; send a new movement command after OK STOP", 1U);
     return;
   }
   if (command != motor_wait) {
@@ -566,7 +569,7 @@ static void motor_reply(const char *reply)
   if (command == TX_STOP) {
     stop_notify(message);
     motor_stop_subscribers = 0U;
-  } else command_reply(message);
+  } else if (command != TX_HB || APP_DEBUG_TELEMETRY) command_reply(message);
 }
 
 void epuck_link_command(epuck_source_t source, const char *command)
@@ -584,19 +587,19 @@ void epuck_link_command(epuck_source_t source, const char *command)
   while (length && text[length - 1U] == ' ') text[--length] = '\0';
   p = text;
   while (*p == ' ') ++p;
-#if MUL_UWB_ONLY
+#if !APP_ROBOT_ALLOWED
   if (strcmp(p,"STOP") && strcmp(p,"HELP") && strcmp(p,"MOTOR_STATUS") && strcmp(p,"STREAM_STATUS") && strcmp(p,"LINK_STATUS")) {
     command_reply("ERR UWB-only: ARM, movement and stream changes disabled; STOP remains available");
     return;
   }
 #endif
   if (strcmp(p, "HELP") == 0) {
-#if MUL_UWB_ONLY
+#if !APP_ROBOT_ALLOWED
     command_reply("STOP | MOTOR_STATUS | STREAM_STATUS | LINK_STATUS | HELP; UWB-only movement/stream changes disabled");
     return;
 #endif
-    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
-    command_reply("M: integer commanded steps/s, -1000..1000; wait for OK ARM. HB every 100 ms; STOP disarms.");
+    command_reply("M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
+    command_reply("M: integer commanded steps/s, -1000..1000; experimental image handles ARM/HB internally. STOP disarms.");
     command_reply("STREAM: 0 stops automatic DATA; otherwise 50..10000 ms. Queued is not acknowledged.");
     return;
   }
@@ -649,6 +652,9 @@ void epuck_link_command(epuck_source_t source, const char *command)
   if (strcmp(p, "STOP") == 0) {
     motor_stop("[MOTOR] STOP queued; heartbeats disabled", 0U);
   } else if (strcmp(p, "ARM") == 0) {
+#if MUL_ROBOT_EXPERIMENT
+    command_reply("ERR ARM is internal; use M <left> <right>"); return;
+#endif
     if (motor_owner != EPUCK_SOURCE_NONE && motor_owner != source) {
       command_reply("ERR motor session owned by another source"); return;
     }
@@ -680,6 +686,21 @@ void epuck_link_command(epuck_source_t source, const char *command)
       command_reply("ERR M requires exactly two integer speeds in -1000..1000");
       return;
     }
+#if MUL_ROBOT_EXPERIMENT
+    if (motor_stop_pending || motor_wait == TX_STOP || motor_state == MOTOR_LOST || motor_state == MOTOR_STOPPING) {
+      command_reply("ERR wait for OK STOP, then send a new M"); return;
+    }
+    if (source == EPUCK_SOURCE_WIFI && !esp_link_owner_alive(output_session)) {
+      command_reply("ERR Wi-Fi transport unavailable"); return;
+    }
+    if (motor_owner != EPUCK_SOURCE_NONE && motor_owner != source) {
+      command_reply("ERR motor command pending from another source; STOP first"); return;
+    }
+    if (motor_state == MOTOR_DISARMED) {
+      motor_owner=source; memcpy(motor_owner_session,output_session,17U);
+      motor_state=MOTOR_ARMING; motor_arm_pending=1U; motor_known=0U;
+    }
+#else
     if (motor_owner != source || (source == EPUCK_SOURCE_WIFI && !esp_link_owner_alive(motor_owner_session))) {
       command_reply("ERR motor session owned by another source or lost"); return;
     }
@@ -687,6 +708,7 @@ void epuck_link_command(epuck_source_t source, const char *command)
       command_reply("ERR NOT_ARMED: explicit ARM and OK ARM required");
       return;
     }
+#endif
     if (motor_count == MOTOR_QUEUE_SIZE) {
       command_reply("ERR motor queue full; command rejected");
       return;
@@ -917,7 +939,7 @@ static void service_tx(uint32_t now)
   size = (uint16_t)strlen((const char *)buffer);
   if (command >= TX_ARM && command != TX_STOP && !owner_available()) {
     __set_PRIMASK(primask);
-    epuck_link_source_lost(motor_owner, "owner connection changed; explicit ARM required");
+    epuck_link_source_lost(motor_owner, "owner connection changed; send a new movement command after OK STOP");
     return;
   }
   tx_command = command;
@@ -1001,7 +1023,7 @@ void epuck_link_command(epuck_source_t source, const char *command)
 {
   command_context(source);
   if (strcmp(command, "HELP") == 0) {
-    command_reply("ARM | M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
+    command_reply("M <left> <right> | STOP | HELP | MOTOR_STATUS | STREAM <ms> | STREAM_STATUS | LINK_STATUS");
     command_reply("Commanded steps/s: -1000..1000; e-puck feature is disabled");
   } else {
     command_reply("ERR e-puck feature disabled (APP_EPUCK_ENABLED=0)");
