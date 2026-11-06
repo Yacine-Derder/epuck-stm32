@@ -22,7 +22,7 @@ static volatile uint8_t esp_active, esp_fault, esp_tx_fault, esp_busy;
 #if APP_ESP_DMA_RX
 #define ESP_DMA_SIZE 2048U
 /* SRAM .bss, never CCM; F405 has no D-cache. DMA owns writes. */
-static uint8_t esp_dma_buffer[ESP_DMA_SIZE];
+static volatile uint8_t esp_dma_buffer[ESP_DMA_SIZE];
 static volatile uint32_t esp_dma_wraps, esp_dma_events;
 static uint32_t esp_dma_read, esp_dma_previous, esp_dma_poll_tick, esp_dma_oldest_tick;
 static uint32_t esp_dma_errors, esp_dma_restarts, esp_dma_start_failures;
@@ -210,7 +210,7 @@ static uint32_t esp_start_dma(void)
 {
   esp_dma_wraps=esp_dma_read=esp_dma_previous=0;
   esp_dma_poll_tick=esp_dma_oldest_tick=HAL_GetTick();
-  uint32_t result=HAL_UARTEx_ReceiveToIdle_DMA(&huart3,esp_dma_buffer,ESP_DMA_SIZE);
+  uint32_t result=HAL_UARTEx_ReceiveToIdle_DMA(&huart3,(uint8_t *)esp_dma_buffer,ESP_DMA_SIZE);
   if(result!=HAL_OK) ++esp_dma_start_failures;
   return result;
 }
