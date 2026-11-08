@@ -29,6 +29,7 @@ static size_t tdmaPacket(const mulSchedule_t *s,unsigned slot,unsigned step,uint
  uint64_t tx=slot?mulTimestampMask(followerOrigin+scale(offset+120,folPpb)):reference;
  return mulPlanBroadcastEncode(frame,90,activePlan,slot,cycle,tx,slot?&relation:NULL);
 }
+#ifndef MUL_REPLAY_REUSE
 int main(void) {
  bool ff=getenv("MUL_REPLAY_FF")!=NULL;
  bool tdma=getenv("MUL_REPLAY_TDMA")!=NULL||ff;
@@ -116,3 +117,5 @@ int main(void) {
  if(trace)fclose(trace);
  printf("Replay: %u radio-driven cycles, exact state roundtrip, partial observations, relation/rate unavailable, resets, signed rate, wrap, bounded queue and zero additional TX passed\n",snapshots);
 }
+
+#endif /* MUL_REPLAY_REUSE */

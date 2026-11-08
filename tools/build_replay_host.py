@@ -4,11 +4,12 @@ import argparse
 import pathlib
 import subprocess
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-def build(output, fixture=False, sanitize=False, instrument=True, transport=False, motion_guard=False):
+def build(output, fixture=False, sanitize=False, instrument=True, transport=False, motion_guard=False, raw_pipeline=False):
     core = ROOT / 'ThirdParty/mul_core'
     subprocess.run(['python3', str(core/'verify.py')], check=True, stdout=subprocess.DEVNULL)
     sources = sorted(str(p) for p in core.glob('*.c') if p.name != 'mul_multi_receiver.c')
     entry = ('tests/runtime_config/test_replay_transport.c' if transport else 'tests/runtime_config/test_replay.c') if fixture else 'tools/replay_native.c'
+    if raw_pipeline:entry='tests/motion/test_raw_pipeline.c'
     flags = ['-std=c11', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-Wno-unused-variable', '-Wno-misleading-indentation', '-DMUL_PROP_MAX_AGE_MS=6000']
     if sanitize:
         flags += ['-fsanitize=address,undefined', '-fno-pie', '-no-pie']
@@ -29,7 +30,8 @@ if __name__ == '__main__':
     ap.add_argument('--fixture', action='store_true')
     ap.add_argument('--sanitize', action='store_true')
     ap.add_argument('--disabled', action='store_true', help='Fixture without instrumentation for output equivalence')
+    ap.add_argument('--raw-pipeline', action='store_true', help='Four-ALR100ms radio-to-UART fixture')
     ap.add_argument('--motion-guard', action='store_true', help='Exercise conservative motion receiver without device access')
     ap.add_argument('--output', required=True)
     a = ap.parse_args()
-    build(a.output, a.fixture or a.transport, a.sanitize, not a.disabled, a.transport, a.motion_guard)
+    build(a.output, a.fixture or a.transport or a.raw_pipeline, a.sanitize, not a.disabled, a.transport or a.raw_pipeline, a.motion_guard, a.raw_pipeline)

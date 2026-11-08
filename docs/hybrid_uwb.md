@@ -1312,3 +1312,56 @@ accuracy and radio-to-trajectory time mapping remain unvalidated. See the
 Record complete build options alongside captures: the unchanged telemetry schema
 does not serialize budget/speed. Exact budget-enabled rejection replay requires
 matching policy options; do not interpret a default-policy mismatch as equivalent.
+
+## Raw acquisition under the motion guard
+
+The guard does **not** gate type12 raw accepted broadcast output. `multiProcess`
+exports the native captured RX and unchanged RF frame after accepted reception,
+separately from cycle evaluation/vector validity. The legacy path likewise emits
+type6 independently of associated TDoA availability. Clock10 contains actual
+reference TX/native RX when `samples` is enabled; its guarded applied/fitted zeros
+are unavailable corrections, not apparent-rate measurements. Median arrival state
+continues for scheduling; raw reference markers allow independent PC apparent-rate
+estimation. Optional replay15 additionally retains that arrival state. Source
+reference boot epoch is absent on RF; follower relation epoch is mapping provenance,
+not a globally unique transmitter boot ID. Never invent a missing epoch.
+
+Required capture controls are the existing `telemetry on`, Wi-Fi/session forwarding
+when used, and `samples on` for clock/TWR packet diagnostics. TDoA vector11 `seen`
+is RF participation; `valid` is corrected geometric availability. Present+NO_RATE
+is not a missing packet. Type13 AR results retain their own acquisition time,
+raw/corrected ToF, six stamp domains and power/quality provenance independently.
+Replay OFF does not disable raw broadcast output. All queues remain bounded and
+loss counters must be recorded; raw packet copies are lower priority than vectors
+and range results. No guard, RF, persistence, transport default or firmware code
+change was necessary for this follow-up.
+
+Reproduce the complete offline path from the localization repository after sourcing
+existing ROS overlays (no DDS context or ROS/network setting changes):
+
+```
+/usr/bin/python3 scripts/verify_raw_timing_pipeline.py --output /tmp/new-raw-timing-check
+```
+
+It builds `tools/build_replay_host.py --raw-pipeline` against this checkout's actual
+radio/runtime/queue implementation, canonical RF encoders and optional guard/replay
+flags, then the actual ESP transport owner and PC/ROS/MCAP paths. Plan3962260266,
+ordered132/134/133/135, RLR141,100ms cycle/5ms slots/reply5/FF-on remain asserted.
+The native model advances local hardware clocks and completes43 scheduled
+five-message AR exchanges with the real responder, TX verification and result paths.
+
+Across120 cycles (12 modeled seconds):479/480 downlink packets are accepted (one
+intentional missing follower);129 TWR RX events and86 verified local TWR TX markers
+produce215 additional raw records and43 results. All694 raw records,120 clock
+records,120 vectors and43 results reach the PC at modeled921600baud in both guard
+modes. Guarded geometric components=0; legacy valid components=344 after warmup.
+Replay-OFF guarded output retains the same raw/clock/TWR counts. With replay ON,
+20 Wi-Fi queue drops are10 summaries+10 quality records; no raw/clock/vector/result
+is lost. The disconnected USB sink separately counts2439 drops (999 replay OFF).
+At modeled115200baud raw delivery falls to196/694 with584 Wi-Fi drops; these are
+explicit loss, never fabricated receptions. No lossless transport claim is made.
+
+The additions in this repository are host fixtures/build-helper reuse only. Both
+RobotExperiment and MotionGuard firmware builds verify the unchanged canonical
+snapshot without relinking: linked Flash/RAM delta0. LPS/shared-core bytes, plan,
+antenna calibration, source semantics, EEPROM and hardware remain untouched.
