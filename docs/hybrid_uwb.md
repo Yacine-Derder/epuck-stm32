@@ -1240,3 +1240,75 @@ acceptance procedure are in the [turnaround investigation](../../lps-node-firmwa
 Existing STM32 and ESP firmware remain wire-compatible; this vendor update is
 source synchronization, not a requirement to change a live RLR configuration.
 No hardware was flashed or accessed.
+
+## Conservative moving-radio timing support
+
+`MUL_RX_MOTION_GUARD=ON` is explicit build-time opt-in for the Universal receiver.
+It retains the existing median arrival-rate map for guarded AR reservation timing,
+but does not update or apply the oscillator Kalman model from reception cadence.
+Both legacy and multi/plan TDoA paths return NO_RATE without independent evidence,
+even if the scene happens to be stationary. This deliberate availability tradeoff
+prevents unobservable path motion being reported as oscillator drift. The existing
+stationary/default build, Kalman/median selection and fallback remain supported.
+No calibration, EEPROM, RF plan, slot, reply, PHY, persistence, motors or hardware
+settings are changed. No firmware was deployed during this implementation.
+
+```
+cmake --preset RobotExperiment -B build/MotionGuard \
+ -DMUL_RX_MOTION_GUARD=ON \
+ -DMUL_PROP_MOTION_BUDGET_MM=100 -DMUL_RELATIVE_SPEED_MM_S=1000
+cmake --build build/MotionGuard
+```
+
+1000mm/s here is an illustrative independently justified **relative** speed bound,
+not measured robot speed. Budget100mm is only unmodeled path-change allowance.
+Do not infer total accuracy from it. UNKNOWN speed (`-1`) fails propagation use
+closed when a budget is enabled. The matching LPS `profiles/motion-guard-ch5.mk`
+retains channel5/6000ms compatibility and the deployed plan. Guard OFF is default.
+The [canonical clock model](../ThirdParty/mul_core/CLOCK.md#motion-observability-and-conservative-receiver-mode)
+defines the equations, age/extrapolation budget, scope and missing evidence.
+
+`hybrid diag` reports `motion_guard=1 oscillator=UNAVAILABLE
+reason=MOTION_UNOBSERVABLE`, apparent `arrival_ppb`, its scheduling status and
+rejected count. Structured clock10 v3 retains fallback2 (uncertain), warmup
+geometric status, no applied oscillator correction and UNKNOWN conditional sigma.
+The configured legacy `ratePolicy` field keeps its original mode-derived meaning;
+it does not override NO_RATE, mapping or measurement validity. No reserved byte
+or protocol version is reinterpreted. Frequency diagnostics remain raw evidence;
+no undocumented carrier-to-rate conversion enters the estimator.
+
+Raw telemetry6/9/12 preserves each actual source TX/native RX and full relation,
+cycle/slot, source/receiver domain, source epoch/generation where known, sequence,
+plan fingerprint/revision, session and capture age. Replay15 preserves the actual
+association state; vector11 alone is insufficient for motion reconstruction.
+AR13 preserves its distinct six timestamps and acquisition/report provenance.
+The processing tick associated with capture age is now retained through publication
+rather than overwritten by a later HAL tick. It remains coarse processing time,
+not a synchronized radio acquisition time. Existing ESP32/ROS decoders transport
+these records unchanged; capture/queue losses must remain explicit.
+
+Actual motion correction still requires independent acquisition-aligned path-change
+or calibrated rate evidence, and common-time anchor/RLR trajectories. Existing
+pose80 supplies neither velocity nor radio time mapping. There is no inferred
+velocity, new unobservable filter state or guessed onboard geometry correction.
+The [asynchronous observation equation](https://github.com/Yacine-Derder/lps-node-firmware/blob/main/docs/mul_architecture.md#non-simultaneous-downlink-contract)
+is follower range at its TX/RX events minus reference range at its own events.
+PC acquisition-time geometry/fusion and physical calibration remain separate work.
+
+Offline checks: `sh tests/motion/run.sh`, `sh tests/runtime_config/run.sh`,
+`sh tests/frequency/run.sh`, and `sh ThirdParty/mul_core/tests/run.sh`.
+The motion suite covers three45-cycle real-adapter scenarios, 200s paced UART,
+and actual five-message scheduled AR exchanges with independent clock domains,
+raw/corrected timestamps, wrap, deadline/error/recovery and no extra transmissions.
+It also checks capture-tick preservation and no latent oscillator updates.
+
+Final shared snapshot: LPS63c6f688d4f3e636e66240c8ef4a9b0256ec2684,
+verified offline by UPSTREAM.json and every file SHA256. Matched RobotExperiment
+images use174352B Flash/46832B RAM with guard OFF and169024B/46832B with guard ON
+and100mm/1000mm/s motion settings. No new heap, persistent timing state or queue;
+RF airtime unchanged. Physical CPU WCET, stack watermarks, NLOS/antenna/dynamic
+accuracy and radio-to-trajectory time mapping remain unvalidated. See the
+[full canonical evidence and operator-only procedure](https://github.com/Yacine-Derder/lps-node-firmware/blob/main/docs/mul_architecture.md#software-verification-and-evidence-boundary-2026-11-08).
+Record complete build options alongside captures: the unchanged telemetry schema
+does not serialize budget/speed. Exact budget-enabled rejection replay requires
+matching policy options; do not interpret a default-policy mismatch as equivalent.

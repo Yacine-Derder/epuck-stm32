@@ -37,6 +37,14 @@ int main(void) {
  command("plan init");command("plan alrs 132 133");command("plan rlrs 141");command("plan set process_us 5000");command("plan use on");command("cfg set samples on");command("cfg set telemetry on");command("cfg set wifi on");if(getenv("MUL_REPLAY_KALMAN"))command("cfg set clock_estimator kalman");if(tdma){command("plan set lead_us 1000");command("plan set process_us 2000");command("plan set slot_ms 5");command("plan alrs 132 134 133");command("plan mode tdma");command("plan set twr_window_ms 90");command("plan set cycle_ms 200");}
  if(ff){command("plan set reply_ms 5");command("plan set twr_window_ms 30");command("plan set cycle_ms 100");command("plan alrs 132 134 133 135");command("plan set ff on");if(getenv("MUL_REPLAY_AR_OFF"))command("plan set ar off");}
  command("on");
+ // A later serializer tick must not replace the tick paired with capture age.
+ {mulTelemetry_t probe={.type=mulTlmClock,.peer=132,.transaction=100,.uptimeMs=77,.captureAgeMs=1,
+   .clock={.version=3,.reference=132,.method=2,.window=5,.fallback=2,.fitSigmaPpb=UINT32_MAX}};
+  head=tail=count=wifiHead=wifiTail=wifiCount=0;tick=99;uwb_runtime_publish(&probe);
+  mulTelemetry_t decoded;assert(count==1&&mulTelemetryDecode(telemetry[tail],&decoded));
+  assert(decoded.uptimeMs==77&&decoded.captureAgeMs==1);
+  head=tail=count=wifiHead=wifiTail=wifiCount=0;
+ }
  const char *verbosity=getenv("MUL_REPLAY_VERBOSITY");
  if(verbosity){assert(strlen(verbosity)==1&&verbosity[0]>='0'&&verbosity[0]<='2');
   char commandLine[32];snprintf(commandLine,sizeof(commandLine),"cfg set verbosity %s",verbosity);command(commandLine);
@@ -54,6 +62,11 @@ int main(void) {
    head=tail=count=wifiHead=wifiTail=wifiCount=0;
    if(step==30&&slot)multiReceiver.rate.skewPpb=-15000;
    mul_hybrid_radio_process();
+#if MUL_RX_MOTION_GUARD
+   assert(!multiReceiver.stationary&&!multiReceiver.fit.count&&!multiReceiver.fit.ready&&!multiReceiver.fit.applied);
+   assert(!multiReceiver.fit.accepted&&multiReceiver.fit.uncertaintyPpb==UINT32_MAX);
+   for(unsigned k=0;k+1u<multiReceiver.schedule.count;k++)assert(multiReceiver.values[k].tdoaDtu==INT32_MIN);
+#endif
    for(unsigned i=0;i<wifiCount;i++)if(trace)fprintf(trace,"%s\n",wifiQueue[(wifiTail+i)%TLM_CAPACITY]);
   }
   uint8_t saved[MUL_REPLAY_BYTES];assert(mulReplayPack(saved,&multiReceiver,1,NULL));
