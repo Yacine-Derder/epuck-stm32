@@ -34,6 +34,14 @@ static uint64_t receiverStamp(int64_t physical) {
 static int64_t physicalStamp(uint64_t local,int64_t base) {
  return base+llroundl(mulTimestampDifference(local,receiverStamp(base))/(1.0L+15000/1e9L));
 }
+static uint64_t anchorStamp(unsigned slot,int64_t physical) {
+ return slot?mulTimestampMask(500000+scale(physical,slot%2?35000:-45000)):
+  mulTimestampMask(MUL_TIMESTAMP_MASK-2000*MS+physical);
+}
+static int64_t anchorPhysical(unsigned slot,uint64_t stamp,int64_t base) {
+ int32_t ppb=slot?(slot%2?35000:-45000):0;
+ return base+llroundl(mulTimestampDifference(stamp,anchorStamp(slot,base))/(1.0L+ppb/1e9L));
+}
 int main(void) {
  const char *path=getenv("MUL_RAW_UART");if(path){wire=fopen(path,"w");assert(wire);}
  path=getenv("MUL_RAW_EXPECTED");if(path){expected=fopen(path,"w");assert(expected);}
@@ -48,14 +56,16 @@ int main(void) {
  for(unsigned step=0;step<cycles;step++) {
   uint32_t cycle=UINT32_MAX-10+step,base=10000+step*100;
   mulRangingOperation_t operation;bool haveAr=mulRangingPlanOperation(activePlan,cycle,0,&operation)&&operation.kind==MUL_PLAN_AR;
+  unsigned arSlot=haveAr?(unsigned)mulScheduleIndex(&activePlan->broadcast,operation.initiator):0;
+  int64_t flight=4000+(arSlot?differences[arSlot-1]:0);
   mulTwrPacket_t arPacket={0};unsigned arStage=0;int64_t nextRx=0;uint64_t pendingTx=0;
   for(unsigned ms=0;ms<100;ms++) {
    int64_t physical=(int64_t)step*100*MS+ms*MS;
    tick=base+ms;status=0;planClockOverride=true;planHardwareTime=receiverStamp(physical+50000);
    if(haveAr&&step>=6) {
     if(!arStage&&ms==(operation.pollUs+999)/1000) {
-     arPacket=(mulTwrPacket_t){.type=mulTwrPoll,.id=cycle,.txTimestamp=mulTimestampMask(1000000+physical),.stamps={mulTimestampMask(1000000+physical)}};
-     nextRx=physical+2131;arStage=1;
+     arPacket=(mulTwrPacket_t){.type=mulTwrPoll,.id=cycle,.txTimestamp=anchorStamp(arSlot,physical),.stamps={anchorStamp(arSlot,physical)}};
+     nextRx=physical+flight;arStage=1;
     }
     if(pendingTx&&mulTimestampDifference(planHardwareTime,pendingTx)>=0) {
      txMarker=pendingTx;pendingTx=0;status|=DWT_INT_TXFRS_BIT_MASK;
@@ -83,14 +93,14 @@ int main(void) {
     int64_t at=physicalStamp(arPacket.txTimestamp,(int64_t)step*100*MS);
     if(arPacket.type==mulTwrResponse) {
      arPacket.type=mulTwrFinal;
-     arPacket.stamps[3]=mulTimestampMask(1000000+at+2131);
+     arPacket.stamps[3]=anchorStamp(arSlot,at+flight);
      arPacket.stamps[4]=mulTimestampMask(arPacket.stamps[3]+5*MS);arPacket.txTimestamp=arPacket.stamps[4];
      arPacket.power[1]=(mulPower_t){.powerCentiDbm=INT16_MIN,.status=mulPowerUnsupported};
-     nextRx=at+2*2131+5*MS;arStage=3;
+     nextRx=anchorPhysical(arSlot,arPacket.txTimestamp,(int64_t)step*100*MS)+flight;arStage=3;
     }else {
      assert(arPacket.type==mulTwrReport);arPacket.type=mulTwrResult;
      assert(mulTwrCalculateReply(arPacket.stamps,&arPacket.tof,5));
-     arPacket.txTimestamp=mulTimestampMask(1000000+at+2131+5*MS);nextRx=at+2*2131+5*MS;arStage=5;
+     arPacket.txTimestamp=mulTimestampMask(anchorStamp(arSlot,at+flight)+5*MS);nextRx=anchorPhysical(arSlot,arPacket.txTimestamp,(int64_t)step*100*MS)+flight;arStage=5;
     }
    }
    if(ms==36) {

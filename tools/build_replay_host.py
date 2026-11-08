@@ -4,7 +4,7 @@ import argparse
 import pathlib
 import subprocess
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-def build(output, fixture=False, sanitize=False, instrument=True, transport=False, motion_guard=False, raw_pipeline=False):
+def build(output, fixture=False, sanitize=False, instrument=True, transport=False, motion_guard=False, raw_pipeline=False, motion_budget=-1, relative_speed=-1):
     core = ROOT / 'ThirdParty/mul_core'
     subprocess.run(['python3', str(core/'verify.py')], check=True, stdout=subprocess.DEVNULL)
     sources = sorted(str(p) for p in core.glob('*.c') if p.name != 'mul_multi_receiver.c')
@@ -15,6 +15,8 @@ def build(output, fixture=False, sanitize=False, instrument=True, transport=Fals
         flags += ['-fsanitize=address,undefined', '-fno-pie', '-no-pie']
     if motion_guard:
         flags += ['-DMUL_RX_MOTION_GUARD=1']
+    if not -1<=motion_budget<=1000000 or not -1<=relative_speed<=1000000:raise ValueError('motion policy bounds')
+    flags += ['-DMUL_PROP_MOTION_BUDGET_MM='+str(motion_budget),'-DMUL_RELATIVE_SPEED_MM_S='+str(relative_speed)]
     if transport:
         flags += ['-DMUL_RUNTIME_WIFI_SINK=1', '-Wl,--wrap=mulTelemetryEncode']
     if fixture:
@@ -30,8 +32,10 @@ if __name__ == '__main__':
     ap.add_argument('--fixture', action='store_true')
     ap.add_argument('--sanitize', action='store_true')
     ap.add_argument('--disabled', action='store_true', help='Fixture without instrumentation for output equivalence')
+    ap.add_argument('--motion-budget-mm', type=int, default=-1)
+    ap.add_argument('--relative-speed-mm-s', type=int, default=-1)
     ap.add_argument('--raw-pipeline', action='store_true', help='Four-ALR100ms radio-to-UART fixture')
     ap.add_argument('--motion-guard', action='store_true', help='Exercise conservative motion receiver without device access')
     ap.add_argument('--output', required=True)
     a = ap.parse_args()
-    build(a.output, a.fixture or a.transport or a.raw_pipeline, a.sanitize, not a.disabled, a.transport or a.raw_pipeline, a.motion_guard, a.raw_pipeline)
+    build(a.output, a.fixture or a.transport or a.raw_pipeline, a.sanitize, not a.disabled, a.transport or a.raw_pipeline, a.motion_guard, a.raw_pipeline, a.motion_budget_mm, a.relative_speed_mm_s)

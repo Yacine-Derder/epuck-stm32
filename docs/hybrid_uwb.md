@@ -1365,3 +1365,11 @@ The additions in this repository are host fixtures/build-helper reuse only. Both
 RobotExperiment and MotionGuard firmware builds verify the unchanged canonical
 snapshot without relinking: linked Flash/RAM delta0. LPS/shared-core bytes, plan,
 antenna calibration, source semantics, EEPROM and hardware remain untouched.
+
+The same native path is also checked with propagation budget100mm and relative
+speed1000mm/s enabled, replay OFF: all694 raw records and43 results survive while
+geometric correction remains unavailable. Host-builder options are
+`--motion-budget-mm 100 --relative-speed-mm-s 1000`. The fixture uses the same
+per-node clock model for broadcast and AR TX/RX; PC checks same-node broadcast/TWR
+clock continuity in addition to preserving distinct clocks between nodes. These
+are simulated timing/protocol controls, not physical geometry or accuracy evidence.
